@@ -952,7 +952,7 @@ function renderWaveform() {
 
             const visible = waveformVis._zoom.end - waveformVis._zoom.start;
             // zoom factor: scroll up -> zoom in, scroll down -> zoom out
-            const factor = Math.pow(1.001, e.deltaY * 10); // tuned sensitivity
+            const factor = Math.pow(1.002, e.deltaY * 5); // tuned sensitivity
             const minWindow = Math.max(0, Math.floor(20)); // don't zoom into less than this
             const maxWindow = window.audioFile.length; // don't zoom out beyond full length
 
@@ -1712,7 +1712,7 @@ function toggleSidePanel() {
         // Show side panel
         sidePanel.style.display = 'block';
         // Adjust container width to account for side panel
-        container.style.width = 'calc(100% - 20%)'; // Equivalent to lg:w-1/5
+        container.style.width = 'calc(100% - 16.666667%)'; // Equivalent to lg:w-1/6
     }
     
     // Trigger re-rendering to adjust to new layout
