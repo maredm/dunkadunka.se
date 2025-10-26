@@ -1,8 +1,8 @@
 'use strict'
 
-import { FFT } from '/static/modules/fft.js';
-import { db } from '/static/modules/audio.js';
-import { clamp } from '/static/modules/math.js';
+import { FFT } from './modules/fft.js';
+import { db } from './modules/audio.js';
+import { clamp } from './modules/math.js';
 
 
 function fmtSec(s, text = true, millis = true, range) {
