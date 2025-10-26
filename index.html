@@ -22,7 +22,7 @@
 <body class="bg-black" style="overflow: hidden;">
     <header class="w-full flex items-center justify-between p-0" style="background-color: #cc781e35; height: 32px;">
         <div class="flex items-center gap-3" style="cursor: pointer;">
-            <input id="wavefileInput" type="file" accept=".wav,audio/wav" class="text-white text-sm px-2 py-1 rounded" style="color: #cc781eff; background-color: #cc781e00; display: none; cursor: pointer;">
+            <input id="wavefileInput" type="file" accept="audio/*" class="text-white text-sm px-2 py-1 rounded" style="color: #cc781eff; background-color: #cc781e00; display: none; cursor: pointer;">
             <label for="wavefileInput" class="text-white text-sm px-4 py-[6px] active:bg-[#00000030] hover:bg-[#cc781e10] active:py-[7px]" style="height: 32px; color: #cc781eff; display: block; user-select: none; cursor: pointer;">Open...</label>
             <button id="saveAsBtn" title="Save as..." aria-label="Save as" class="text-sm px-4 py-[6px] active:bg-[#00000030] hover:bg-[#cc781e10] active:py-[7px]" style="height:32px; color: #cc781eff; display:block; user-select:none; cursor:pointer; border:none;" onclick="window.audioFile.downloadWav();">
                 Save as...

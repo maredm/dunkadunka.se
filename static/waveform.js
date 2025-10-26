@@ -246,8 +246,45 @@ class AudioFile {
 
     // decode an ArrayBuffer and install into app state (uses the global AudioContext `ac` when available)
     async loadWaveformFromArrayBuffer(arrayBuffer) {
-        this.audioBuffer = await this.ctx.decodeAudioData(arrayBuffer);
-        this.processWaveformData();
+        // Extract sample rate from WAV header if present
+        let sampleRate = this.sampleRate; // default fallback
+        try {
+            const view = new DataView(arrayBuffer);
+            // Check for RIFF header
+            if (view.getUint32(0, false) === 0x52494646) { // 'RIFF'
+                // Check for WAVE format
+                if (view.getUint32(8, false) === 0x57415645) { // 'WAVE'
+                    // Look for fmt chunk
+                    let offset = 12;
+                    while (offset < arrayBuffer.byteLength - 8) {
+                        const chunkId = view.getUint32(offset, false);
+                        const chunkSize = view.getUint32(offset + 4, true);
+                        
+                        if (chunkId === 0x666D7420) { // 'fmt '
+                            // Read sample rate from fmt chunk (offset 24 from start of file)
+                            sampleRate = view.getUint32(offset + 12, true);
+                            this.sampleRate = sampleRate;
+                            console.log('WAV sample rate detected:', sampleRate, 'Hz');
+                            break;
+                        }
+                        offset += 8 + chunkSize;
+                    }
+                }
+            }
+        } catch (err) {
+            console.warn('Could not read WAV header, using default sample rate:', err);
+        }
+        console.log('Decoding audio data...');
+        try {
+            this.audioBuffer = await this.ctx.decodeAudioData(arrayBuffer);
+            if(this.audioBuffer.sampleRate < sampleRate) {
+                alert(`Warning: The audio file's sample rate of ${sampleRate} Hz is higher than the playback device sample rate of ${this.audioBuffer.sampleRate} Hz. The waveform display may not be accurate for higher frequencies.`);
+            }
+            this.processWaveformData();
+        } catch (err) {
+            alert('Error decoding audio data: ' + (err && err.message ? err.message : String(err)));
+            this.audioBuffer = null;
+        }
         return this.audioBuffer;
     }
 
@@ -1543,7 +1580,23 @@ function clearSpectrogram() {
             return;
         }
         await window.audioFile.loadWaveformFromArrayBuffer(arrayBuffer);
-
+        setLoadingState(false);
+        if (!window.audioFile.audioBuffer) {
+            setLoadingState(true);
+            const loadingAninm = document.getElementById('loadingAnimation');
+            if (loadingAninm) {
+                loadingAninm.style.display = 'none';
+            }
+            const loadingText = document.getElementById('loadingText');
+            if (loadingText) {
+                loadingText.innerText = 'Click "Open..." to load a .wav file';
+            }
+            const fileTitle = document.getElementById('fileTitle');
+            if (fileTitle) {
+                fileTitle.innerText = 'No file loaded';
+            }
+            return;
+        }
         // update UI and re-render views
         const status = document.getElementById('waveformStatus');
         prevView = { start: 0, end: null, globalMax: null, globalMin: null, mags: null };
