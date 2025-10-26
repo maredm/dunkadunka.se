@@ -34,7 +34,12 @@ const fileChannels = document.getElementById('fileChannels');
 // Initialize
 function init() {
     // Initialize Web Audio API
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    try {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    } catch (error) {
+        showError('Web Audio API is not supported in your browser.');
+        return;
+    }
     
     // Event listeners
     selectFileBtn.addEventListener('click', () => fileInput.click());
@@ -167,7 +172,9 @@ function visualizeWaveform(buffer) {
         
         // Find min and max in this segment
         for (let j = 0; j < step; j++) {
-            const datum = data[(i * step) + j];
+            const index = (i * step) + j;
+            if (index >= data.length) break;
+            const datum = data[index];
             if (datum < min) min = datum;
             if (datum > max) max = datum;
         }
@@ -199,7 +206,11 @@ function playAudio() {
     
     // Stop any existing playback
     if (audioSource) {
-        audioSource.stop();
+        try {
+            audioSource.stop();
+        } catch (error) {
+            // Source already stopped, ignore error
+        }
     }
     
     // Create new source
@@ -207,8 +218,8 @@ function playAudio() {
     audioSource.buffer = audioBuffer;
     audioSource.connect(audioContext.destination);
     
-    // Calculate start position
-    const offset = pauseTime;
+    // Calculate start position (ensure within bounds)
+    const offset = Math.min(pauseTime, audioBuffer.duration);
     audioSource.start(0, offset);
     startTime = audioContext.currentTime - offset;
     
@@ -232,7 +243,11 @@ function playAudio() {
 function pauseAudio() {
     if (!audioSource || !isPlaying) return;
     
-    audioSource.stop();
+    try {
+        audioSource.stop();
+    } catch (error) {
+        // Source already stopped, ignore error
+    }
     pauseTime = audioContext.currentTime - startTime;
     
     // Update UI
@@ -248,7 +263,11 @@ function pauseAudio() {
 // Stop audio
 function stopAudio() {
     if (audioSource) {
-        audioSource.stop();
+        try {
+            audioSource.stop();
+        } catch (error) {
+            // Source already stopped, ignore error
+        }
     }
     
     pauseTime = 0;
@@ -269,7 +288,7 @@ function stopAudio() {
 function updateTime() {
     if (!isPlaying) return;
     
-    const currentTime = audioContext.currentTime - startTime;
+    const currentTime = Math.max(0, audioContext.currentTime - startTime);
     
     if (currentTime >= audioBuffer.duration) {
         stopAudio();
@@ -291,7 +310,7 @@ function handleCanvasClick(e) {
     const percentage = x / rect.width;
     const seekTime = percentage * audioBuffer.duration;
     
-    pauseTime = seekTime;
+    pauseTime = Math.min(seekTime, audioBuffer.duration);
     
     if (isPlaying) {
         playAudio();
