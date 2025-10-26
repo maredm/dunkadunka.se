@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dunka Dunka - Waveform Visualizer</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎵 Dunka Dunka</h1>
+            <p class="subtitle">Waveform Editor and Visualization Tool</p>
+        </header>
+
+        <main>
+            <div class="upload-section">
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-content">
+                        <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        <p class="upload-text">Drag and drop an audio file here</p>
+                        <p class="upload-subtext">or</p>
+                        <button class="upload-button" id="selectFileBtn">Select File</button>
+                        <p class="supported-formats">Supported formats: WAV, MP3, OGG, M4A</p>
+                    </div>
+                    <input type="file" id="fileInput" accept="audio/*" hidden>
+                </div>
+            </div>
+
+            <div class="info-section" id="infoSection" style="display: none;">
+                <div class="file-info">
+                    <h3>File Information</h3>
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <span class="info-label">Name:</span>
+                            <span class="info-value" id="fileName">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Duration:</span>
+                            <span class="info-value" id="fileDuration">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Sample Rate:</span>
+                            <span class="info-value" id="fileSampleRate">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Channels:</span>
+                            <span class="info-value" id="fileChannels">-</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="visualization-section" id="visualizationSection" style="display: none;">
+                <h3>Waveform Visualization</h3>
+                <div class="waveform-container">
+                    <canvas id="waveformCanvas"></canvas>
+                </div>
+                
+                <div class="controls">
+                    <button class="control-button" id="playPauseBtn">
+                        <svg class="control-icon" viewBox="0 0 24 24" fill="currentColor">
+                            <path id="playIcon" d="M8 5v14l11-7z"/>
+                            <path id="pauseIcon" d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" style="display: none;"/>
+                        </svg>
+                    </button>
+                    <button class="control-button" id="stopBtn">
+                        <svg class="control-icon" viewBox="0 0 24 24" fill="currentColor">
+                            <rect x="6" y="6" width="12" height="12"/>
+                        </svg>
+                    </button>
+                    <div class="time-display">
+                        <span id="currentTime">0:00</span>
+                        <span> / </span>
+                        <span id="totalTime">0:00</span>
+                    </div>
+                    <button class="control-button reset-button" id="resetBtn">Upload New File</button>
+                </div>
+            </div>
+
+            <div class="loading" id="loading" style="display: none;">
+                <div class="spinner"></div>
+                <p>Processing audio file...</p>
+            </div>
+
+            <div class="error-message" id="errorMessage" style="display: none;"></div>
+        </main>
+
+        <footer>
+            <p>Built with Web Audio API • Canvas • JavaScript</p>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
