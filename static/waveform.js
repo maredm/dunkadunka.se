@@ -89,6 +89,8 @@ class AudioFile {
         this.envelopeData = [];
         this.repeat = true;
 
+        this.filename = null;
+
         this.view = { start: 0, end: 0, zoom: 1, amplitude_scaling: 1, followPlayhead: true }; // persisted view/zoom state
         this.selection = { start: 0, end: 0, zoom: 1 }; // persisted selection state
         this.playhead = { position: null, passive: true, inited: false, reachedEnd: false }; // playhead state
@@ -293,7 +295,9 @@ class AudioFile {
         this.stop();
         const waveform = await fetch(file);
         const arrayBuffer = await waveform.arrayBuffer();
-        return this.loadWaveformFromArrayBuffer(arrayBuffer);
+        const loadedBuffer = await this.loadWaveformFromArrayBuffer(arrayBuffer);
+        this.filename = file;
+        return loadedBuffer;
     }
 
     // load from a URL (fetch)
@@ -1009,6 +1013,7 @@ function renderWaveform() {
         // clear previous content and size to svg pixel height
         axis.innerHTML = '';
         axis.style.borderLeft = `1px solid black`;
+        if (displayHeight < 10) return; // too small to render anything
 
         // small helper to format tick values
         function fmt(v) {
@@ -1609,6 +1614,7 @@ function clearSpectrogram() {
         renderSpectrogram(true);
 
         document.getElementById('fileTitle').innerText = `${(input.files && input.files.length > 0) ? input.files[0].name : input.value}`;
+        window.audioFile.filename = `${(input.files && input.files.length > 0) ? input.files[0].name : input.value}`;
 
         try {
         } catch (err) {
@@ -1684,4 +1690,46 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 });
 
+// Toggle side panel visibility and adjust container width
+function toggleSidePanel() {
+    const sidePanel = document.getElementById('sidePanel');
+    const container = document.getElementById('container');
+    
+    if (!sidePanel || !container) {
+        console.warn('Side panel or container element not found');
+        return;
+    }
+    
+    // Check current visibility state
+    const isVisible = sidePanel.style.display == 'block';
+    
+    if (isVisible) {
+        // Hide side panel
+        sidePanel.style.display = 'none';
+        // Expand container to full width
+        container.style.width = '100%';
+    } else {
+        // Show side panel
+        sidePanel.style.display = 'block';
+        // Adjust container width to account for side panel
+        container.style.width = 'calc(100% - 20%)'; // Equivalent to lg:w-1/5
+    }
+    
+    // Trigger re-rendering to adjust to new layout
+    setTimeout(() => {
+        try {
+            renderWaveform();
+            if (spectrogramRendered) {
+                renderSpectrogram(true, 0, 'spectrogramCanvas1');
+            }
+        } catch (err) {
+            console.warn('Error re-rendering after panel toggle:', err);
+        }
+    }, 0); // Small delay to ensure layout has settled
+}
+
+// Make function globally available
+window.toggleSidePanel = toggleSidePanel;
+
 console.log('waveform.js loaded');
+

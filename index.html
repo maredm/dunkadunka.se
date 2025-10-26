@@ -44,11 +44,14 @@
                 <option value="seconds">Seconds</option>
                 <option value="samples">Samples</option>
             </select>
+            <button id="sidePanelBtn" title="Toggle sidepanel" aria-label="Save as" class="text-sm px-4 py-[6px] active:bg-[#00000030] hover:bg-[#cc781e10] active:py-[7px]" style="height:32px; color: #cc781eff; display:block; user-select:none; cursor:pointer; border:none;" onclick="toggleSidePanel();updateAudioStats();">
+            Show/hide info panel
+        </button>
         </div>
     </header>
     <section class="flex">
             <!-- Measurement entries will be dynamically added here -->
-            <div class="mx-auto w-full" style="background-color: #cc781e22; height: calc(100vh - 64px); position: absolute; top: 32px;" id="container">
+            <div class="mx-auto w-full" style="background-color: #cc781e22; height: calc(100vh - 64px); position: absolute; top: 32px; left: 0;" id="container">
                 <div style="position:absolute; top:0; right:0; width:52px; height:32px; display:flex; align-items:center; justify-content:center; z-index:50;" class=" active:py-[7px]">
                     <button id="resetZoomBtn" title="Reset zoom" aria-label="Reset zoom" alt="Reset zoom"
                                     class="text-white hover:bg-[#cc781e10] active:bg-[#00000030] active:py-[7px]"
@@ -71,7 +74,7 @@
                         </svg>
                     </button>
                 </div>
-                <div id="waveformLoading" style="width:calc(100vw - 52px);height:calc(100vh - 48px);left:0;display:flex;align-items:center;justify-content:center;flex-direction:column;color:#ccc; position:absolute; top: 32px; background-color: #00000088;">
+                <div id="waveformLoading" style="width:100%;height:calc(100vh - 48px);left:0;display:flex;align-items:center;justify-content:center;flex-direction:column;color:#ccc; position:absolute; top: 32px; background-color: #00000088;">
                     <svg width="80" height="40" viewBox="0 0 24 12" fill="#cc781e" id="loadingAnimation"><rect x="0" y="4" width="3" height="4"><animate attributeName="height" values="4;10;4" dur="0.8s" repeatCount="indefinite"/></rect><rect x="6" y="4" width="3" height="4"><animate attributeName="height" values="6;12;6" dur="0.8s" begin="0.2s" repeatCount="indefinite"/></rect><rect x="12" y="4" width="3" height="4"><animate attributeName="height" values="4;10;4" dur="0.8s" begin="0.4s" repeatCount="indefinite"/></rect><rect x="18" y="4" width="3" height="4"><animate attributeName="height" values="6;12;6" dur="0.8s" begin="0.6s" repeatCount="indefinite"/></rect></svg>
                     <small style="margin-top:8px;color:#cc781eff;text-transform:uppercase" id="loadingText">Loading waveform</small>
                 </div>
@@ -83,7 +86,77 @@
                 <svg id="waveformSVG" style="cursor: text; width: calc(100% - 52px); height: calc(50vh - 56px); position:absolute; top: 32px;" xmlns="http://www.w3.org/2000/svg" class="block bg-black"></svg>
 
             </div>
-            <div id="statusBar" style="width: 100vw; height: 32px; position: absolute; bottom: 0; left: 0; background-color: #cc781e35; display: flex; align-items: center; justify-content:space-between; gap: 16px;">
+            <!-- Side panel -->
+            <div id="sidePanel" class="lg:w-1/5 bg-[#00000088] border-l border-[#cc781e55] overflow-y-hide absolute top-8 right-0 hidden" style="height: calc(100vh - 64px); flex-direction: column; box-sizing: border-box; z-index: 100;">
+                <h2 class="text-sm bg-[#cc781e2C] h-8 py-[6px] px-4" style="color: #cc781eff;">Key bindings</h2>
+                <div style="color: #cc781ecc;" class="py-2 px-4 bg-[#cc781e11] text-sm pb-6">
+                    <div id="keyBindings">
+                        <div class="mb-2">
+                            <span>Play/Pause:</span>
+                            <span class="font-semibold">Spacebar</span>
+                        </div>
+                        <div class="mb-2">
+                            <span>Increase FFT Size:</span>
+                            <span class="font-semibold">Ctrl + Shift + Up</span>
+                        </div>
+                        <div class="mb-2">
+                            <span>Decrease FFT Size:</span>
+                            <span class="font-semibold">Ctrl + Shift + Down</span>
+                        </div>
+                        <div class="mb-2">
+                            <span>More linear spectrogram:</span>
+                            <span class="font-semibold">Ctrl + Alt + Up</span>
+                        </div>
+                        <div class="mb-2">
+                            <span>More logarithmic spectrogram:</span>
+                            <span class="font-semibold">Ctrl + Alt + Down</span>
+                        </div>
+                    </div>
+                </div>
+                <h2 class="text-sm bg-[#cc781e2C] h-8 py-[6px] px-4" style="color: #cc781eff;">Waveform information</h2>
+                <div style="color: #cc781ecc; height: 100vh;" class="py-2 px-4 bg-[#cc781e11] text-sm pb-6">
+                    <div id="audioStats">
+                        <div class="mb-2">
+                            <span class="font-medium">Sample Rate:</span>
+                            <span id="sampleRate">—</span>
+                        </div>
+                        <div class="mb-2">
+                            <span class="font-medium">Duration:</span>
+                            <span id="duration">—</span>
+                        </div>
+                        <div class="mb-2">
+                            <span class="font-medium">File Name:</span>
+                            <span id="fileName">—</span>
+                        </div>
+                        <div class="mb-2">
+                            <span class="font-medium">RMS:</span>
+                            <span id="rmsValue">—</span>
+                        </div>
+                    </div>
+                    <script>
+                    function updateAudioStats() {
+                        if (window.audioFile) {
+                            document.getElementById('sampleRate').textContent = window.audioFile.sampleRate ? `${window.audioFile.sampleRate} Hz` : '—';
+                            document.getElementById('duration').textContent = window.audioFile.length ? `${(window.audioFile.length / window.audioFile.sampleRate).toFixed(3)} s` : '—';
+                            document.getElementById('fileName').textContent = window.audioFile.filename ? window.audioFile.filename : '—';
+                            // Calculate RMS if waveform data exists
+                            if (window.audioFile.samples(0) && window.audioFile.length > 0) {
+                                let sumSquares = 0;
+                                for (let i = 0; i < window.audioFile.length; i++) {
+                                    sumSquares += window.audioFile.samples(0)[i] * window.audioFile.samples(0)[i];
+                                }
+                                const rms = Math.sqrt(sumSquares / window.audioFile.length);
+                                document.getElementById('rmsValue').textContent = (20 * Math.log10(rms)).toFixed(2) + ' dB';
+                            } else {
+                                document.getElementById('rmsValue').textContent = '—';
+                            }
+                        }
+                    }
+                    </script>
+                </div>
+            </div>
+    </section>
+    <div id="statusBar" style="width: 100vw; height: 32px; position: absolute; bottom: 0; left: 0; background-color: #cc781e35; display: flex; align-items: center; justify-content:space-between; gap: 16px;">
                 <span id="fftSizeDisplay" class="text-sm px-4 py-[6px]" style="color:#cc781ecc; user-select:none; display:block; max-width:60vw; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                             No file loaded
                         </span>
@@ -100,7 +173,6 @@
             <script>
             console.log('waveform.html script loaded');
             </script>
-    </section>
     <script src="static/waveform.js" type="module"></script>
 </body>
 </html>
