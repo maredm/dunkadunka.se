@@ -1,0 +1,42 @@
+/* ./your-css-folder/styles.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+@tailwind colgroup;
+@tailwind table;
+@tailwind scrollbar;
+@tailwind forms;
+@tailwind aspect-ratio;
+@tailwind line-clamp;
+@tailwind typography;
+
+body {
+    font-family: 'Outfit', sans-serif;
+    background-color: #f3f4f6; /* Tailwind's gray-100 */
+    color: #111827; /* Tailwind's gray-900 */
+}
+
+/* Custom Dropdown Styles */
+.dropdown {position: relative; display: inline-block;}
+.dropdown button {color: white; padding: 4px 12px; border-radius: 4px; cursor: pointer;}
+.dropdown button:hover {background-color: #374151;}
+.dropdown:hover .dropdown-content {display: block;}
+.dropdown-content {display: none; position: absolute; left: 0; padding-top: 4px; color: black; min-width: 160px; border-radius: 4px; box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2); z-index: 1;}
+.dropdown-content a:first-child {border-top-left-radius: 4px; border-top-right-radius: 4px;}
+.dropdown-content a:last-child {border-bottom-left-radius: 4px; border-bottom-right-radius: 4px;}
+.dropdown-content a {display: block; padding: 8px 16px; text-decoration: none; color: black; background-color: white;}
+.dropdown-content a:hover {background-color: #e5e7eb;}
+
+* {
+    box-sizing: border-box;
+    user-select: none;
+}
+
+table { border-collapse: collapse; border-spacing: 0 0.5em; }
+tr:hover { background-color: #fafbfd; } /* Tailwind's gray-100 */
+td { padding: 0.25em 1em; } /* Tailwind's gray-200 */
+tr {
+    cursor: pointer;
+    border-bottom: 4px solid #fff; /* Default border color */
+    transition: border-color 0.3s ease;
+}
