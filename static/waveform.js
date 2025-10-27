@@ -1682,7 +1682,7 @@ function clearSpectrogram() {
     }, { passive: false });
 })();
 
-function setLoadingState(isLoading) {
+function setLoadingState(isLoading, text = 'Loading...') {
     const loadingSVG = document.getElementById('waveformLoading');
     const spectrogramCanvas1 = document.getElementById('spectrogramCanvas1');
     const waveformVis = document.getElementById('waveformSVG');
@@ -1693,7 +1693,7 @@ function setLoadingState(isLoading) {
         }
         const loadingText = document.getElementById('loadingText');
         if (loadingText) {
-            loadingText.innerText = 'Loading...';
+            loadingText.innerText = text;
         }
         loadingSVG.style.display = 'flex';
         spectrogramCanvas1.style.display = 'none';
@@ -1783,10 +1783,12 @@ function toggleSidePanel() {
 }
 
 function applyFilter() {
+    setLoadingState(true, 'Applying filter...');
     window.audioFile.applySOSFilter();
     window.audioFile.processWaveformData();
     renderSpectrogram(true, 0, 'spectrogramCanvas1');
     renderWaveform();
+    setLoadingState(false);
 }
 window.applyFilter = applyFilter;
 // Make function globally available
