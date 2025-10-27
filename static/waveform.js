@@ -1784,7 +1784,7 @@ function toggleSidePanel() {
 
 function applyFilter() {
     window.audioFile.applySOSFilter();
-    window.auidoFile.processWaveformData();
+    window.audioFile.processWaveformData();
     renderSpectrogram(true, 0, 'spectrogramCanvas1');
     renderWaveform();
 }
