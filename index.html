@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
@@ -8,7 +9,7 @@
     <link rel="stylesheet" href="static/styles.css">
     <script>
         // Configure Tailwind to use the Outfit font family
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', function () {
             const style = document.createElement('style');
             style.innerHTML = `
                 body {
@@ -17,130 +18,205 @@
             `;
             document.head.appendChild(style);
         });
-        </script>
+    </script>
 </head>
+
 <body class="bg-black" style="overflow: hidden;">
     <header class="w-full flex items-center justify-between p-0" style="background-color: #cc781e35; height: 32px;">
         <div class="flex items-center gap-3" style="cursor: pointer;">
-            <input id="wavefileInput" type="file" accept="audio/*" class="text-white text-sm px-2 py-1 rounded" style="color: #cc781eff; background-color: #cc781e00; display: none; cursor: pointer;">
-            <label for="wavefileInput" class="text-white text-sm px-4 py-[6px] active:bg-[#00000030] hover:bg-[#cc781e10] active:py-[7px]" style="height: 32px; color: #cc781eff; display: block; user-select: none; cursor: pointer;">Open...</label>
-            <button id="saveAsBtn" title="Save as..." aria-label="Save as" class="text-sm px-4 py-[6px] active:bg-[#00000030] hover:bg-[#cc781e10] active:py-[7px]" style="height:32px; color: #cc781eff; display:block; user-select:none; cursor:pointer; border:none;" onclick="window.audioFile.downloadWav();">
+            <input id="wavefileInput" type="file" accept="audio/*" class="text-white text-sm px-2 py-1 rounded"
+                style="color: #cc781eff; background-color: #cc781e00; display: none; cursor: pointer;">
+            <label for="wavefileInput"
+                class="text-white text-sm px-4 py-[6px] active:bg-[#00000030] hover:bg-[#cc781e10] active:py-[7px]"
+                style="height: 32px; color: #cc781eff; display: block; user-select: none; cursor: pointer;">Open...</label>
+            <button id="saveAsBtn" title="Save as..." aria-label="Save as"
+                class="text-sm px-4 py-[6px] active:bg-[#00000030] hover:bg-[#cc781e10] active:py-[7px]"
+                style="height:32px; color: #cc781eff; display:block; user-select:none; cursor:pointer; border:none;"
+                onclick="window.audioFile.downloadWav();">
                 Save as...
             </button>
-            <button id="saveViewAsBtn" title="Save as..." aria-label="Save as" class="text-sm px-4 py-[6px] active:bg-[#00000030] hover:bg-[#cc781e10] active:py-[7px]" style="height:32px; color: #cc781eff; display:block; user-select:none; cursor:pointer; border:none;" onclick="window.audioFile.downloadWav(window.audioFile.view.start, window.audioFile.view.end);">
+            <button id="saveViewAsBtn" title="Save as..." aria-label="Save as"
+                class="text-sm px-4 py-[6px] active:bg-[#00000030] hover:bg-[#cc781e10] active:py-[7px]"
+                style="height:32px; color: #cc781eff; display:block; user-select:none; cursor:pointer; border:none;"
+                onclick="window.audioFile.downloadWav(window.audioFile.view.start, window.audioFile.view.end);">
                 Save current view as...
             </button>
         </div>
-        <div class="flex-1 flex items-center justify-center" style="position: absolute; top: 0; margin: 0 auto; width: calc(100% - 200px); left: 0; right: 0; z-index: -99;">
+        <div class="flex-1 flex items-center justify-center"
+            style="position: absolute; top: 0; margin: 0 auto; width: calc(100% - 200px); left: 0; right: 0; z-index: -99;">
             <div style="text-align:center; pointer-events:none;">
-                <span id="fileTitle" class="text-sm px-4 py-[6px]" style="color:#cc781ecc; user-select:none; display:block; max-width:60vw; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                <span id="fileTitle" class="text-sm px-4 py-[6px]"
+                    style="color:#cc781ecc; user-select:none; display:block; max-width:60vw; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
                     No file loaded
                 </span>
             </div>
         </div>
         <div class="flex items-center gap-4">
-            <label for="timeDisplaySelect" class="text-sm text-gray-300" style="color: #cc781ecc; user-select: none;">Time display:</label>
-            <select id="timeDisplaySelect" class="text-white text-sm px-2 py-1 rounded" style="color: #cc781eff; background-color: #cc781e00; text-decoration: underline; user-select: none; cursor: pointer;">
+            <label for="timeDisplaySelect" class="text-sm text-gray-300"
+                style="color: #cc781ecc; user-select: none;">Time display:</label>
+            <select id="timeDisplaySelect" class="text-white text-sm px-2 py-1 rounded"
+                style="color: #cc781eff; background-color: #cc781e00; text-decoration: underline; user-select: none; cursor: pointer;">
                 <option value="seconds">Seconds</option>
                 <option value="samples">Samples</option>
             </select>
-            <button id="sidePanelBtn" title="Toggle sidepanel" aria-label="Save as" class="text-sm px-4 py-[6px] active:bg-[#00000030] hover:bg-[#cc781e10] active:py-[7px]" style="height:32px; color: #cc781eff; display:block; user-select:none; cursor:pointer; border:none;" onclick="window.toggleSidePanel();updateAudioStats();">
-            Show/hide info panel
-        </button>
+            <button id="sidePanelBtn" title="Toggle sidepanel" aria-label="Save as"
+                class="text-sm px-4 py-[6px] active:bg-[#00000030] hover:bg-[#cc781e10] active:py-[7px]"
+                style="height:32px; color: #cc781eff; display:block; user-select:none; cursor:pointer; border:none;"
+                onclick="window.toggleSidePanel();updateAudioStats();">
+                Show/hide info panel
+            </button>
+            <button id="fullscreenBtn" title="Fullscreen" aria-label="Fullscreen"
+                class="text-sm px-4 py-[6px] active:bg-[#00000030] hover:bg-[#cc781e10] active:py-[7px]"
+                style="height:32px; color: #cc781eff; display:block; user-select:none; cursor:pointer; border:none;"
+                onclick="toggleFullscreen();">
+                Fullscreen
+            </button>
         </div>
+        <script>
+            function toggleFullscreen() {
+                if (!document.fullscreenElement) {
+                    const docElm = document.documentElement;
+                    if (docElm.requestFullscreen) {
+                        docElm.requestFullscreen();
+                    } else if (docElm.mozRequestFullScreen) { /* Firefox */
+                        docElm.mozRequestFullScreen();
+                    } else if (docElm.webkitRequestFullscreen) { /* Chrome, Safari & Opera */
+                        docElm.webkitRequestFullscreen();
+                    } else if (docElm.msRequestFullscreen) { /* IE/Edge */
+                        docElm.msRequestFullscreen();
+                    }
+                } else {
+                    document.exitFullscreen();
+                }
+            }
+        </script>
     </header>
     <section class="flex">
-            <!-- Measurement entries will be dynamically added here -->
-            <div class="mx-auto w-full" style="background-color: #cc781e22; height: calc(100vh - 64px); position: absolute; top: 32px; left: 0;" id="container">
-                <div style="position:absolute; top:0; right:0; width:52px; height:32px; display:flex; align-items:center; justify-content:center; z-index:50;" class=" active:py-[7px]">
-                    <button id="resetZoomBtn" title="Reset zoom" aria-label="Reset zoom" alt="Reset zoom"
-                                    class="text-white hover:bg-[#cc781e10] active:bg-[#00000030] active:py-[7px]"
-                                    style="width:52px; height:32px; border:none; color:#cc781eff; cursor:pointer; display:block;">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="margin: auto;" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                            <path d="M8 3H5a2 2 0 0 0-2 2v3" stroke="#cc781eff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-                            <path d="M16 21h3a2 2 0 0 0 2-2v-3" stroke="#cc781eff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-                            <path d="M21 8V5a2 2 0 0 0-2-2h-3" stroke="#cc781eff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-                            <path d="M3 16v3a2 2 0 0 0 2 2h3" stroke="#cc781eff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        <!-- Measurement entries will be dynamically added here -->
+        <div class="mx-auto w-full"
+            style="background-color: #cc781e22; height: calc(100vh - 64px); position: absolute; top: 32px; left: 0;"
+            id="container">
+            <div style="position:absolute; top:0; right:0; width:52px; height:32px; display:flex; align-items:center; justify-content:center; z-index:50;"
+                class=" active:py-[7px]">
+                <button id="resetZoomBtn" title="Reset zoom" aria-label="Reset zoom" alt="Reset zoom"
+                    class="text-white hover:bg-[#cc781e10] active:bg-[#00000030] active:py-[7px]"
+                    style="width:52px; height:32px; border:none; color:#cc781eff; cursor:pointer; display:block;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="margin: auto;"
+                        xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                        <path d="M8 3H5a2 2 0 0 0-2 2v3" stroke="#cc781eff" stroke-width="1.6" stroke-linecap="round"
+                            stroke-linejoin="round" fill="none" />
+                        <path d="M16 21h3a2 2 0 0 0 2-2v-3" stroke="#cc781eff" stroke-width="1.6" stroke-linecap="round"
+                            stroke-linejoin="round" fill="none" />
+                        <path d="M21 8V5a2 2 0 0 0-2-2h-3" stroke="#cc781eff" stroke-width="1.6" stroke-linecap="round"
+                            stroke-linejoin="round" fill="none" />
+                        <path d="M3 16v3a2 2 0 0 0 2 2h3" stroke="#cc781eff" stroke-width="1.6" stroke-linecap="round"
+                            stroke-linejoin="round" fill="none" />
 
-                            <!-- Larger inner arrows pointing outwards -->
-                            <!-- Up arrow -->
-                            <polygon points="12,4 9,8 15,8" fill="#cc781eff"/>
-                            <!-- Right arrow -->
-                            <polygon points="20,12 16,9 16,15" fill="#cc781eff"/>
-                            <!-- Down arrow -->
-                            <polygon points="12,20 9,16 15,16" fill="#cc781eff"/>
-                            <!-- Left arrow -->
-                            <polygon points="4,12 8,9 8,15" fill="#cc781eff"/>
-                        </svg>
-                    </button>
-                </div>
-                <div id="waveformLoading" style="width:100%;height:calc(100vh - 48px);left:0;display:flex;align-items:center;justify-content:center;flex-direction:column;color:#ccc; position:absolute; top: 32px; background-color: #00000088;">
-                    <svg width="80" height="40" viewBox="0 0 24 12" fill="#cc781e" id="loadingAnimation"><rect x="0" y="4" width="3" height="4"><animate attributeName="height" values="4;10;4" dur="0.8s" repeatCount="indefinite"/></rect><rect x="6" y="4" width="3" height="4"><animate attributeName="height" values="6;12;6" dur="0.8s" begin="0.2s" repeatCount="indefinite"/></rect><rect x="12" y="4" width="3" height="4"><animate attributeName="height" values="4;10;4" dur="0.8s" begin="0.4s" repeatCount="indefinite"/></rect><rect x="18" y="4" width="3" height="4"><animate attributeName="height" values="6;12;6" dur="0.8s" begin="0.6s" repeatCount="indefinite"/></rect></svg>
-                    <small style="margin-top:8px;color:#cc781eff;text-transform:uppercase" id="loadingText">Loading waveform</small>
-                </div>
-                                
-                <div id="spectrogramCanvas1YAxis" class="absolute" style="right: 0; top: calc(50vh - 12px); width: 52px; height: calc(50vh - 52px);"></div>
-                <canvas id="spectrogramCanvas1" style="width: calc(100% - 48px); height: calc(50vh - 52px); top: calc(50vh - 12px); left: 0;" class="absolute" xmlns="http://www.w3.org/2000/svg" class="block bg-black">        </canvas>
-                <div id="waveformXAxis" class="absolute" style="width: calc(100vw - 52px); height: 32px; top: 0;"></div>
-                <div id="waveformYAxis" class="absolute" style="right: 0; top: 32px; width: 52px; height: calc(50vh - 56px);"></div>
-                <svg id="waveformSVG" style="cursor: text; width: calc(100% - 52px); height: calc(50vh - 56px); position:absolute; top: 32px;" xmlns="http://www.w3.org/2000/svg" class="block bg-black"></svg>
-
+                        <!-- Larger inner arrows pointing outwards -->
+                        <!-- Up arrow -->
+                        <polygon points="12,4 9,8 15,8" fill="#cc781eff" />
+                        <!-- Right arrow -->
+                        <polygon points="20,12 16,9 16,15" fill="#cc781eff" />
+                        <!-- Down arrow -->
+                        <polygon points="12,20 9,16 15,16" fill="#cc781eff" />
+                        <!-- Left arrow -->
+                        <polygon points="4,12 8,9 8,15" fill="#cc781eff" />
+                    </svg>
+                </button>
             </div>
-            <!-- Side panel -->
-            <div id="sidePanel" class="lg:w-1/6 bg-[#00000088] border-l border-[#cc781e55] overflow-y-hide absolute top-8 right-0 hidden" style="height: calc(100vh - 64px); flex-direction: column; box-sizing: border-box; z-index: 100;">
-                <h2 class="text-sm bg-[#cc781e2C] h-8 py-[6px] px-4" style="color: #cc781eff;">Key bindings</h2>
-                <div style="color: #cc781ecc;" class="py-2 px-4 bg-[#cc781e11] text-sm pb-6">
-                    <div id="keyBindings">
-                        <div class="mb-2">
-                            <span>Play/Pause:</span>
-                            <span class="font-semibold">Spacebar</span>
-                        </div>
-                        <div class="mb-2">
-                            <span>Increase FFT Size:</span>
-                            <span class="font-semibold">Ctrl + Shift + Up</span>
-                        </div>
-                        <div class="mb-2">
-                            <span>Decrease FFT Size:</span>
-                            <span class="font-semibold">Ctrl + Shift + Down</span>
-                        </div>
-                        <div class="mb-2">
-                            <span>More linear spectrogram:</span>
-                            <span class="font-semibold">Ctrl + Alt + Up</span>
-                        </div>
-                        <div class="mb-2">
-                            <span>More logarithmic spectrogram:</span>
-                            <span class="font-semibold">Ctrl + Alt + Down</span>
-                        </div>
+            <div id="waveformLoading"
+                style="width:100%;height:calc(100vh - 48px);left:0;display:flex;align-items:center;justify-content:center;flex-direction:column;color:#ccc; position:absolute; top: 32px; background-color: #00000088;">
+                <svg width="80" height="40" viewBox="0 0 24 12" fill="#cc781e" id="loadingAnimation">
+                    <rect x="0" y="4" width="3" height="4">
+                        <animate attributeName="height" values="4;10;4" dur="0.8s" repeatCount="indefinite" />
+                    </rect>
+                    <rect x="6" y="4" width="3" height="4">
+                        <animate attributeName="height" values="6;12;6" dur="0.8s" begin="0.2s"
+                            repeatCount="indefinite" />
+                    </rect>
+                    <rect x="12" y="4" width="3" height="4">
+                        <animate attributeName="height" values="4;10;4" dur="0.8s" begin="0.4s"
+                            repeatCount="indefinite" />
+                    </rect>
+                    <rect x="18" y="4" width="3" height="4">
+                        <animate attributeName="height" values="6;12;6" dur="0.8s" begin="0.6s"
+                            repeatCount="indefinite" />
+                    </rect>
+                </svg>
+                <small style="margin-top:8px;color:#cc781eff;text-transform:uppercase" id="loadingText">Loading
+                    waveform</small>
+            </div>
+
+            <div id="spectrogramCanvas1YAxis" class="absolute"
+                style="right: 0; top: calc(50vh - 12px); width: 52px; height: calc(50vh - 52px);"></div>
+            <canvas id="spectrogramCanvas1"
+                style="width: calc(100% - 48px); height: calc(50vh - 52px); top: calc(50vh - 12px); left: 0;"
+                class="absolute" xmlns="http://www.w3.org/2000/svg" class="block bg-black"> </canvas>
+            <div id="waveformXAxis" class="absolute" style="width: calc(100vw - 52px); height: 32px; top: 0;"></div>
+            <div id="waveformYAxis" class="absolute"
+                style="right: 0; top: 32px; width: 52px; height: calc(50vh - 56px);"></div>
+            <svg id="waveformSVG"
+                style="cursor: text; width: calc(100% - 52px); height: calc(50vh - 56px); position:absolute; top: 32px;"
+                xmlns="http://www.w3.org/2000/svg" class="block bg-black"></svg>
+
+        </div>
+        <!-- Side panel -->
+        <div id="sidePanel"
+            class="lg:w-1/6 bg-[#00000088] border-l border-[#cc781e55] overflow-y-hide absolute top-8 right-0 hidden"
+            style="height: calc(100vh - 64px); flex-direction: column; box-sizing: border-box; z-index: 100;">
+            <h2 class="text-sm bg-[#cc781e2C] h-8 py-[6px] px-4" style="color: #cc781eff;">Key bindings</h2>
+            <div style="color: #cc781ecc;" class="py-2 px-4 bg-[#cc781e11] text-sm pb-6">
+                <div id="keyBindings">
+                    <div class="mb-2">
+                        <span>Play/Pause:</span>
+                        <span class="font-semibold">Spacebar</span>
+                    </div>
+                    <div class="mb-2">
+                        <span>Increase FFT Size:</span>
+                        <span class="font-semibold">Ctrl + Shift + Up</span>
+                    </div>
+                    <div class="mb-2">
+                        <span>Decrease FFT Size:</span>
+                        <span class="font-semibold">Ctrl + Shift + Down</span>
+                    </div>
+                    <div class="mb-2">
+                        <span>More linear spectrogram:</span>
+                        <span class="font-semibold">Ctrl + Alt + Up</span>
+                    </div>
+                    <div class="mb-2">
+                        <span>More logarithmic spectrogram:</span>
+                        <span class="font-semibold">Ctrl + Alt + Down</span>
                     </div>
                 </div>
-                <h2 class="text-sm bg-[#cc781e2C] h-8 py-[6px] px-4" style="color: #cc781eff;">Waveform information</h2>
-                <div style="color: #cc781ecc; height: 100vh;" class="py-2 px-4 bg-[#cc781e11] text-sm pb-6">
-                    <div id="audioStats">
-                        <div class="mb-2">
-                            <span class="font-medium">Sample Rate:</span>
-                            <span id="sampleRate">—</span>
-                        </div>
-                        <div class="mb-2">
-                            <span class="font-medium">Duration:</span>
-                            <span id="duration">—</span>
-                        </div>
-                        <div class="mb-2">
-                            <span class="font-medium">File Name:</span>
-                            <span id="fileName">—</span>
-                        </div>
-                        <div class="mb-2">
-                            <span class="font-medium">RMS:</span>
-                            <span id="rmsValue">—</span>
-                        </div>
+            </div>
+            <h2 class="text-sm bg-[#cc781e2C] h-8 py-[6px] px-4" style="color: #cc781eff;">Waveform information</h2>
+            <div style="color: #cc781ecc; height: 100vh;" class="py-2 px-4 bg-[#cc781e11] text-sm pb-6">
+                <div id="audioStats">
+                    <div class="mb-2">
+                        <span class="font-medium">Sample Rate:</span>
+                        <span id="sampleRate">—</span>
                     </div>
-                    <script>
+                    <div class="mb-2">
+                        <span class="font-medium">Duration:</span>
+                        <span id="duration">—</span>
+                    </div>
+                    <div class="mb-2">
+                        <span class="font-medium">File Name:</span>
+                        <span id="fileName">—</span>
+                    </div>
+                    <div class="mb-2">
+                        <span class="font-medium">RMS:</span>
+                        <span id="rmsValue">—</span>
+                    </div>
+                </div>
+                <script>
                     function updateAudioStats() {
                         if (window.audioFile) {
                             document.getElementById('sampleRate').textContent = window.audioFile.sampleRate ? `${window.audioFile.sampleRate} Hz` : '—';
                             document.getElementById('duration').textContent = window.audioFile.length ? `${(window.audioFile.length / window.audioFile.sampleRate).toFixed(3)} s` : '—';
                             document.getElementById('fileName').textContent = window.audioFile.filename ? window.audioFile.filename : '—';
                             // Calculate RMS if waveform data exists
-                            if (window.audioFile.samples(0) && window.audioFile.length > 0) {
+                            if (window.audioFile.samples(0) && window.audioFile.length < 10 * window.audioFile.sampleRate) { // Limit to 10 seconds for performance
                                 let sumSquares = 0;
                                 for (let i = 0; i < window.audioFile.length; i++) {
                                     sumSquares += window.audioFile.samples(0)[i] * window.audioFile.samples(0)[i];
@@ -152,27 +228,31 @@
                             }
                         }
                     }
-                    </script>
-                </div>
+                </script>
             </div>
+        </div>
     </section>
-    <div id="statusBar" style="width: 100vw; height: 32px; position: absolute; bottom: 0; left: 0; background-color: #cc781e35; display: flex; align-items: center; justify-content:space-between; gap: 16px;">
-                <span id="fftSizeDisplay" class="text-sm px-4 py-[6px]" style="color:#cc781ecc; user-select:none; display:block; max-width:60vw; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                            No file loaded
-                        </span>
-                <div class="flex-1 flex items-center justify-center" style="position: absolute; top: 0; margin: 0 auto; width: calc(100% - 200px); left: 0; right: 0;">
-                    
-                    <div style="text-align:center; pointer-events:none;">
-                        <span id="spectrogramStatus" class="text-sm px-2 py-1" style="color: #cc781e">—</span>
-                
-                        
-                    </div>
-                </div>
-                <span id="waveformStatus" class="text-sm px-2 py-1" style="color: #cc781e">Status</span>
+    <div id="statusBar"
+        style="width: 100vw; height: 32px; position: absolute; bottom: 0; left: 0; background-color: #cc781e35; display: flex; align-items: center; justify-content:space-between; gap: 16px;">
+        <span id="fftSizeDisplay" class="text-sm px-4 py-[6px]"
+            style="color:#cc781ecc; user-select:none; display:block; max-width:60vw; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+            No file loaded
+        </span>
+        <div class="flex-1 flex items-center justify-center"
+            style="position: absolute; top: 0; margin: 0 auto; width: calc(100% - 200px); left: 0; right: 0;">
+
+            <div style="text-align:center; pointer-events:none;">
+                <span id="spectrogramStatus" class="text-sm px-2 py-1" style="color: #cc781e">—</span>
+
+
             </div>
-            <script>
-            console.log('waveform.html script loaded');
-            </script>
+        </div>
+        <span id="waveformStatus" class="text-sm px-2 py-1" style="color: #cc781e">Status</span>
+    </div>
+    <script>
+        console.log('waveform.html script loaded');
+    </script>
     <script src="static/waveform.js" type="module"></script>
 </body>
+
 </html>
