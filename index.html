@@ -276,13 +276,14 @@
                             document.getElementById('duration').textContent = window.audioFile.length ? `${(window.audioFile.length / window.audioFile.sampleRate).toFixed(3)} s` : '—';
                             document.getElementById('fileName').textContent = window.audioFile.filename ? window.audioFile.filename : '—';
                             // Calculate RMS if waveform data exists
-                            if (window.audioFile.samples(0) && window.audioFile.length < 10 * window.audioFile.sampleRate) { // Limit to 10 seconds for performance
+                            if (window.audioFile.samples(0) && window.audioFile.length < 1000 * window.audioFile.sampleRate) { // Limit to 1000 seconds for performance
+                                const channelData = window.audioFile.samples(0);
                                 let sumSquares = 0;
                                 for (let i = 0; i < window.audioFile.length; i++) {
-                                    sumSquares += window.audioFile.samples(0)[i] * window.audioFile.samples(0)[i];
+                                    sumSquares += channelData[i] * channelData[i];
                                 }
-                                const rms = Math.sqrt(sumSquares / window.audioFile.length);
-                                document.getElementById('rmsValue').textContent = (20 * Math.log10(rms)).toFixed(2) + ' dB';
+                                const rms = Math.abs(sumSquares / window.audioFile.length);
+                                document.getElementById('rmsValue').textContent = (10 * Math.log10(rms)).toFixed(2) + ' dB';
                             } else {
                                 document.getElementById('rmsValue').textContent = '—';
                             }
@@ -300,8 +301,14 @@
                         <button id="applyFilterBtn" title="Apply filter" aria-label="Apply filter"
                             class="text-sm px-4 button-custom"
                             style="height:32px; display:block; user-select:none; cursor:pointer; border:none;"
-                            onclick="window.applyFilter();">
-                            Apply Filter
+                            onclick="applyFilter();">
+                            Apply A-weighting Filter
+                        </button>
+                        <button id="applyFilterBtn" title="Apply filter" aria-label="Apply filter"
+                            class="text-sm px-4 button-custom"
+                            style="height:32px; display:block; user-select:none; cursor:pointer; border:none;"
+                            onclick="applyFilter({a: [1, -1.8153396116625289, 0.8310041056111546], b: [0.9115859293184209, -1.8231718586368417, 0.9115859293184209]});">
+                            Apply 100 Hz HPF Filter
                         </button>
                     </div>
                 </div>
