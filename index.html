@@ -60,6 +60,8 @@
                     }
                 };
                 await checkAudioReady();
+                const fileTitle = document.getElementById('fileTitle');
+                fileTitle.textContent = file.name;
                 window.setLoadingState(false);
                 window._zoom = null;
                 window.audioFile.resetView();
