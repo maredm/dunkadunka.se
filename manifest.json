@@ -1,0 +1,125 @@
+{
+  "name": "DunkaDunka Lab - Audio Waveform Analyzer",
+  "short_name": "DunkaDunka Lab",
+  "description": "Professional audio waveform analyzer and spectrogram viewer for analyzing audio files",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#cc781e",
+  "orientation": "landscape-primary",
+  "scope": "/",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["music", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "static/icons/icon-72x72.svg",
+      "sizes": "72x72",
+      "type": "image/svg+xml",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "static/icons/icon-96x96.svg",
+      "sizes": "96x96",
+      "type": "image/svg+xml",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "static/icons/icon-128x128.svg",
+      "sizes": "128x128",
+      "type": "image/svg+xml",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "static/icons/icon-144x144.svg",
+      "sizes": "144x144",
+      "type": "image/svg+xml",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "static/icons/icon-152x152.svg",
+      "sizes": "152x152",
+      "type": "image/svg+xml",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "static/icons/icon-192x192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "static/icons/icon-384x384.svg",
+      "sizes": "384x384",
+      "type": "image/svg+xml",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "static/icons/icon-512x512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable any"
+    }
+  ],
+  "file_handlers": [
+    {
+      "action": "/",
+      "accept": {
+        "audio/wav": [".wav"],
+        "audio/mpeg": [".mp3"],
+        "audio/mp4": [".m4a", ".mp4"],
+        "audio/ogg": [".ogg"],
+        "audio/webm": [".webm"],
+        "audio/flac": [".flac"],
+        "audio/aac": [".aac"],
+        "audio/x-aiff": [".aiff", ".aif"],
+        "audio/x-ms-wma": [".wma"],
+        "audio/*": [".wav", ".mp3", ".m4a", ".mp4", ".ogg", ".webm", ".flac", ".aac", ".aiff", ".aif", ".wma"]
+      }
+    }
+  ],
+  "share_target": {
+    "action": "/",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "files": [
+        {
+          "name": "audio",
+          "accept": ["audio/*"]
+        }
+      ]
+    }
+  },
+  "shortcuts": [
+    {
+      "name": "Open Audio File",
+      "short_name": "Open Audio",
+      "description": "Open and analyze an audio file",
+      "url": "/",
+      "icons": [{ "src": "static/icons/icon-96x96.svg", "sizes": "96x96" }]
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "static/screenshots/desktop-screenshot.svg",
+      "sizes": "1280x720",
+      "type": "image/svg+xml",
+      "form_factor": "wide",
+      "label": "DunkaDunka Lab desktop interface showing waveform and spectrogram"
+    },
+    {
+      "src": "static/screenshots/mobile-screenshot.svg",
+      "sizes": "360x640",
+      "type": "image/svg+xml",
+      "form_factor": "narrow",
+      "label": "DunkaDunka Lab mobile interface"
+    }
+  ],
+  "edge_side_panel": {
+    "preferred_width": 400
+  },
+  "launch_handler": {
+    "client_mode": "focus-existing"
+  }
+}

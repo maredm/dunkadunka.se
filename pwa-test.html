@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PWA Test - DunkaDunka Lab</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #1a1a1a;
+            color: #cc781e;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .test-item {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #cc781e;
+            border-radius: 5px;
+            background-color: #2a2a2a;
+        }
+        .success {
+            color: #4CAF50;
+        }
+        .error {
+            color: #F44336;
+        }
+        button {
+            background-color: #cc781e;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #994611;
+        }
+        #results {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>DunkaDunka Lab PWA Test</h1>
+        
+        <div class="test-item">
+            <h3>Service Worker Status</h3>
+            <div id="sw-status">Checking...</div>
+        </div>
+        
+        <div class="test-item">
+            <h3>Manifest Status</h3>
+            <div id="manifest-status">Checking...</div>
+        </div>
+        
+        <div class="test-item">
+            <h3>File Handler Support</h3>
+            <div id="file-handler-status">Checking...</div>
+        </div>
+        
+        <div class="test-item">
+            <h3>Installation</h3>
+            <div id="install-status">Checking...</div>
+            <button id="install-btn" style="display: none;">Install PWA</button>
+        </div>
+        
+        <div class="test-item">
+            <h3>Test File Opening</h3>
+            <input type="file" id="test-file" accept="audio/*">
+            <button onclick="testFileOpening()">Test File Handling</button>
+            <div id="file-test-result"></div>
+        </div>
+        
+        <div id="results"></div>
+        
+        <div class="test-item">
+            <h3>Manual Tests</h3>
+            <ul>
+                <li>Try installing the app (should see install prompt in compatible browsers)</li>
+                <li>Try opening an audio file from the file system (if file handlers are supported)</li>
+                <li>Try sharing an audio file to this app (on mobile devices)</li>
+                <li>Check if the app works offline after visiting once</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // Test Service Worker
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistration().then(registration => {
+                if (registration) {
+                    document.getElementById('sw-status').innerHTML = '<span class="success">✓ Service Worker registered</span>';
+                } else {
+                    document.getElementById('sw-status').innerHTML = '<span class="error">✗ Service Worker not registered</span>';
+                }
+            });
+        } else {
+            document.getElementById('sw-status').innerHTML = '<span class="error">✗ Service Worker not supported</span>';
+        }
+
+        // Test Manifest
+        fetch('/manifest.json')
+            .then(response => response.json())
+            .then(manifest => {
+                document.getElementById('manifest-status').innerHTML = '<span class="success">✓ Manifest loaded successfully</span>';
+                console.log('Manifest:', manifest);
+            })
+            .catch(error => {
+                document.getElementById('manifest-status').innerHTML = '<span class="error">✗ Manifest failed to load</span>';
+                console.error('Manifest error:', error);
+            });
+
+        // Test File Handlers
+        if ('launchQueue' in window) {
+            document.getElementById('file-handler-status').innerHTML = '<span class="success">✓ File handlers supported</span>';
+        } else {
+            document.getElementById('file-handler-status').innerHTML = '<span class="error">✗ File handlers not supported</span>';
+        }
+
+        // Test Installation
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            document.getElementById('install-status').innerHTML = '<span class="success">✓ App can be installed</span>';
+            document.getElementById('install-btn').style.display = 'inline-block';
+        });
+
+        document.getElementById('install-btn').addEventListener('click', async () => {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                const result = await deferredPrompt.userChoice;
+                console.log('Install result:', result);
+                deferredPrompt = null;
+            }
+        });
+
+        // Test file opening
+        function testFileOpening() {
+            const fileInput = document.getElementById('test-file');
+            const file = fileInput.files[0];
+            if (file) {
+                if (file.type.startsWith('audio/')) {
+                    document.getElementById('file-test-result').innerHTML = 
+                        `<span class="success">✓ Audio file selected: ${file.name} (${file.type})</span>`;
+                    
+                    // Test if we can handle it
+                    if (window.handleSharedFile) {
+                        window.handleSharedFile(file);
+                    } else {
+                        console.log('File handling function not available');
+                    }
+                } else {
+                    document.getElementById('file-test-result').innerHTML = 
+                        `<span class="error">✗ Not an audio file: ${file.type}</span>`;
+                }
+            } else {
+                document.getElementById('file-test-result').innerHTML = 
+                    '<span class="error">✗ No file selected</span>';
+            }
+        }
+
+        // Check if app is installed
+        window.addEventListener('appinstalled', () => {
+            document.getElementById('install-status').innerHTML = '<span class="success">✓ App installed successfully</span>';
+        });
+
+        // Initial check for installation
+        if (window.matchMedia('(display-mode: standalone)').matches) {
+            document.getElementById('install-status').innerHTML = '<span class="success">✓ App is running in standalone mode</span>';
+        }
+    </script>
+</body>
+</html>

@@ -5,6 +5,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
     <title>DunkaDunka Lab</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#cc781e">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="DunkaDunka Lab">
+    <link rel="apple-touch-icon" href="static/icons/icon-192x192.svg">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="static/styles.css">
     <script>
@@ -18,6 +24,63 @@
             `;
             document.head.appendChild(style);
         });
+
+        // Register service worker for PWA functionality
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(function(registration) {
+                        console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                    }, function(err) {
+                        console.log('ServiceWorker registration failed: ', err);
+                    });
+            });
+
+            // Listen for messages from service worker (shared files)
+            navigator.serviceWorker.addEventListener('message', event => {
+                if (event.data && event.data.type === 'SHARED_FILE') {
+                    handleSharedFile(event.data.file);
+                }
+            });
+        }
+
+        // Handle files shared to the app
+        function handleSharedFile(file) {
+            if (file && file.type.startsWith('audio/')) {
+                // Wait for the audio system to be ready
+                const checkAudioReady = () => {
+                    if (window.audioFile && window.audioFile.loadFile) {
+                        window.audioFile.stop();
+                        window.setLoadingState(true);
+                        window.audioFile.loadFromFile(file);
+                        window.prevView = { start: 0, end: null, globalMax: null, globalMin: null, mags: null };
+                        window._zoom = null;
+
+                        window.setLoadingState(false);
+                        window._zoom = null;
+                        window.audioFile.resetView();
+                        renderWaveform();
+                        renderSpectrogram(true, 0, 'spectrogramCanvas1');
+                        updateAudioStats();
+
+                    } else {
+                        setTimeout(checkAudioReady, 100);
+                    }
+                };
+                checkAudioReady();
+            }
+        }
+
+        // Handle file system access API if available
+        if ('launchQueue' in window) {
+            window.launchQueue.setConsumer((launchParams) => {
+                if (launchParams.files && launchParams.files.length) {
+                    launchParams.files[0].getFile().then(file => {
+                        handleSharedFile(file);
+                    });
+                }
+            });
+        }
     </script>
 </head>
 

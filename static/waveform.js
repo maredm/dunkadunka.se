@@ -301,6 +301,19 @@ class AudioFile {
         return loadedBuffer;
     }
 
+    // load from a File object directly (from File API)
+    async loadFromFile(file) {
+        if (!(file instanceof File)) {
+            alert('Expected a File object');
+        }
+        
+        this.stop();
+        const arrayBuffer = await file.arrayBuffer();
+        const loadedBuffer = await this.loadWaveformFromArrayBuffer(arrayBuffer);
+        this.filename = file.name;
+        return loadedBuffer;
+    }
+
     // load from a URL (fetch)
     async loadFromUrl(url) {
         const resp = await fetch(url);
@@ -598,7 +611,7 @@ function xForSample(sample, displayWidth, audioFile = window.audioFile) {
     return Math.round(clamp(frac, 0, 1) * displayWidth);
 }
 
-let prevView = { start: 0, end: 0, globalMax: null, globalMin: null, mags: null };
+window.window.prevView = { start: 0, end: 0, globalMax: null, globalMin: null, mags: null };
 let spectrogramRendered = false;
 
 function renderSpectrogram(rerender = false, channel = 0, id = 'spectrogramCanvas1') {
@@ -649,10 +662,10 @@ function renderSpectrogram(rerender = false, channel = 0, id = 'spectrogramCanva
     let globalMax = -Infinity;
     let globalMin = Infinity;
     let mags;
-    if (prevView.start === window.audioFile.view.start && prevView.end === window.audioFile.view.end && prevView.mags && !rerender) {
-        mags = prevView.mags;
-        globalMax = prevView.globalMax;
-        globalMin = prevView.globalMin;
+    if (window.prevView.start === window.audioFile.view.start && window.prevView.end === window.audioFile.view.end && window.prevView.mags && !rerender) {
+        mags = window.prevView.mags;
+        globalMax = window.prevView.globalMax;
+        globalMin = window.prevView.globalMin;
     } else {
         // compute magnitude spectrogram (linear mags)
         mags = new Array(frames);
@@ -672,11 +685,11 @@ function renderSpectrogram(rerender = false, channel = 0, id = 'spectrogramCanva
                 if (m < globalMin) globalMin = m;
             }
         }
-        prevView.start = window.audioFile.view.start;
-        prevView.end = window.audioFile.view.end;
-        prevView.globalMax = globalMax;
-        prevView.globalMin = globalMin;
-        prevView.mags = mags;
+        window.prevView.start = window.audioFile.view.start;
+        window.prevView.end = window.audioFile.view.end;
+        window.prevView.globalMax = globalMax;
+        window.prevView.globalMin = globalMin;
+        window.prevView.mags = mags;
     }
 
     // safety: clamp min relative to max (dynamic range)
@@ -925,12 +938,12 @@ function renderWaveform() {
     const displayHeight = Math.max(1, Math.floor(rect.height));
     const centerY = displayHeight / 2;
 
-    if (!waveformVis._zoom) {
-        waveformVis._zoom = { start: 0, end: audioLength, inited: false };
+    if (!window._zoom) {
+        window._zoom = { start: 0, end: audioLength, inited: false };
     }
 
     // attach wheel handler once
-    if (!waveformVis._zoom.inited) {
+    if (!window._zoom.inited) {
         waveformVis.addEventListener('wheel', (e) => {
             // allow only the dominant axis per wheel event (prevent diagonal dual-axis effect)
             e.preventDefault();
@@ -953,7 +966,7 @@ function renderWaveform() {
             const mouseX = Math.min(Math.max(0, e.clientX - rect.left + (container && container.scrollLeft ? container.scrollLeft : 0)), rect.width);
             const normX = mouseX / rect.width;
 
-            const visible = waveformVis._zoom.end - waveformVis._zoom.start;
+            const visible = window._zoom.end - window._zoom.start;
             // zoom factor: scroll up -> zoom in, scroll down -> zoom out
             const factor = Math.pow(1.002, e.deltaY * 5); // tuned sensitivity
             const minWindow = Math.max(0, Math.floor(20)); // don't zoom into less than this
@@ -963,7 +976,7 @@ function renderWaveform() {
             newWindow = Math.min(Math.max(newWindow, minWindow), maxWindow);
 
             // focal sample under pointer should remain under pointer after zoom
-            const focalSample = waveformVis._zoom.start + Math.round(normX * visible);
+            const focalSample = window._zoom.start + Math.round(normX * visible);
             let newStart = Math.round(focalSample - normX * newWindow);
 
             // horizontal wheel (deltaX) pans the view: convert deltaX (CSS px) to a fraction of the visible width
@@ -978,8 +991,8 @@ function renderWaveform() {
             let newEnd = newStart + newWindow;
 
             // apply
-            waveformVis._zoom.start = newStart;
-            waveformVis._zoom.end = newEnd;
+            window._zoom.start = newStart;
+            window._zoom.end = newEnd;
 
             // re-render
             renderWaveform();
@@ -993,7 +1006,7 @@ function renderWaveform() {
                 waveformVis._renderSpectrogramTimer = null;
             }, 100);
         }, { passive: false });
-        waveformVis._zoom.inited = true;
+        window._zoom.inited = true;
     }
 
     // Make the SVG coordinate system match the displayed pixels so 1 unit = 1 CSS pixel
@@ -1001,8 +1014,8 @@ function renderWaveform() {
     waveformVis.setAttribute('viewBox', `0 0 ${displayWidth} ${displayHeight}`);
 
     // compute visible window in samples
-    window.audioFile.view.start = Math.max(0, Math.min(audioLength - 1, Math.round(waveformVis._zoom.start)));
-    window.audioFile.view.end = Math.max(window.audioFile.view.start + 1, Math.min(audioLength, Math.round(waveformVis._zoom.end)));
+    window.audioFile.view.start = Math.max(0, Math.min(audioLength - 1, Math.round(window._zoom.start)));
+    window.audioFile.view.end = Math.max(window.audioFile.view.start + 1, Math.min(audioLength, Math.round(window._zoom.end)));
 
 
     const ticks = [-4, -Math.SQRT2 * 2, -2, -Math.SQRT2, -1, -Math.SQRT1_2, -0.5, -Math.SQRT1_2 * 0.5, -0.25, -0.125, -0.0625, -0.03125, 0, 0.03125, 0.0625, 0.125, 0.25, Math.SQRT1_2 * 0.5, 0.5, Math.SQRT1_2, 1, Math.SQRT2, 2, 2 * Math.SQRT2];
@@ -1607,8 +1620,8 @@ function clearSpectrogram() {
         }
         // update UI and re-render views
         const status = document.getElementById('waveformStatus');
-        prevView = { start: 0, end: null, globalMax: null, globalMin: null, mags: null };
-        waveformVis._zoom = null;
+        window.prevView = { start: 0, end: null, globalMax: null, globalMin: null, mags: null };
+        window._zoom = null;
         window.audioFile.resetView();
 
         setLoadingState(false);
@@ -1654,9 +1667,7 @@ function setLoadingState(isLoading) {
 setLoadingState(true);
 
 window.addEventListener('resize', function (event) {
-
     renderSpectrogram(true, 0, 'spectrogramCanvas1');
-    renderWaveform();
     renderWaveform();
     console.log('resize event triggered')
 }, true);
@@ -1664,14 +1675,13 @@ window.addEventListener('resize', function (event) {
 const select = document.getElementById('timeDisplaySelect');
 select.addEventListener('change', function (event) {
     renderWaveform();
-    renderWaveform();
     window.timeDisplayUnit = select.value;
     console.log('timeDisplayUnit set to', window.timeDisplayUnit);
 }, true);
 
 document.getElementById('resetZoomBtn').addEventListener('click',
     function (event) {
-        waveformVis._zoom = null;
+        window._zoom = null;
         window.audioFile.resetView();
         renderWaveform();
         renderSpectrogram(true, 0, 'spectrogramCanvas1');
@@ -1733,6 +1743,10 @@ function toggleSidePanel() {
 
 // Make function globally available
 window.toggleSidePanel = toggleSidePanel;
+window.renderSpectrogram = renderSpectrogram;
+window.renderWaveform = renderWaveform;
+window.setLoadingState = setLoadingState;
+window.waveformVis = waveformVis;
 
 console.log('waveform.js loaded');
 

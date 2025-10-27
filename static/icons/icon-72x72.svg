@@ -1,0 +1,55 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="backgroundGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#cc781e;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#994611;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="512" height="512" rx="64" fill="url(#backgroundGradient)"/>
+  
+  <!-- Waveform visualization -->
+  <g transform="translate(64, 128)">
+    <!-- Horizontal grid lines -->
+    <line x1="0" y1="64" x2="384" y2="64" stroke="#ffffff" stroke-width="1" opacity="0.2"/>
+    <line x1="0" y1="128" x2="384" y2="128" stroke="#ffffff" stroke-width="1" opacity="0.3"/>
+    <line x1="0" y1="192" x2="384" y2="192" stroke="#ffffff" stroke-width="1" opacity="0.2"/>
+    
+    <!-- Waveform -->
+    <path d="M0,128 Q48,96 96,128 T192,128 Q240,160 288,128 T384,128" 
+          stroke="#ffffff" stroke-width="3" fill="none" opacity="0.9"/>
+    <path d="M0,128 Q48,160 96,128 T192,128 Q240,96 288,128 T384,128" 
+          stroke="#ffffff" stroke-width="3" fill="none" opacity="0.9"/>
+    
+    <!-- Frequency bars (spectrogram representation) -->
+    <rect x="32" y="224" width="8" height="32" fill="#ffffff" opacity="0.6"/>
+    <rect x="48" y="208" width="8" height="48" fill="#ffffff" opacity="0.7"/>
+    <rect x="64" y="200" width="8" height="56" fill="#ffffff" opacity="0.8"/>
+    <rect x="80" y="216" width="8" height="40" fill="#ffffff" opacity="0.6"/>
+    <rect x="96" y="192" width="8" height="64" fill="#ffffff" opacity="0.9"/>
+    <rect x="112" y="204" width="8" height="52" fill="#ffffff" opacity="0.7"/>
+    <rect x="128" y="220" width="8" height="36" fill="#ffffff" opacity="0.5"/>
+    <rect x="144" y="196" width="8" height="60" fill="#ffffff" opacity="0.8"/>
+    <rect x="160" y="212" width="8" height="44" fill="#ffffff" opacity="0.6"/>
+    <rect x="176" y="188" width="8" height="68" fill="#ffffff" opacity="0.9"/>
+    <rect x="192" y="224" width="8" height="32" fill="#ffffff" opacity="0.5"/>
+    <rect x="208" y="200" width="8" height="56" fill="#ffffff" opacity="0.7"/>
+    <rect x="224" y="216" width="8" height="40" fill="#ffffff" opacity="0.6"/>
+    <rect x="240" y="192" width="8" height="64" fill="#ffffff" opacity="0.8"/>
+    <rect x="256" y="208" width="8" height="48" fill="#ffffff" opacity="0.7"/>
+    <rect x="272" y="220" width="8" height="36" fill="#ffffff" opacity="0.5"/>
+    <rect x="288" y="196" width="8" height="60" fill="#ffffff" opacity="0.8"/>
+    <rect x="304" y="212" width="8" height="44" fill="#ffffff" opacity="0.6"/>
+    <rect x="320" y="204" width="8" height="52" fill="#ffffff" opacity="0.7"/>
+    <rect x="336" y="224" width="8" height="32" fill="#ffffff" opacity="0.6"/>
+  </g>
+  
+  <!-- Audio symbol -->
+  <g transform="translate(400, 80)">
+    <circle cx="0" cy="0" r="24" fill="#ffffff" opacity="0.9"/>
+    <path d="M-8,-12 L-8,12 L0,8 L8,16 L8,-16 L0,-8 Z" fill="#cc781e"/>
+    <path d="M12,-8 Q20,-4 20,0 Q20,4 12,8" stroke="#cc781e" stroke-width="2" fill="none"/>
+    <path d="M16,-12 Q28,-6 28,0 Q28,6 16,12" stroke="#cc781e" stroke-width="2" fill="none"/>
+  </g>
+</svg>
