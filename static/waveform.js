@@ -1009,7 +1009,7 @@ function renderWaveform() {
 
             const visible = window._zoom.end - window._zoom.start;
             // zoom factor: scroll up -> zoom in, scroll down -> zoom out
-            const factor = Math.pow(1.002, e.deltaY * 5); // tuned sensitivity
+            const factor = Math.pow(1.003, e.deltaY); // tuned sensitivity
             const minWindow = Math.max(0, Math.floor(20)); // don't zoom into less than this
             const maxWindow = window.audioFile.length; // don't zoom out beyond full length
 
@@ -1784,6 +1784,7 @@ function toggleSidePanel() {
 
 function applyFilter() {
     window.audioFile.applySOSFilter();
+    processWaveformData();
     renderSpectrogram(true, 0, 'spectrogramCanvas1');
     renderWaveform();
 }
