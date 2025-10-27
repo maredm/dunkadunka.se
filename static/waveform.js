@@ -1783,10 +1783,8 @@ function toggleSidePanel() {
 }
 
 function applyFilter() {
-    setLoadingState(true, 'Applying filter...');
     window.audioFile.applySOSFilter();
     window.audioFile.processWaveformData();
-    setLoadingState(false);
     renderSpectrogram(true, 0, 'spectrogramCanvas1');
     renderWaveform();
 }
