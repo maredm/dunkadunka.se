@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Audio Loopback with getUserMedia</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: #f6f8fa;
+            margin: 0;
+            padding: 0;
+            color: #222;
+        }
+        h1 {
+            text-align: center;
+            margin-top: 2rem;
+            font-size: 2rem;
+            font-weight: 600;
+        }
+        .status {
+            display: block;
+            margin: 1rem auto;
+            padding: 0.5rem 1.5rem;
+            width: fit-content;
+            border-radius: 1rem;
+            background: #e0e0e0;
+            color: #555;
+            font-weight: 500;
+            font-size: 1.1rem;
+            transition: background 0.2s, color 0.2s;
+        }
+        .status.running {
+            background: #4caf50;
+            color: #fff;
+        }
+        .button-group {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+        button {
+            padding: 0.7rem 2rem;
+            font-size: 1rem;
+            border: none;
+            border-radius: 0.5rem;
+            background: #1976d2;
+            color: #fff;
+            cursor: pointer;
+            font-weight: 500;
+            box-shadow: 0 2px 8px rgba(25, 118, 210, 0.08);
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: #1565c0;
+        }
+        .controls {
+            max-width: 400px;
+            margin: 2rem auto;
+            background: #fff;
+            border-radius: 1rem;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+            padding: 2rem;
+        }
+        .controls h2 {
+            margin-top: 0;
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #1976d2;
+            margin-bottom: 1rem;
+        }
+        .controls label {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+        .controls input[type="checkbox"] {
+            accent-color: #1976d2;
+            width: 1.2em;
+            height: 1.2em;
+        }
+    </style>
+</head>
+<body>
+    <h1>Audio Loopback Tool</h1>
+    <div id="status" class="status">Stopped</div>
+    <div class="button-group">
+        <button id="startBtn">Start Loopback</button>
+        <button id="stopBtn">Stop Loopback</button>
+    </div>
+    <div class="controls">
+        <h2>Audio Constraints</h2>
+        <label>
+            <input type="checkbox" id="gainControl">
+            <span>Auto Gain Control</span>
+        </label>
+        <label>
+            <input type="checkbox" id="noiseSuppression">
+            <span>Noise Suppression</span>
+        </label>
+        <label>
+            <input type="checkbox" id="echoCancellation">
+            <span>Echo Cancellation</span>
+        </label>
+    </div>
+    <script>
+        let audioCtx = null;
+        let source = null;
+        let stream = null;
+
+        function setStatus(running) {
+            const statusEl = document.getElementById('status');
+            if (running) {
+                statusEl.textContent = 'Running';
+                statusEl.classList.add('running');
+            } else {
+                statusEl.textContent = 'Stopped';
+                statusEl.classList.remove('running');
+            }
+        }
+
+        async function startLoopback() {
+            const autoGainControl = document.getElementById('gainControl').checked;
+            const noiseSuppression = document.getElementById('noiseSuppression').checked;
+            const echoCancellation = document.getElementById('echoCancellation').checked;
+
+            stopLoopback();
+
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        autoGainControl,
+                        noiseSuppression,
+                        echoCancellation
+                    }
+                });
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                source = audioCtx.createMediaStreamSource(stream);
+                source.connect(audioCtx.destination);
+                setStatus(true);
+            } catch (err) {
+                alert('Error accessing microphone: ' + err.message);
+                setStatus(false);
+            }
+        }
+
+        function stopLoopback() {
+            if (source) {
+                source.disconnect();
+                source = null;
+            }
+            if (audioCtx) {
+                audioCtx.close();
+                audioCtx = null;
+            }
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            setStatus(false);
+        }
+
+        document.getElementById('startBtn').onclick = startLoopback;
+        document.getElementById('stopBtn').onclick = stopLoopback;
+
+        ['gainControl', 'noiseSuppression', 'echoCancellation'].forEach(id => {
+            document.getElementById(id).addEventListener('change', () => {
+                if (audioCtx) {
+                    startLoopback();
+                }
+            });
+        });
+
+        setStatus(false);
+    </script>
+</body>
+</html>
