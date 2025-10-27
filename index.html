@@ -47,27 +47,25 @@
         // Handle files shared to the app
         async function handleSharedFile(file) {
             if (file && file.type.startsWith('audio/')) {
+                window.setLoadingState(true);
                 // Wait for the audio system to be ready
                 async function checkAudioReady() {
                     if (window.audioFile && window.audioFile.loadFile) {
                         window.audioFile.stop();
-                        window.setLoadingState(true);
                         await window.audioFile.loadFromFile(file);
                         window.prevView = { start: 0, end: null, globalMax: null, globalMin: null, mags: null };
                         window._zoom = null;
-
-                        window.setLoadingState(false);
-                        window._zoom = null;
-                        window.audioFile.resetView();
-                        renderWaveform();
-                        renderSpectrogram(true, 0, 'spectrogramCanvas1');
-                        updateAudioStats();
-
                     } else {
                         setTimeout(checkAudioReady, 100);
                     }
                 };
                 await checkAudioReady();
+                window.setLoadingState(false);
+                window._zoom = null;
+                window.audioFile.resetView();
+                renderWaveform();
+                renderSpectrogram(true, 0, 'spectrogramCanvas1');
+                updateAudioStats();
             }
         }
 

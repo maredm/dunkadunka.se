@@ -1004,7 +1004,7 @@ function renderWaveform() {
             waveformVis._renderSpectrogramTimer = setTimeout(() => {
                 renderSpectrogram();
                 waveformVis._renderSpectrogramTimer = null;
-            }, 100);
+            }, 250);
         }, { passive: false });
         window._zoom.inited = true;
     }
