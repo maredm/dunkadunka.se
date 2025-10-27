@@ -27,17 +27,17 @@
             <input id="wavefileInput" type="file" accept="audio/*" class="text-white text-sm px-2 py-1 rounded"
                 style="color: #cc781eff; background-color: #cc781e00; display: none; cursor: pointer;">
             <label for="wavefileInput"
-                class="text-white text-sm px-4 py-[6px] active:bg-[#00000030] hover:bg-[#cc781e10] active:py-[7px]"
-                style="height: 32px; color: #cc781eff; display: block; user-select: none; cursor: pointer;">Open...</label>
+                class="text-sm px-4 button-custom"
+                style="height: 32px; display: block; user-select: none; cursor: pointer;">Open...</label>
             <button id="saveAsBtn" title="Save as..." aria-label="Save as"
-                class="text-sm px-4 py-[6px] active:bg-[#00000030] hover:bg-[#cc781e10] active:py-[7px]"
-                style="height:32px; color: #cc781eff; display:block; user-select:none; cursor:pointer; border:none;"
+                class="text-sm px-4 button-custom"
+                style="height:32px; display:block; user-select:none; cursor:pointer; border:none;"
                 onclick="window.audioFile.downloadWav();">
                 Save as...
             </button>
             <button id="saveViewAsBtn" title="Save as..." aria-label="Save as"
-                class="text-sm px-4 py-[6px] active:bg-[#00000030] hover:bg-[#cc781e10] active:py-[7px]"
-                style="height:32px; color: #cc781eff; display:block; user-select:none; cursor:pointer; border:none;"
+                class="text-sm px-4 button-custom"
+                style="height:32px; display:block; user-select:none; cursor:pointer; border:none;"
                 onclick="window.audioFile.downloadWav(window.audioFile.view.start, window.audioFile.view.end);">
                 Save current view as...
             </button>
@@ -60,14 +60,12 @@
                 <option value="samples">Samples</option>
             </select>
             <button id="sidePanelBtn" title="Toggle sidepanel" aria-label="Save as"
-                class="text-sm px-4 py-[6px] active:bg-[#00000030] hover:bg-[#cc781e10] active:py-[7px]"
-                style="height:32px; color: #cc781eff; display:block; user-select:none; cursor:pointer; border:none;"
+                class="text-sm px-4 button-custom"
                 onclick="window.toggleSidePanel();updateAudioStats();">
                 Show/hide info panel
             </button>
             <button id="fullscreenBtn" title="Fullscreen" aria-label="Fullscreen"
-                class="text-sm px-4 py-[6px] active:bg-[#00000030] hover:bg-[#cc781e10] active:py-[7px]"
-                style="height:32px; color: #cc781eff; display:block; user-select:none; cursor:pointer; border:none;"
+                class="text-sm px-4 button-custom"
                 onclick="toggleFullscreen();">
                 Fullscreen
             </button>
@@ -96,11 +94,10 @@
         <div class="mx-auto w-full"
             style="background-color: #cc781e22; height: calc(100vh - 64px); position: absolute; top: 32px; left: 0;"
             id="container">
-            <div style="position:absolute; top:0; right:0; width:52px; height:32px; display:flex; align-items:center; justify-content:center; z-index:50;"
-                class=" active:py-[7px]">
+            <div style="position:absolute; top:0; right:0; width:52px; height:32px; display:flex; align-items:center; justify-content:center; z-index:50;">
                 <button id="resetZoomBtn" title="Reset zoom" aria-label="Reset zoom" alt="Reset zoom"
-                    class="text-white hover:bg-[#cc781e10] active:bg-[#00000030] active:py-[7px]"
-                    style="width:52px; height:32px; border:none; color:#cc781eff; cursor:pointer; display:block;">
+                    class="button-custom"
+                    style="width:52px;">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="margin: auto;"
                         xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                         <path d="M8 3H5a2 2 0 0 0-2 2v3" stroke="#cc781eff" stroke-width="1.6" stroke-linecap="round"

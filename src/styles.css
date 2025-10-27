@@ -40,3 +40,25 @@ tr {
     border-bottom: 4px solid #fff; /* Default border color */
     transition: border-color 0.3s ease;
 }
+
+label.button-custom {
+    padding-top: 6px;
+}
+.button-custom {
+    color: color-mix(in lab, #cc781e 90%, #ffffff 10%);
+    height:32px; 
+    display:block; 
+    user-select:none; 
+    cursor:pointer; 
+    border:none;
+}
+.button-custom:hover {
+    background-color: color-mix(in lab, #cc781e 25%, #000000 75%);
+}
+.button-custom:active {
+    padding-top: 1px;
+    background-color: color-mix(in lab, #cc781e 10%, #000000 90%);
+}
+label.button-custom:active {
+    padding-top: 7px;
+}

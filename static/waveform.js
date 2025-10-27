@@ -448,6 +448,8 @@ lineColor = lineColorOptions[0];
 
 //lineColor = //'#ec983e'; // override with gray for better visibility
 const uiColor = '#cc781e';
+const uiColorTicks ='color-mix(in lab, #cc781e 50%, #000000 50%)';
+const uiColorLabels = 'color-mix(in lab, #cc781e 90%, #000000 10%)';
 const gridColor = uiColor + '44'; // semi-transparent
 const highlightColor = '#ffffff' + '55'; // more opaque
 
@@ -851,7 +853,7 @@ function renderSpectrogram(rerender = false, channel = 0, id = 'spectrogramCanva
         tick.style.top = `${Math.max(0, Math.min(displayHeight - 1, Math.round(y))) - 0.5}px`;
         tick.style.width = '5px';
         tick.style.height = '1px';
-        tick.style.background = uiColor + '88';
+        tick.style.background = uiColorTicks;
         tick.style.opacity = '1';
         axis.appendChild(tick);
         if (i === 0 || i === ticks.length - 1) {
@@ -869,7 +871,7 @@ function renderSpectrogram(rerender = false, channel = 0, id = 'spectrogramCanva
         lbl.style.fontSize = '12px';
         lbl.style.lineHeight = '12px';
         lbl.style.paddingLeft = '8px';
-        lbl.style.color = uiColor + 'cc';
+        lbl.style.color = uiColorLabels;
         lbl.style.userSelect = 'none';
         lbl.style.verticalAlign = 'baseline';
         axis.appendChild(lbl);
@@ -1039,7 +1041,7 @@ function renderWaveform() {
             tick.style.top = `${Math.max(0, Math.min(displayHeight - 1, Math.round(y))) - 0.5}px`;
             tick.style.width = '5px';
             tick.style.height = '1px';
-            tick.style.background = uiColor + '88';
+            tick.style.background = uiColorTicks;
             tick.style.opacity = '1';
             axis.appendChild(tick);
             if (y === 0 || y === displayHeight) {
@@ -1057,14 +1059,14 @@ function renderWaveform() {
             lbl.style.fontSize = '12px';
             lbl.style.lineHeight = '12px';
             lbl.style.paddingLeft = '8px';
-            lbl.style.color = uiColor + 'cc';
+            lbl.style.color = uiColorLabels;
             lbl.style.userSelect = 'none';
             lbl.style.verticalAlign = 'baseline';
             axis.appendChild(lbl);
         }
         const gridLines = y_ticks.length - 1;
         for (let i = 0; i <= gridLines; i++) {
-            const gridColor = (i - 1 === Math.floor(gridLines / 2)) ? uiColor + '88' : uiColor + '44';
+            const gridColor = (i - 1 === Math.floor(gridLines / 2)) ? uiColorTicks : uiColor + '44';
             const y = y_ticks[i];
             if (ticks[i] != 0 && Math.abs(centerY - y) < 20) {
                 // skip near-center tick (overlaps 0 dB)
@@ -1141,7 +1143,7 @@ function renderWaveform() {
             tick.style.top = `24px`;
             tick.style.width = '1px';
             tick.style.height = '8px';
-            tick.style.background = uiColor + '88';
+            tick.style.background = uiColorTicks;
             tick.style.pointerEvents = 'none';
             axis.appendChild(tick);
 
@@ -1156,7 +1158,7 @@ function renderWaveform() {
             lbl.style.textAlign = 'center';
             lbl.style.fontSize = '12px';
             lbl.style.lineHeight = '12px';
-            lbl.style.color = uiColor + 'cc';
+            lbl.style.color = uiColorLabels;
             lbl.style.userSelect = 'none';
             lbl.style.pointerEvents = 'none';
             axis.appendChild(lbl);
@@ -1216,7 +1218,7 @@ function renderWaveform() {
                                 position: 'fixed',
                                 zIndex: 10000,
                                 background: uiColor + '44',
-                                color: uiColor + 'cc',
+                                color: uiColorLabels,
                                 pointerEvents: 'none',
                                 visibility: 'hidden',
                                 fontSize: '12px',
@@ -1340,7 +1342,7 @@ function renderWaveform() {
         const phLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
         phLabel.setAttribute('x', '4');
         phLabel.setAttribute('y', String(displayHeight - 6));
-        phLabel.setAttribute('fill', uiColor + 'ff');
+        phLabel.setAttribute('fill', uiColor);
         phLabel.setAttribute('font-size', '12');
         phLabel.setAttribute('visibility', 'hidden');
         phLabel.setAttribute('pointer-events', 'none');
@@ -1360,7 +1362,7 @@ function renderWaveform() {
             axisHighlight.style.position = 'absolute';
             axisHighlight.style.top = '0';
             axisHighlight.style.height = '100%';
-            axisHighlight.style.background = uiColor + 'ff';
+            axisHighlight.style.background = uiColor;
             axisHighlight.style.width = '1px';
             axisHighlight.style.pointerEvents = 'none';
             axisHighlight.style.visibility = 'hidden';
