@@ -1,7 +1,7 @@
 'use strict'
 
 import { FFT } from './modules/fft.js';
-import { db } from './modules/audio.js';
+import { db, A_WEIGHTING_COEFFICIENTS } from './modules/audio.js';
 import { clamp } from './modules/math.js';
 
 
@@ -98,6 +98,47 @@ class AudioFile {
 
     get channels() {
         return this.audioBuffer ? this.audioBuffer.numberOfChannels : 1;
+    }
+
+    applySOSFilter(a = A_WEIGHTING_COEFFICIENTS.a, b = A_WEIGHTING_COEFFICIENTS.b) {
+        if (!this.audioBuffer) return;    
+        for (let channel = 0; channel < this.audioBuffer.numberOfChannels; channel++) {
+            const input = this.samples(channel);
+            let out = new Float32Array(input.length);
+
+            let x = [0, 0, 0, 0, 0, 0, 0];
+            let y = [0, 0, 0, 0, 0, 0, 0];
+
+            // process samples
+            for (let n = 0; n < input.length; n++) {
+                x[0] = input[n];
+                // Direct Form I
+                let sum = b[0] * x[0];
+                for (let i = 1; i < 7; i++) {
+                    sum += b[i] * x[i] - a[i] * y[i];
+                }
+                y[0] = sum / a[0];
+                out[n] = y[0];
+
+                // shift delays
+                x[6] = x[5];
+                x[5] = x[4];
+                x[4] = x[3];
+                x[3] = x[2];
+                x[2] = x[1];
+                x[1] = x[0];
+                
+                y[6] = y[5];
+                y[5] = y[4];
+                y[4] = y[3];
+                y[3] = y[2];
+                y[2] = y[1];
+                y[1] = y[0];
+            }
+
+            this.audioBuffer.copyToChannel(out, channel);
+            console.log('Applied SOS filter to channel', channel);
+        }
     }
 
     resetView() {
@@ -1741,6 +1782,12 @@ function toggleSidePanel() {
     }, 0); // Small delay to ensure layout has settled
 }
 
+function applyFilter() {
+    window.audioFile.applySOSFilter();
+    renderSpectrogram(true, 0, 'spectrogramCanvas1');
+    renderWaveform();
+}
+window.applyFilter = applyFilter;
 // Make function globally available
 window.toggleSidePanel = toggleSidePanel;
 window.renderSpectrogram = renderSpectrogram;

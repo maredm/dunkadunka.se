@@ -250,7 +250,7 @@
                 </div>
             </div>
             <h2 class="text-sm bg-[#cc781e2C] h-8 py-[6px] px-4" style="color: #cc781eff;">Waveform information</h2>
-            <div style="color: #cc781ecc; height: 100vh;" class="py-2 px-4 bg-[#cc781e11] text-sm pb-6">
+            <div style="color: #cc781ecc;" class="py-2 px-4 bg-[#cc781e11] text-sm pb-6">
                 <div id="audioStats">
                     <div class="mb-2">
                         <span class="font-medium">Sample Rate:</span>
@@ -290,6 +290,21 @@
                     }
                 </script>
             </div>
+            <h2 class="text-sm bg-[#cc781e2C] h-8 py-[6px] px-4" style="color: #cc781eff;">Filter</h2>
+            <div style="color: #cc781ecc; height: auto;" class="py-2 px-4 bg-[#cc781e11] text-sm pb-6">
+                <div id="filterControls">
+                    <div class="mb-2">
+                        <span class="font-medium">Apply 2nd order SOS filter:</span>
+                    </div>
+                    <div class="mb-2">
+                        <button id="applyFilterBtn" title="Apply filter" aria-label="Apply filter"
+                            class="text-sm px-4 button-custom"
+                            style="height:32px; display:block; user-select:none; cursor:pointer; border:none;"
+                            onclick="window.applyFilter();">
+                            Apply Filter
+                        </button>
+                    </div>
+                </div>
         </div>
     </section>
     <div id="statusBar"

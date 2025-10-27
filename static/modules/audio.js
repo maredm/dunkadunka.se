@@ -53,10 +53,10 @@ export function computeFFT(buffer) {
 }
 
 
-export const A_WEIGHTING_COEFFICIENTS = [
-    [0.234301792299513, -0.468603584599026, -0.234301792299513, 0.937207169198054, -0.234301792299515, -0.468603584599025, 0.234301792299513],
-    [1.000000000000000, -4.113043408775871, 6.553121752655047, -4.990849294163381, 1.785737302937573, -0.246190595319487, 0.011224250033231],
-];
+export const A_WEIGHTING_COEFFICIENTS = {
+    b: [0.234301792299513, -0.468603584599026, -0.234301792299513, 0.937207169198054, -0.234301792299515, -0.468603584599025, 0.234301792299513],
+    a: [1.000000000000000, -4.113043408775871, 6.553121752655047, -4.990849294163381, 1.785737302937573, -0.246190595319487, 0.011224250033231],
+};
 // Coefficients for K-weighting filter (pre-emphasis and high-frequency shelving)
 // From ITU-R BS.1770-4, Table 1
 // https://www.itu.int/dms_pubrec/itu-r/rec/bs/r-rec-bs.1770-2-201103-s!!pdf-e.pdf
@@ -128,7 +128,7 @@ export function bs1770Loudness(input, sampleRate) {
         let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
         for (let n = 0; n < buffer.length; n++) {
             const x0 = buffer[n];
-            const y0 = b[0]*x0 + b[1]*x1 + b[2]*x2 - a[1]*y1 - a[2]*y2;
+            const y0 = b[0] * x0 + b[1] * x1 + b[2] * x2 - a[1] * y1 - a[2] * y2;
             out[n] = y0;
             x2 = x1; x1 = x0;
             y2 = y1; y1 = y0;
@@ -164,7 +164,7 @@ export function bs1770Loudness(input, sampleRate) {
         let sum = 0;
         for (let ch = 0; ch < filtered.length; ch++) {
             const block = filtered[ch].subarray(i, i + windowSize);
-            const blockSum = block.reduce((acc, v) => acc + v*v, 0);
+            const blockSum = block.reduce((acc, v) => acc + v * v, 0);
             sum += weights[ch] * blockSum;
         }
         const energy = sum / (windowSize * weights.reduce((a, b) => a + b, 0));
