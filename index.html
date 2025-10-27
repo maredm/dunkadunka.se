@@ -45,14 +45,14 @@
         }
 
         // Handle files shared to the app
-        function handleSharedFile(file) {
+        async function handleSharedFile(file) {
             if (file && file.type.startsWith('audio/')) {
                 // Wait for the audio system to be ready
-                const checkAudioReady = () => {
+                async function checkAudioReady() {
                     if (window.audioFile && window.audioFile.loadFile) {
                         window.audioFile.stop();
                         window.setLoadingState(true);
-                        window.audioFile.loadFromFile(file);
+                        await window.audioFile.loadFromFile(file);
                         window.prevView = { start: 0, end: null, globalMax: null, globalMin: null, mags: null };
                         window._zoom = null;
 
@@ -67,7 +67,7 @@
                         setTimeout(checkAudioReady, 100);
                     }
                 };
-                checkAudioReady();
+                await checkAudioReady();
             }
         }
 
