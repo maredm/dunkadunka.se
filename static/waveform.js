@@ -265,7 +265,6 @@ class AudioFile {
                         if (chunkId === 0x666D7420) { // 'fmt '
                             // Read sample rate from fmt chunk (offset 24 from start of file)
                             sampleRate = view.getUint32(offset + 12, true);
-                            this.sampleRate = sampleRate;
                             console.log('WAV sample rate detected:', sampleRate, 'Hz');
                             break;
                         }
@@ -287,6 +286,8 @@ class AudioFile {
             alert('Error decoding audio data: ' + (err && err.message ? err.message : String(err)));
             this.audioBuffer = null;
         }
+
+        this.sampleRate = this.audioBuffer.sampleRate;
         return this.audioBuffer;
     }
 
