@@ -1278,6 +1278,81 @@ function renderWaveform() {
                             document.body.appendChild(tooltip);
                         }
 
+                        if (window.audioFile.visibleSamples < 200) {
+                            // Add drag cursor and drag functionality for individual samples
+                            dot.style.cursor = 'grab';
+
+                            // Drag functionality for individual samples
+                            let isDragging = false;
+                            let dragStartY = 0;
+                            let originalValue = 0;
+
+                            dot.addEventListener('mousedown', (ev) => {
+                                if (window.penTool && window.penTool.active) return; // Don't interfere with pen tool
+                                ev.preventDefault();
+                                ev.stopPropagation(); // Prevent waveform click handler
+                                
+                                isDragging = true;
+                                dragStartY = ev.clientY;
+                                originalValue = samples[i];
+                                dot.style.cursor = 'grabbing';
+                                dot.style.r = String(Math.min(10, 10 - window.audioFile.visibleSamples / 20));
+                                
+                                // Capture mouse globally during drag
+                                document.addEventListener('mousemove', onMouseMove);
+                                document.addEventListener('mouseup', onMouseUp);
+                            });
+
+                            function onMouseMove(ev) {
+                                if (!isDragging) return;
+                                
+                                const deltaY = ev.clientY - dragStartY;
+                                const rect = waveformVis.getBoundingClientRect();
+                                const displayHeight = rect.height;
+                                const centerY = displayHeight / 2;
+                                
+                                // Convert pixel movement to sample value change
+                                const amplitudeScaling = window.audioFile.view.amplitude_scaling || 1;
+                                const valueChange = -deltaY / (centerY * amplitudeScaling);
+                                
+                                // Calculate new value and clamp to [-1, 1]
+                                const newValue = Math.max(-1, Math.min(1, originalValue + valueChange));
+                                
+                                // Update the sample value
+                                samples[i] = newValue;
+                                
+                                // Update the visual position of the dot
+                                const newY = centerY - (newValue * amplitudeScaling * centerY);
+                                dot.setAttribute('cy', String(newY));
+                            }
+
+                            function onMouseUp(ev) {
+                                if (!isDragging) return;
+                                
+                                isDragging = false;
+                                dot.style.cursor = 'grab';
+                                
+                                // Remove global mouse listeners
+                                document.removeEventListener('mousemove', onMouseMove);
+                                document.removeEventListener('mouseup', onMouseUp);
+                                
+                                // Schedule full re-render after drag is complete
+                                setTimeout(() => {
+                                    try {
+                                        renderWaveform();
+                                        if (spectrogramRendered) {
+                                            renderSpectrogram(true, 0, 'spectrogramCanvas1');
+                                        }
+                                        // Update stats if available
+                                        if (typeof updateAudioStats === 'function') {
+                                            updateAudioStats();
+                                        }
+                                    } catch (err) {
+                                        console.warn('Error re-rendering after sample drag:', err);
+                                    }
+                                }, 10);
+                            }
+                        }
                         // show sample/time/value on hover
                         dot.addEventListener('mouseenter', (ev) => {
                             try {
