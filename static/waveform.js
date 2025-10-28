@@ -1611,11 +1611,6 @@ function renderWaveform() {
             const xPosition = clamp(e.clientX - rect.left, 0, rect.width);
             const sample = sampleForX(xPosition, Math.max(1, Math.floor(rect.width)));
 
-            window.audioFile.playhead.position = sample;
-            waveformVis._playhead.updateVisual();
-            console.log('Playhead seek to sample', sample);
-
-            /*/ if currently playing, stop and seek to clicked position (toggle behavior)
             if (window.audioFile.playing) {
                 // if clicking near current play position, pause; otherwise restart at new position
                 const near = Math.abs((window.audioFile.playhead.position || 0) - sample) < 2;
@@ -1625,9 +1620,10 @@ function renderWaveform() {
                     window.audioFile.playFrom(sample);
                 }
             } else {
-                // not playing -> start playback from clicked sample
-                window.audioFile.playFrom(sample);
-            }*/
+                window.audioFile.playhead.position = sample;
+                waveformVis._playhead.updateVisual();
+                console.log('Playhead seek to sample', sample);
+            }
             const tick = () => {
                 if (!window.audioFile.playing) return;
                 const elapsed = window.audioFile.ctx.currentTime - window.audioFile.playStartTime;
