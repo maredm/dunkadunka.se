@@ -584,7 +584,7 @@ waveformYAxisElement.addEventListener('wheel', (e) => {
     else if (dir < 0) next = prev / STEP;
 
     // clamp to reasonable range
-    next = Math.max(0.001, Math.min(1000, next));
+    next = Math.max(0.00001, Math.min(2**16, next));
 
     window.console.log('Amplitude scaling:', prev.toFixed(3), '->', next.toFixed(3));
     next = 10 ** (Math.floor(4 * db(next)) / 80); // expose globally for debugging
@@ -1049,7 +1049,14 @@ function renderWaveform() {
     window.audioFile.view.end = Math.max(window.audioFile.view.start + 1, Math.min(audioLength, Math.round(window._zoom.end)));
 
 
-    const ticks = [-4, -Math.SQRT2 * 2, -2, -Math.SQRT2, -1, -Math.SQRT1_2, -0.5, -Math.SQRT1_2 * 0.5, -0.25, -0.125, -0.0625, -0.03125, 0, 0.03125, 0.0625, 0.125, 0.25, Math.SQRT1_2 * 0.5, 0.5, Math.SQRT1_2, 1, Math.SQRT2, 2, 2 * Math.SQRT2];
+    const ticks = [-4, -Math.SQRT2 * 2, -2, -Math.SQRT2, -1, -Math.SQRT1_2, -0.5, -Math.SQRT1_2 * 0.5, -0.25];
+    for (let i = 0; i < 34; i++) {
+        ticks.push(ticks[ticks.length - 1] / 2);
+    }
+    ticks.push(0);
+    for (let i = ticks.length-1; i > 0; i--) {
+        ticks.push(-ticks[i]);
+    }
     const y_ticks = ticks.map(v => centerY - (v * window.audioFile.view.amplitude_scaling * centerY));
 
     // render y-axis tick labels into the #WaveformYAxis element (if present)
