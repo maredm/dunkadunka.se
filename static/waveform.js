@@ -1535,6 +1535,8 @@ function renderWaveform() {
                             axisHighlights.style.visibility = 'hidden';
                             return;
                         }
+                        axisHighlight.style.visibility = 'visible';
+                        axisHighlights.style.visibility = 'visible';
                         const x = parseFloat(phLine.getAttribute('x1')) || 0;
                         const visibility = phLine.getAttribute('visibility');
                         axisHighlight.style.left = `${x - 0.5}px`;
@@ -1609,7 +1611,11 @@ function renderWaveform() {
             const xPosition = clamp(e.clientX - rect.left, 0, rect.width);
             const sample = sampleForX(xPosition, Math.max(1, Math.floor(rect.width)));
 
-            // if currently playing, stop and seek to clicked position (toggle behavior)
+            window.audioFile.playhead.position = sample;
+            waveformVis._playhead.updateVisual();
+            console.log('Playhead seek to sample', sample);
+
+            /*/ if currently playing, stop and seek to clicked position (toggle behavior)
             if (window.audioFile.playing) {
                 // if clicking near current play position, pause; otherwise restart at new position
                 const near = Math.abs((window.audioFile.playhead.position || 0) - sample) < 2;
@@ -1621,7 +1627,7 @@ function renderWaveform() {
             } else {
                 // not playing -> start playback from clicked sample
                 window.audioFile.playFrom(sample);
-            }
+            }*/
             const tick = () => {
                 if (!window.audioFile.playing) return;
                 const elapsed = window.audioFile.ctx.currentTime - window.audioFile.playStartTime;

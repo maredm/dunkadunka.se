@@ -184,6 +184,8 @@
                     </svg>
                 </button>
             </div>
+            
+            <div id="waveformXAxis" class="absolute" style="width: calc(100vw - 52px); height: 32px; top: 0; z-index: 90;"></div>
             <div id="waveformLoading"
                 style="width:100%;height:calc(100vh - 48px);left:0;display:flex;align-items:center;justify-content:center;flex-direction:column;color:#ccc; position:absolute; top: 32px; background-color: #00000088;">
                 <svg width="80" height="40" viewBox="0 0 24 12" fill="#cc781e" id="loadingAnimation">
@@ -212,7 +214,6 @@
             <canvas id="spectrogramCanvas1"
                 style="width: calc(100% - 48px); height: calc(50vh - 52px); top: calc(50vh - 12px); left: 0;"
                 class="absolute" xmlns="http://www.w3.org/2000/svg" class="block bg-black"> </canvas>
-            <div id="waveformXAxis" class="absolute" style="width: calc(100vw - 52px); height: 32px; top: 0;"></div>
             <div id="waveformYAxis" class="absolute"
                 style="right: 0; top: 32px; width: 52px; height: calc(50vh - 56px);"></div>
             <svg id="waveformSVG"
