@@ -101,7 +101,7 @@ class AudioFile {
     }
 
     applySOSFilter(a = A_WEIGHTING_COEFFICIENTS.a, b = A_WEIGHTING_COEFFICIENTS.b) {
-        if (!this.audioBuffer) return;    
+        if (!this.audioBuffer) return;
         for (let channel = 0; channel < this.audioBuffer.numberOfChannels; channel++) {
             const input = this.samples(channel);
             let out = new Float32Array(input.length);
@@ -292,7 +292,7 @@ class AudioFile {
                     while (offset < arrayBuffer.byteLength - 8) {
                         const chunkId = view.getUint32(offset, false);
                         const chunkSize = view.getUint32(offset + 4, true);
-                        
+
                         if (chunkId === 0x666D7420) { // 'fmt '
                             // Read sample rate from fmt chunk (offset 24 from start of file)
                             sampleRate = view.getUint32(offset + 12, true);
@@ -309,7 +309,7 @@ class AudioFile {
         console.log('Decoding audio data...');
         try {
             this.audioBuffer = await this.ctx.decodeAudioData(arrayBuffer);
-            if(this.audioBuffer.sampleRate < sampleRate) {
+            if (this.audioBuffer.sampleRate < sampleRate) {
                 alert(`Warning: The audio file's sample rate of ${sampleRate} Hz is higher than the playback device sample rate of ${this.audioBuffer.sampleRate} Hz. The waveform display may not be accurate for higher frequencies.`);
             }
             this.processWaveformData();
@@ -337,7 +337,7 @@ class AudioFile {
         if (!(file instanceof File)) {
             alert('Expected a File object');
         }
-        
+
         this.stop();
         const arrayBuffer = await file.arrayBuffer();
         const loadedBuffer = await this.loadWaveformFromArrayBuffer(arrayBuffer);
@@ -374,7 +374,7 @@ class AudioFile {
         if (!this.audioBuffer) return;
         sample = Math.max(0, Math.min(this.audioBuffer.length - 1, Math.floor(sample)));
         this.stop();
-        
+
         const source = this.ctx.createBufferSource();
         this.source = source;
         source.buffer = this.audioBuffer;
@@ -492,7 +492,7 @@ lineColor = lineColorOptions[0];
 
 //lineColor = //'#ec983e'; // override with gray for better visibility
 const uiColor = '#cc781e';
-const uiColorTicks ='color-mix(in lab, #cc781e 50%, #000000 50%)';
+const uiColorTicks = 'color-mix(in lab, #cc781e 50%, #000000 50%)';
 const uiColorLabels = 'color-mix(in lab, #cc781e 90%, #000000 10%)';
 const gridColor = uiColor + '44'; // semi-transparent
 const highlightColor = '#ffffff' + '55'; // more opaque
@@ -561,10 +561,7 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-const waveformYAxisElement = document.getElementById('waveformYAxis');
-waveformYAxisElement.addEventListener('wheel', (e) => {
-    e.preventDefault();
-
+function zoomYAxis(e) {
     // Use vertical wheel direction to zoom amplitude scaling.
     // Scroll up (negative deltaY) -> increase amplitude scaling (zoom in)
     // Scroll down (positive deltaY) -> decrease amplitude scaling (zoom out)
@@ -575,27 +572,80 @@ waveformYAxisElement.addEventListener('wheel', (e) => {
     if (!window.audioFile.view) window.audioFile.view = {};
     const prev = (typeof window.audioFile.view.amplitude_scaling === 'number')
         ? window.audioFile.view.amplitude_scaling
-        : ((typeof window.audioFile.view.amplitude_factor === 'number')
-            ? window.audioFile.view.amplitude_factor
-            : 1);
+        : 1;
 
     let next = prev;
     if (dir > 0) next = prev * STEP;
     else if (dir < 0) next = prev / STEP;
 
     // clamp to reasonable range
-    next = Math.max(0.00001, Math.min(2**16, next));
+    next = Math.max(0.00001, Math.min(2 ** 16, next));
 
-    window.console.log('Amplitude scaling:', prev.toFixed(3), '->', next.toFixed(3));
-    next = 10 ** (Math.floor(4 * db(next)) / 80); // expose globally for debugging
+    //window.console.log('Amplitude scaling:', prev.toFixed(3), '->', next.toFixed(3));
+    //next = 10 ** (Math.floor(4 * db(next)) / 80); // expose globally for debugging
 
     // store both names for compatibility
     window.audioFile.view.amplitude_scaling = next;
-    window.audioFile.view.amplitude_factor = next;
     // re-render waveform to apply new amplitude scaling
     try { renderWaveform(); } catch (err) { /* ignore if render not available yet */ }
+}
+const waveformYAxisElement = document.getElementById('waveformYAxis');
+waveformYAxisElement.addEventListener('wheel', (e) => {
+    e.preventDefault();
+
+    zoomYAxis(e);
 }, { passive: false });
 
+function zoomWaveform(e) {
+    let deltaX = e.deltaX;
+    let deltaY = e.deltaY;
+    if (e.shiftKey) {
+        deltaX = e.deltaY;
+        deltaY = e.deltaX;
+    }
+    const rect = waveformVis.getBoundingClientRect();
+    const mouseX = Math.min(Math.max(0, e.clientX - rect.left + (container && container.scrollLeft ? container.scrollLeft : 0)), rect.width);
+    const normX = mouseX / rect.width;
+
+    const visible = window._zoom.end - window._zoom.start;
+    // zoom factor: scroll up -> zoom in, scroll down -> zoom out
+    const factor = Math.pow(1.003, deltaY); // tuned sensitivity
+    const minWindow = Math.max(0, Math.floor(20)); // don't zoom into less than this
+    const maxWindow = window.audioFile.length; // don't zoom out beyond full length
+
+    let newWindow = Math.round(visible * factor);
+    newWindow = Math.min(Math.max(newWindow, minWindow), maxWindow);
+
+    // focal sample under pointer should remain under pointer after zoom
+    const focalSample = window._zoom.start + Math.round(normX * visible);
+    let newStart = Math.round(focalSample - normX * newWindow);
+
+    // horizontal wheel (deltaX) pans the view: convert deltaX (CSS px) to a fraction of the visible width
+    // and translate that to sample offset. Positive deltaX -> pan right (increase start).
+    const PAN_SENSITIVITY = .5; // adjust as needed
+    if (Math.abs(deltaX) > 0) {
+        const panFraction = (deltaX * PAN_SENSITIVITY) / rect.width;
+        const panSamples = Math.round(panFraction * visible);
+        newStart += panSamples;
+    }
+    newStart = Math.min(Math.max(0, newStart), window.audioFile.length - newWindow);
+    let newEnd = newStart + newWindow;
+
+    // apply
+    window._zoom.start = newStart;
+    window._zoom.end = newEnd;
+
+    // re-render
+    renderWaveform();
+    if (spectrogramRendered) {
+        clearSpectrogram();
+    }
+    if (waveformVis._renderSpectrogramTimer) clearTimeout(waveformVis._renderSpectrogramTimer);
+    waveformVis._renderSpectrogramTimer = setTimeout(() => {
+        renderSpectrogram();
+        waveformVis._renderSpectrogramTimer = null;
+    }, 250);
+}
 
 // create a simple control to pick linear/log y-axis
 (function createYScaleControl() {
@@ -623,7 +673,7 @@ waveformYAxisElement.addEventListener('wheel', (e) => {
     });
 })();
 
-function sampleForX(px, displayWidth,audioFile = window.audioFile) {
+function sampleForX(px, displayWidth, audioFile = window.audioFile) {
     // px: 0..displayWidth
     const frac = clamp(px / Math.max(1, displayWidth), 0, 1);
     return Math.round(
@@ -1001,49 +1051,12 @@ function renderWaveform() {
             } catch (err) {
                 // If properties cannot be redefined, fall back to preventing default only
             }
-            const rect = waveformVis.getBoundingClientRect();
-            const mouseX = Math.min(Math.max(0, e.clientX - rect.left + (container && container.scrollLeft ? container.scrollLeft : 0)), rect.width);
-            const normX = mouseX / rect.width;
-
-            const visible = window._zoom.end - window._zoom.start;
-            // zoom factor: scroll up -> zoom in, scroll down -> zoom out
-            const factor = Math.pow(1.003, e.deltaY); // tuned sensitivity
-            const minWindow = Math.max(0, Math.floor(20)); // don't zoom into less than this
-            const maxWindow = window.audioFile.length; // don't zoom out beyond full length
-
-            let newWindow = Math.round(visible * factor);
-            newWindow = Math.min(Math.max(newWindow, minWindow), maxWindow);
-
-            // focal sample under pointer should remain under pointer after zoom
-            const focalSample = window._zoom.start + Math.round(normX * visible);
-            let newStart = Math.round(focalSample - normX * newWindow);
-
-            // horizontal wheel (deltaX) pans the view: convert deltaX (CSS px) to a fraction of the visible width
-            // and translate that to sample offset. Positive deltaX -> pan right (increase start).
-            const PAN_SENSITIVITY = .5; // adjust as needed
-            if (Math.abs(e.deltaX) > 0) {
-                const panFraction = (e.deltaX * PAN_SENSITIVITY) / rect.width;
-                const panSamples = Math.round(panFraction * visible);
-                newStart += panSamples;
+            if (e.altKey) {
+                // with Alt key, invert vertical zoom direction for more intuitive control
+                zoomYAxis(e);
+                return;
             }
-            newStart = Math.min(Math.max(0, newStart), window.audioFile.length - newWindow);
-            let newEnd = newStart + newWindow;
-
-            // apply
-            window._zoom.start = newStart;
-            window._zoom.end = newEnd;
-
-            // re-render
-            renderWaveform();
-            renderWaveform();
-            if (spectrogramRendered) {
-                clearSpectrogram();
-            }
-            if (waveformVis._renderSpectrogramTimer) clearTimeout(waveformVis._renderSpectrogramTimer);
-            waveformVis._renderSpectrogramTimer = setTimeout(() => {
-                renderSpectrogram();
-                waveformVis._renderSpectrogramTimer = null;
-            }, 250);
+            zoomWaveform(e);
         }, { passive: false });
         window._zoom.inited = true;
     }
@@ -1062,7 +1075,7 @@ function renderWaveform() {
         ticks.push(ticks[ticks.length - 1] / 2);
     }
     ticks.push(0);
-    for (let i = ticks.length-1; i > 0; i--) {
+    for (let i = ticks.length - 1; i > 0; i--) {
         ticks.push(-ticks[i]);
     }
     const y_ticks = ticks.map(v => centerY - (v * window.audioFile.view.amplitude_scaling * centerY));
@@ -1299,13 +1312,13 @@ function renderWaveform() {
                                 if (window.penTool && window.penTool.active) return; // Don't interfere with pen tool
                                 ev.preventDefault();
                                 ev.stopPropagation(); // Prevent waveform click handler
-                                
+
                                 isDragging = true;
                                 dragStartY = ev.clientY;
                                 originalValue = samples[i];
                                 dot.style.cursor = 'grabbing';
                                 dot.style.r = String(Math.min(10, 10 - window.audioFile.visibleSamples / 20));
-                                
+
                                 // Capture mouse globally during drag
                                 document.addEventListener('mousemove', onMouseMove);
                                 document.addEventListener('mouseup', onMouseUp);
@@ -1313,22 +1326,22 @@ function renderWaveform() {
 
                             function onMouseMove(ev) {
                                 if (!isDragging) return;
-                                
+
                                 const deltaY = ev.clientY - dragStartY;
                                 const rect = waveformVis.getBoundingClientRect();
                                 const displayHeight = rect.height;
                                 const centerY = displayHeight / 2;
-                                
+
                                 // Convert pixel movement to sample value change
                                 const amplitudeScaling = window.audioFile.view.amplitude_scaling || 1;
                                 const valueChange = -deltaY / (centerY * amplitudeScaling);
-                                
+
                                 // Calculate new value and clamp to [-1, 1]
                                 const newValue = Math.max(-1, Math.min(1, originalValue + valueChange));
-                                
+
                                 // Update the sample value
                                 samples[i] = newValue;
-                                
+
                                 // Update the visual position of the dot
                                 const newY = centerY - (newValue * amplitudeScaling * centerY);
                                 dot.setAttribute('cy', String(newY));
@@ -1336,14 +1349,14 @@ function renderWaveform() {
 
                             function onMouseUp(ev) {
                                 if (!isDragging) return;
-                                
+
                                 isDragging = false;
                                 dot.style.cursor = 'grab';
-                                
+
                                 // Remove global mouse listeners
                                 document.removeEventListener('mousemove', onMouseMove);
                                 document.removeEventListener('mouseup', onMouseUp);
-                                
+
                                 // Schedule full re-render after drag is complete
                                 setTimeout(() => {
                                     try {
@@ -1540,8 +1553,8 @@ function renderWaveform() {
     // update visual position/visibility of playhead (called every render)
     waveformVis._playhead.updateVisual = function () {
         const ph = waveformVis._playhead;
-        if (window.audioFile.playhead.position == null 
-            || window.audioFile.playhead.position < window.audioFile.view.start 
+        if (window.audioFile.playhead.position == null
+            || window.audioFile.playhead.position < window.audioFile.view.start
             || window.audioFile.playhead.position > window.audioFile.view.end
         ) {
             ph.line.setAttribute('visibility', 'hidden');
@@ -1588,7 +1601,7 @@ function renderWaveform() {
     // Click / touch handlers for seeking + toggling playback
     (function attachPlayheadHandlers() {
         // avoid attaching multiple times
-        if (window.audioFile.playhead.inited) return;   
+        if (window.audioFile.playhead.inited) return;
         window.audioFile.playhead.inited = true;
 
         waveformVis.addEventListener('click', (e) => {
@@ -1829,15 +1842,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 function toggleSidePanel() {
     const sidePanel = document.getElementById('sidePanel');
     const container = document.getElementById('container');
-    
+
     if (!sidePanel || !container) {
         console.warn('Side panel or container element not found');
         return;
     }
-    
+
     // Check current visibility state
     const isVisible = sidePanel.style.display == 'block';
-    
+
     if (isVisible) {
         // Hide side panel
         sidePanel.style.display = 'none';
@@ -1849,10 +1862,10 @@ function toggleSidePanel() {
         // Adjust container width to account for side panel
         container.style.width = 'calc(100% - 16.666667%)'; // Equivalent to lg:w-1/6
     }
-    
+
     // Trigger re-rendering to adjust to new layout
     setTimeout(() => {
-        try {   
+        try {
             renderWaveform();
             if (spectrogramRendered) {
                 renderSpectrogram(true, 0, 'spectrogramCanvas1');
