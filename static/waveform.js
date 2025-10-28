@@ -1339,6 +1339,7 @@ function renderWaveform() {
                                 // Schedule full re-render after drag is complete
                                 setTimeout(() => {
                                     try {
+                                        window.audioFile.processWaveformData();
                                         renderWaveform();
                                         if (spectrogramRendered) {
                                             renderSpectrogram(true, 0, 'spectrogramCanvas1');
