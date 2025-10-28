@@ -642,7 +642,7 @@ function xForSample(sample, displayWidth, audioFile = window.audioFile) {
     return Math.round(clamp(frac, 0, 1) * displayWidth);
 }
 
-window.window.prevView = { start: 0, end: 0, globalMax: null, globalMin: null, mags: null };
+window.prevView = { start: 0, end: 0, globalMax: null, globalMin: null, mags: null };
 let spectrogramRendered = false;
 
 function renderSpectrogram(rerender = false, channel = 0, id = 'spectrogramCanvas1') {
@@ -655,14 +655,21 @@ function renderSpectrogram(rerender = false, channel = 0, id = 'spectrogramCanva
     const displayHeight = element.clientHeight;
 
     const bins = window.fftSize / 2;
-    const rawData = window.audioFile.samples(channel).slice(window.audioFile.view.start, window.audioFile.view.end);
-    const hopSize = Math.floor(window.fftSize / 4);
+    const padding = Math.max(0, window.fftSize - window.audioFile.visibleSamples);
+    console.log('renderSpectrogram: display', displayWidth, 'x', displayHeight, 'bins=', bins, 'padding=', padding);
+    const rawData = window.audioFile.samples(channel).slice(window.audioFile.view.start, window.audioFile.view.end + padding);
+    let hopSize = Math.floor(window.fftSize / 4);
     // create frames (and limit them to at most 10 × display width)
-    const potentialFrames = Math.max(0, Math.floor((rawData.length - window.fftSize) / hopSize) + 1);
+    let potentialFrames = Math.max(0, Math.floor((rawData.length - window.fftSize) / hopSize) + 1);
 
 
     const maxFramesAllowed = displayWidth * 2;
-
+    if (potentialFrames < displayWidth / 4) {
+        const ratio = displayWidth / Math.max(1, potentialFrames);
+        console.warn('Only', potentialFrames, 'frames available; consider reducing fftSize for better spectrogram resolution.');
+        hopSize = Math.ceil(window.fftSize / ratio);
+        potentialFrames = Math.max(0, Math.floor((rawData.length - window.fftSize) / hopSize) + 1);
+    }
     let frameStep = 1;
     if (potentialFrames > maxFramesAllowed) {
         frameStep = Math.ceil(potentialFrames / maxFramesAllowed);
@@ -673,6 +680,7 @@ function renderSpectrogram(rerender = false, channel = 0, id = 'spectrogramCanva
         console.warn('Not enough audio for one frame with current fftSize');
         return;
     }
+
 
     // downsampling steps to keep canvas reasonable
     const stepX = 1; // Math.max(1, Math.ceil(frames / maxCanvasWidth));
