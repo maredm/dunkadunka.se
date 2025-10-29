@@ -1492,27 +1492,28 @@ function renderWaveform() {
         waveformVis.appendChild(phLine);
         waveformVis._playhead.line = phLine;
 
+        const phLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        phLabel.setAttribute('x', '4');
+        phLabel.setAttribute('y', String(displayHeight - 6));
+        phLabel.setAttribute('fill', uiColor);
+        phLabel.setAttribute('font-size', '12');
+        phLabel.setAttribute('font-family', 'monospace');
+        phLabel.setAttribute('visibility', 'hidden');
+        phLabel.setAttribute('pointer-events', 'none');
+        phLabel.textContent = '';
+        waveformVis.appendChild(phLabel);
+
         // small time label shown at bottom of playhead
         const phLabelBg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
         phLabelBg.setAttribute('x', '0');
         phLabelBg.setAttribute('y', String(displayHeight - 18));
-        phLabelBg.setAttribute('width', '60');
+        phLabelBg.setAttribute('width', '64');
         phLabelBg.setAttribute('height', '16');
         phLabelBg.setAttribute('fill', uiColor + '44');
         phLabelBg.setAttribute('visibility', 'hidden');
         phLabelBg.setAttribute('rx', '3');
         phLabelBg.setAttribute('ry', '3');
         waveformVis.appendChild(phLabelBg);
-
-        const phLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        phLabel.setAttribute('x', '4');
-        phLabel.setAttribute('y', String(displayHeight - 6));
-        phLabel.setAttribute('fill', uiColor);
-        phLabel.setAttribute('font-size', '12');
-        phLabel.setAttribute('visibility', 'hidden');
-        phLabel.setAttribute('pointer-events', 'none');
-        phLabel.textContent = '';
-        waveformVis.appendChild(phLabel);
 
         // attach to playhead state
         waveformVis._playhead.label = phLabel;
@@ -1528,7 +1529,7 @@ function renderWaveform() {
             axisHighlight.style.top = '0';
             axisHighlight.style.height = '100%';
             axisHighlight.style.background = uiColor;
-            axisHighlight.style.width = '1px';
+            axisHighlight.style.width = '2px';
             axisHighlight.style.pointerEvents = 'none';
             axisHighlight.style.visibility = 'hidden';
             axis.appendChild(axisHighlight);
@@ -1555,9 +1556,17 @@ function renderWaveform() {
                         axisHighlight.style.visibility = 'visible';
                         axisHighlights.style.visibility = 'visible';
                         const x = parseFloat(phLine.getAttribute('x1')) || 0;
-                        const visibility = phLine.getAttribute('visibility');
-                        axisHighlight.style.left = `${x - 0.5}px`;
+                        axisHighlight.style.left = `${x - 1}px`;
                         axisHighlights.style.left = `${x - 0.5}px`;
+
+                        axisHighlight.style.background = phLine.getAttribute('stroke');
+                        if (window.audioFile.playing) {
+                            axisHighlight.style.background = highlightColorActive + 'ff';
+                            axisHighlights.style.background = highlightColorActive + '55';
+                        } else {
+                            axisHighlight.style.background = uiColor + 'ff';
+                            axisHighlights.style.background = uiColor + '55';
+                        }
                     } catch (err) {
                         // ignore errors from parsing attrs
                     }
@@ -1567,6 +1576,7 @@ function renderWaveform() {
             }
         }
     })();
+    const highlightColorActive = '#72cc1e';
 
     // --- Playhead (click-to-seek + playback) ---
     // update visual position/visibility of playhead (called every render)
@@ -1586,6 +1596,15 @@ function renderWaveform() {
         ph.line.setAttribute('x2', String(x));
         ph.line.setAttribute('y2', String(displayHeight));
         ph.line.setAttribute('visibility', 'visible');
+        if (window.audioFile.playing) {
+            ph.line.setAttribute('stroke', highlightColorActive + '55');
+            ph.labelBg.setAttribute('fill', highlightColorActive + '44');
+            ph.label.setAttribute('fill', highlightColorActive);
+        } else {
+            ph.line.setAttribute('stroke', uiColor + '55');
+            ph.labelBg.setAttribute('fill', uiColor + '44');
+            ph.label.setAttribute('fill', uiColor);
+        }
 
         // update time label at bottom of playhead
         try {
@@ -1597,15 +1616,15 @@ function renderWaveform() {
             const txt = fmtSec(timeSec, true, true, 0.01);
             ph.label.innerHTML = txt;
             // position label a few px to the right of the playhead, but keep inside svg width
-            const approxW = 70;
+            const approxW = ph.label.getBBox().width + 8;
             const labelX = Math.max(2, Math.min(displayWidth - approxW - 2, x + 4));
             ph.label.setAttribute('x', String(labelX));
             ph.label.setAttribute('y', String(displayHeight - 6));
             ph.label.setAttribute('visibility', 'visible');
             ph.labelBg.setAttribute('x', String(labelX - 2));
             ph.labelBg.setAttribute('y', String(displayHeight - 18));
-            ph.labelBg.setAttribute('width', String(approxW));
-            ph.labelBg.setAttribute('height', '16');
+            ph.labelBg.setAttribute('width', String(ph.label.getBBox().width + 8));
+            ph.labelBg.setAttribute('height', String(ph.label.getBBox().height + 4));
             ph.labelBg.setAttribute('visibility', 'visible');
         } catch (err) {
             console.error('Error updating playhead label:', err);
@@ -1651,6 +1670,7 @@ function renderWaveform() {
                 window.audioFile.playhead.raf = requestAnimationFrame(tick);
             };
             window.audioFile.playhead.raf = requestAnimationFrame(tick);
+            waveformVis._playhead.updateVisual();
         });
 
         // support basic touch (tap to seek/play)
@@ -1661,15 +1681,18 @@ function renderWaveform() {
             const rect = waveformVis.getBoundingClientRect();
             const px = clamp(t.clientX - rect.left, 0, rect.width);
             const sample = sampleForX(px, displayWidth);
-            if (waveformVis._playhead.playing) {
-                const near = Math.abs((waveformVis._playhead.currentSample || 0) - sample) < 2;
+            if (window.audioFile.playing) {
+                // if clicking near current play position, pause; otherwise restart at new position
+                const near = Math.abs((window.audioFile.playhead.position || 0) - sample) < 2;
                 if (near) {
-                    waveformVis._playhead.stop();
+                    window.audioFile.stop();
                 } else {
-                    waveformVis._playhead.playFrom(sample);
+                    window.audioFile.playFrom(sample);
                 }
             } else {
-                waveformVis._playhead.playFrom(sample);
+                window.audioFile.playhead.position = sample;
+                waveformVis._playhead.updateVisual();
+                console.log('Playhead seek to sample', sample);
             }
             ev.preventDefault();
         });
@@ -1682,6 +1705,8 @@ function renderWaveform() {
                 if (window.audioFile.playing) {
                     window.audioFile.stop();
                     console.log('Playback stopped');
+                    
+                    waveformVis._playhead.updateVisual();
                 } else {
                     // if no currentSample, start at window.audioFile.view.start; else at currentSample
                     const startSamp = window.audioFile.playhead.position != null ? window.audioFile.playhead.position : window.audioFile.view.start;
