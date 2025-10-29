@@ -485,6 +485,7 @@ const lineColorOptions = [
 ];
 
 const r = document.querySelector(':root');
+uiColor = '#cc781e';
 r.style.setProperty('--color-tool', '#cc781e');
 r.style.setProperty('--color', '#cc781e');
 // choose a color (pick index 0 for base, or uncomment random line to pick randomly)
