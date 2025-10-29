@@ -485,9 +485,16 @@ const lineColorOptions = [
 ];
 
 const r = document.querySelector(':root');
-uiColor = '#cc781e';
-r.style.setProperty('--color-tool', '#cc781e');
-r.style.setProperty('--color', '#cc781e');
+//uiColor = '#cc781e';
+//uiColor = '#2c95aa'
+//const uiColorTool = '#30a8c0';
+
+//uiColor = '#9095aa';
+//uiColor = '#a0a8c0';
+uiColor = '#a0a0c0';
+const uiColorTool = uiColor;
+r.style.setProperty('--color-tool', uiColorTool);
+r.style.setProperty('--color', uiColor);
 // choose a color (pick index 0 for base, or uncomment random line to pick randomly)
 // lineColor = lineColorOptions[ Math.floor(Math.random() * lineColorOptions.length) ];
 // pick a random color from indices 0..7
@@ -496,8 +503,8 @@ const lineColor = lineColorOptions[0];
 
 //lineColor = //'#ec983e'; // override with gray for better visibility
 //const uiColor = '#cc781e';
-const uiColorTicks = 'color-mix(in lab, ' + uiColor + ' 50%, #000000 50%)';
-const uiColorLabels = 'color-mix(in lab, ' + uiColor + ' 90%, #000000 10%)';
+const uiColorTicks = 'color-mix(in lab, ' + uiColorTool + ' 50%, #000000 50%)';
+const uiColorLabels = 'color-mix(in lab, ' + uiColorTool + ' 90%, #000000 10%)';
 const gridColor = uiColor + '44'; // semi-transparent
 const highlightColor = '#ffffff' + '55'; // more opaque
 

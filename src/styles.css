@@ -40,12 +40,15 @@ tr {
     border-bottom: 4px solid #fff; /* Default border color */
     transition: border-color 0.3s ease;
 }
-
+body {
+    scrollbar-color: color-mix(in lab, var(--color) 20%, #000000 80%) color-mix(in lab, var(--color) 10%, #000000 90%);
+    scrollbar-width: thin;
+}
 label.button-custom {
     padding-top: 6px;
 }
 .button-custom {
-    color: color-mix(in lab, var(--color) 90%, #ffffff 10%);
+    color: color-mix(in lab, var(--color) 80%, #ffffff 20%);
     height:32px; 
     display:block; 
     user-select:none; 
