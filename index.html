@@ -155,12 +155,12 @@
     <section class="flex">
         <!-- Measurement entries will be dynamically added here -->
         <div class="mx-auto w-full"
-            style="background-color: #cc781e22; height: calc(100vh - 64px); position: absolute; top: 32px; left: 0;"
+            style="background-color: color-mix(in lab, var(--color-tool) 10%, #000000 90%); height: calc(100vh - 64px); position: absolute; top: 32px; left: 0;"
             id="container">
             <div style="position:absolute; top:0; right:0; width:52px; height:32px; display:flex; align-items:center; justify-content:center; z-index:50;">
                 <button id="resetZoomBtn" title="Reset zoom" aria-label="Reset zoom" alt="Reset zoom"
                     class="button-custom"
-                    style="width:52px;">
+                    style="width:52px; color: color-mix(in lab, var(--color-tool) 10%, #000000 90%);">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="margin: auto;"
                         xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                         <path d="M8 3H5a2 2 0 0 0-2 2v3" stroke="#cc781eff" stroke-width="1.6" stroke-linecap="round"
@@ -251,7 +251,7 @@
                 </div>
             </div>
             <h2 class="text-sm bg-[#cc781e2C] h-8 py-[6px] px-4" style="color: #cc781eff;">Waveform information</h2>
-            <div style="color: #cc781ecc;" class="py-2 px-4 bg-[#cc781e11] text-sm pb-6">
+            <div style="color: color-mix(in lab, var(--color) 80%, #000000 20%);" class="py-2 px-4 bg-[color-mix(in lab, var(--color) 5%, #000000 95%);] text-sm pb-6">
                 <div id="audioStats">
                     <div class="mb-2">
                         <span class="font-medium">Sample Rate:</span>
@@ -292,8 +292,8 @@
                     }
                 </script>
             </div>
-            <h2 class="text-sm bg-[#cc781e2C] h-8 py-[6px] px-4" style="color: #cc781eff;">Filter</h2>
-            <div style="color: #cc781ecc; height: auto;" class="py-2 px-4 bg-[#cc781e11] text-sm pb-6">
+            <h2 class="text-sm bg-[#cc781e2C] h-8 py-[6px] px-4" style="color: var(--color);">Filter</h2>
+            <div style="color: #cc781ecc; height: auto;" class="py-2 px-4 bg-[color] text-sm pb-6">
                 <div id="filterControls">
                     <div class="mb-2">
                         <span class="font-medium">Apply 2nd order SOS filter:</span>

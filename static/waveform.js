@@ -443,7 +443,7 @@ function prepareUIElements() {
 }
 
 // colors
-let lineColor = (() => {
+let uiColor = (() => {
     // pick a "modern" random HSL palette (vibrant/desaturated)
     const h = Math.floor(Math.random() * 360);
     const s = 55 + Math.floor(Math.random() * 31); // 55..85%
@@ -484,16 +484,19 @@ const lineColorOptions = [
     '#BCBD22'  // olive chartreuse
 ];
 
+const r = document.querySelector(':root');
+r.style.setProperty('--color-tool', '#cc781e');
+r.style.setProperty('--color', '#cc781e');
 // choose a color (pick index 0 for base, or uncomment random line to pick randomly)
 // lineColor = lineColorOptions[ Math.floor(Math.random() * lineColorOptions.length) ];
 // pick a random color from indices 0..7
-lineColor = lineColorOptions[0];
+const lineColor = lineColorOptions[0];
 
 
 //lineColor = //'#ec983e'; // override with gray for better visibility
-const uiColor = '#cc781e';
-const uiColorTicks = 'color-mix(in lab, #cc781e 50%, #000000 50%)';
-const uiColorLabels = 'color-mix(in lab, #cc781e 90%, #000000 10%)';
+//const uiColor = '#cc781e';
+const uiColorTicks = 'color-mix(in lab, ' + uiColor + ' 50%, #000000 50%)';
+const uiColorLabels = 'color-mix(in lab, ' + uiColor + ' 90%, #000000 10%)';
 const gridColor = uiColor + '44'; // semi-transparent
 const highlightColor = '#ffffff' + '55'; // more opaque
 
@@ -696,6 +699,8 @@ window.prevView = { start: 0, end: 0, globalMax: null, globalMin: null, mags: nu
 let spectrogramRendered = false;
 
 function renderSpectrogram(rerender = false, channel = 0, id = 'spectrogramCanvas1') {
+    window.fftSize = 1024;
+    console.log(window.fftSize)
     const element = document.getElementById(id);
     if (!element) {
         console.warn('renderSpectrogram: no element with id', id);

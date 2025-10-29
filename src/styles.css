@@ -45,7 +45,7 @@ label.button-custom {
     padding-top: 6px;
 }
 .button-custom {
-    color: color-mix(in lab, #cc781e 90%, #ffffff 10%);
+    color: color-mix(in lab, var(--color) 90%, #ffffff 10%);
     height:32px; 
     display:block; 
     user-select:none; 
@@ -53,11 +53,11 @@ label.button-custom {
     border:none;
 }
 .button-custom:hover {
-    background-color: color-mix(in lab, #cc781e 25%, #000000 75%);
+    background-color: color-mix(in lab, var(--color) 25%, #000000 75%);
 }
 .button-custom:active {
     padding-top: 1px;
-    background-color: color-mix(in lab, #cc781e 10%, #000000 90%);
+    background-color: color-mix(in lab, var(--color) 10%, #000000 90%);
 }
 label.button-custom:active {
     padding-top: 7px;
