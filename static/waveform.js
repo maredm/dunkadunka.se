@@ -252,8 +252,6 @@ class AudioFile {
             console.log('Calculating aggregated waveform data:', max.length, 'points');
         }
         console.log('Waveform processed: ', data[0].length, 'samples, duration:', fmtSec(data[0].length / this.audioBuffer.sampleRate, true, true, 0.01));
-
-        this.resetView();
         return data;
     }
 
@@ -1671,6 +1669,37 @@ function renderWaveform() {
             };
             window.audioFile.playhead.raf = requestAnimationFrame(tick);
             waveformVis._playhead.updateVisual();
+        });
+
+        const axis = document.getElementById('waveformXAxis');
+        axis.style.cursor = 'pointer';
+        axis.addEventListener('click', (e) => {
+            const rect = waveformVis.getBoundingClientRect();
+            const xPosition = clamp(e.clientX - rect.left, 0, rect.width);
+            const sample = sampleForX(xPosition, Math.max(1, Math.floor(rect.width)));
+
+            if (window.audioFile.playing) {
+                // if clicking near current play position, pause; otherwise restart at new position
+                const near = Math.abs((window.audioFile.playhead.position || 0) - sample) < 2;
+                if (near) {
+                    window.audioFile.stop();
+                } else {
+                    window.audioFile.playFrom(sample);
+                }
+            } else {
+                window.audioFile.playFrom(sample);
+                console.log('Playhead seek to sample', sample);
+            }
+            const tick = () => {
+                if (!window.audioFile.playing) return;
+                const elapsed = window.audioFile.ctx.currentTime - window.audioFile.playStartTime;
+                const cur = window.audioFile.playStartOffset * window.audioFile.sampleRate + elapsed * window.audioFile.sampleRate;
+                window.audioFile.playhead.position = Math.min(audioFile.length, cur);
+
+                waveformVis._playhead.updateVisual();
+                window.audioFile.playhead.raf = requestAnimationFrame(tick);
+            };
+            window.audioFile.playhead.raf = requestAnimationFrame(tick);
         });
 
         // support basic touch (tap to seek/play)
