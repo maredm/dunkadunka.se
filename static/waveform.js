@@ -700,8 +700,12 @@ window.prevView = { start: 0, end: 0, globalMax: null, globalMin: null, mags: nu
 let spectrogramRendered = false;
 
 function renderSpectrogram(rerender = false, channel = 0, id = 'spectrogramCanvas1') {
-    window.fftSize = 1024;
-    console.log(window.fftSize)
+    if (!window.fftSize) {
+        console.warn('renderSpectrogram: fftSize not set');
+        window.fftSize = 1024;
+        changeFftSize(true);
+    }
+    
     const element = document.getElementById(id);
     if (!element) {
         console.warn('renderSpectrogram: no element with id', id);
