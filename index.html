@@ -27,11 +27,11 @@
 
         // Register service worker for PWA functionality
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', function() {
+            window.addEventListener('load', function () {
                 navigator.serviceWorker.register('/sw.js')
-                    .then(function(registration) {
+                    .then(function (registration) {
                         console.log('ServiceWorker registration successful with scope: ', registration.scope);
-                    }, function(err) {
+                    }, function (err) {
                         console.log('ServiceWorker registration failed: ', err);
                     });
             });
@@ -85,39 +85,51 @@
 </head>
 
 <body class="bg-black" style="overflow: hidden;">
-    <header class="w-full flex items-center justify-between p-0" style="background-color: color-mix(in lab, var(--color) 20%, #000000 80%); height: 32px;">
+    <header class="w-full flex items-center justify-between p-0"
+        style="background-color: color-mix(in lab, var(--color) 20%, #000000 80%); height: 32px;">
         <div class="flex items-center gap-3">
-        <div class="dropdown">
-            <button class="text-sm px-4 button-custom z-99" onmousedown="toggleMenu('fileNavMenu')">File</button>
-            <div id="fileNavMenu" class="dropdown-content" onmouseup="toggleMenu('fileNavMenu')">
-                <input id="wavefileInput" type="file" accept="audio/*" class="text-white text-sm px-2 py-1 rounded"
-                style="color: var(--color); background-color: #00000000; display: none; cursor: pointer;">
-            <label for="wavefileInput"
-                class="text-sm px-4 button-custom"
-                style="height: 32px; display: block; user-select: none; cursor: pointer;">Open...</label>
-            <button id="saveAsBtn" title="Save as..." aria-label="Save as"
-                class="text-sm px-4 button-custom"
-                onclick="window.audioFile.downloadWav();">
-                Save as...
-            </button>
-            <button id="saveViewAsBtn" title="Save as..." aria-label="Save as"
-                class="text-sm px-4 button-custom"
-                onclick="window.audioFile.downloadWav(window.audioFile.view.start, window.audioFile.view.end);">
-                Save current view as...
-            </button>
-        </div>
+            <div class="dropdown">
+                <button class="text-sm px-4 button-custom z-99" onmousedown="toggleMenu('fileNavMenu')">File</button>
+
+                <div id="fileNavMenu" class="dropdown-content" onmouseup="toggleMenu('fileNavMenu')">
+                    <button id="saveViewAsBtn" title="New file" aria-label="New file" class="text-sm px-4 button-custom"
+                        onclick="window.newFile()">
+                        New file
+                    </button>
+                    <input id="wavefileInput" type="file" accept="audio/*" class="text-white text-sm px-2 py-1 rounded"
+                        style="color: var(--color); background-color: #00000000; display: none; cursor: pointer;">
+                    <label for="wavefileInput" class="text-sm px-4 button-custom"
+                        style="height: 32px; display: block; user-select: none; cursor: pointer;">Open...</label>
+                    <button id="saveAsBtn" title="Save as..." aria-label="Save as" class="text-sm px-4 button-custom"
+                        onclick="window.audioFile.downloadWav();">
+                        Save as...
+                    </button>
+                    <button id="saveViewAsBtn" title="Save as..." aria-label="Save as"
+                        class="text-sm px-4 button-custom"
+                        onclick="window.audioFile.downloadWav(window.audioFile.view.start, window.audioFile.view.end);">
+                        Save current view as...
+                    </button>
+                </div>
             </div>
             <div class="dropdown">
-            <button class="text-sm px-4 button-custom z-99" onmousedown="toggleMenu('viewNavMenu')">View</button>
-            <div id="viewNavMenu" class="dropdown-content" style="left: 64px;" onmouseup="toggleMenu('viewNavMenu')">
-                <input id="wavefileInput" type="file" accept="audio/*" class="text-white text-sm px-2 py-1 rounded"
-                style="color: var(--color); background-color: #00000000; display: none; cursor: pointer;">
-                <button id="fullscreenBtn" title="Fullscreen" aria-label="Fullscreen"
-                class="text-sm px-4 button-custom"
-                onclick="toggleFullscreen();">
-                Fullscreen
-            </button>
+                <button class="text-sm px-4 button-custom z-99" onmousedown="toggleMenu('viewNavMenu')">View</button>
+                <div id="viewNavMenu" class="dropdown-content" style="left: 64px;"
+                    onmouseup="toggleMenu('viewNavMenu')">
+                    <button id="fullscreenBtn" title="Fullscreen" aria-label="Fullscreen"
+                        class="text-sm px-4 button-custom" onclick="toggleFullscreen();">
+                        Fullscreen
+                    </button>
+                </div>
             </div>
+            <div class="dropdown">
+                <button class="text-sm px-4 button-custom z-99" onmousedown="toggleMenu('calculateNavMenu')">Calculate</button>
+                <div id="calculateNavMenu" class="dropdown-content" style="left: 142px;"
+                    onmouseup="toggleMenu('calculateNavMenu')">
+                    <button id="frequencyAnalysisButton" title="Frequency analysis" aria-label="Frequency analysis"
+                        class="text-sm px-4 button-custom" onclick="alert('Frequency analysis coming soon!');">
+                        Frequency analysis
+                    </button>
+                </div>
             </div>
             <script>
                 function toggleMenu(menuId) {
@@ -137,7 +149,7 @@
             </script>
         </div>
         <div class="flex items-center gap-3" style="cursor: pointer;">
-            
+
         </div>
         <div class="flex-1 flex items-center justify-center"
             style="position: absolute; top: 0; margin: 0 auto; width: calc(100% - 200px); left: 0; right: 0; z-index: -99;">
@@ -150,14 +162,14 @@
         </div>
         <div class="flex items-center gap-4">
             <label for="timeDisplaySelect" class="text-sm text-gray-300"
-                style="color: color-mix(in lab, var(--color) 80%, #000000 20%); user-select: none;">Time display:</label>
+                style="color: color-mix(in lab, var(--color) 80%, #000000 20%); user-select: none;">Time
+                display:</label>
             <select id="timeDisplaySelect" class="text-white text-sm px-2 py-1 rounded"
                 style="color: var(--color); background-color: #00000000; text-decoration: underline; user-select: none; cursor: pointer;">
                 <option value="seconds">Seconds</option>
                 <option value="samples">Samples</option>
             </select>
-            <button id="sidePanelBtn" title="Toggle sidepanel" aria-label="Save as"
-                class="text-sm px-4 button-custom"
+            <button id="sidePanelBtn" title="Toggle sidepanel" aria-label="Save as" class="text-sm px-4 button-custom"
                 onclick="window.toggleSidePanel();updateAudioStats();">
                 Show/hide info panel
             </button>
@@ -186,20 +198,21 @@
         <div class="mx-auto w-full"
             style="background-color: color-mix(in lab, var(--color-tool) 10%, #000000 90%); height: calc(100vh - 64px); position: absolute; top: 32px; left: 0;"
             id="container">
-            <div style="position:absolute; top:0; right:0; width:52px; height:32px; display:flex; align-items:center; justify-content:center; z-index:50;">
+            <div
+                style="position:absolute; top:0; right:0; width:52px; height:32px; display:flex; align-items:center; justify-content:center; z-index:50;">
                 <button id="resetZoomBtn" title="Reset zoom" aria-label="Reset zoom" alt="Reset zoom"
                     class="button-custom"
                     style="width:52px; color: color-mix(in lab, var(--color-tool) 10%, #000000 90%);">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="margin: auto;"
                         xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                        <path d="M8 3H5a2 2 0 0 0-2 2v3" stroke="var(--color-tool)" stroke-width="1.6" stroke-linecap="round"
-                            stroke-linejoin="round" fill="none" />
-                        <path d="M16 21h3a2 2 0 0 0 2-2v-3" stroke="var(--color-tool)" stroke-width="1.6" stroke-linecap="round"
-                            stroke-linejoin="round" fill="none" />
-                        <path d="M21 8V5a2 2 0 0 0-2-2h-3" stroke="var(--color-tool)" stroke-width="1.6" stroke-linecap="round"
-                            stroke-linejoin="round" fill="none" />
-                        <path d="M3 16v3a2 2 0 0 0 2 2h3" stroke="var(--color-tool)" stroke-width="1.6" stroke-linecap="round"
-                            stroke-linejoin="round" fill="none" />
+                        <path d="M8 3H5a2 2 0 0 0-2 2v3" stroke="var(--color-tool)" stroke-width="1.6"
+                            stroke-linecap="round" stroke-linejoin="round" fill="none" />
+                        <path d="M16 21h3a2 2 0 0 0 2-2v-3" stroke="var(--color-tool)" stroke-width="1.6"
+                            stroke-linecap="round" stroke-linejoin="round" fill="none" />
+                        <path d="M21 8V5a2 2 0 0 0-2-2h-3" stroke="var(--color-tool)" stroke-width="1.6"
+                            stroke-linecap="round" stroke-linejoin="round" fill="none" />
+                        <path d="M3 16v3a2 2 0 0 0 2 2h3" stroke="var(--color-tool)" stroke-width="1.6"
+                            stroke-linecap="round" stroke-linejoin="round" fill="none" />
 
                         <!-- Larger inner arrows pointing outwards -->
                         <!-- Up arrow -->
@@ -213,8 +226,9 @@
                     </svg>
                 </button>
             </div>
-            
-            <div id="waveformXAxis" class="absolute" style="width: calc(100vw - 52px); height: 32px; top: 0; z-index: 80;" alt="Play from"></div>
+
+            <div id="waveformXAxis" class="absolute"
+                style="width: calc(100vw - 52px); height: 32px; top: 0; z-index: 80;" alt="Play from"></div>
             <div id="waveformLoading"
                 style="width:100%;height:calc(100vh - 48px);left:0;display:flex;align-items:center;justify-content:center;flex-direction:column;color:#ccc; position:absolute; top: 32px; background-color: #00000088;">
                 <svg width="80" height="40" viewBox="0 0 24 12" fill="var(--color-tool)" id="loadingAnimation">
@@ -251,11 +265,12 @@
 
         </div>
         <!-- Side panel -->
-        <div id="sidePanel"
-            class="lg:w-1/6 overflow-y-hide absolute top-8 right-0 hidden"
+        <div id="sidePanel" class="lg:w-1/6 overflow-y-hide absolute top-8 right-0 hidden"
             style="background-color:color-mix(in lab, var(--color) 10%, #000000 90%); calc(100vh - 64px); flex-direction: column; box-sizing: border-box; z-index: 100; border-left-color: color-mix(in lab, var(--color) 33%, #000000 67%); border-left-width: 1px; height: calc(100vh - 64px);">
-            <h2 class="text-sm bg-[color-mix(in srgb, var(--color) 20%, #000000 80%)] h-8 py-[6px] px-4" style="color: var(--color-tool);">Key bindings</h2>
-            <div style="color: color-mix(in srgb, var(--color) 80%, #000000 20%);" class="py-2 px-4 bg-[color-mix(in srgb, var(--color) 10%, #000000 90%)] text-sm pb-6">
+            <h2 class="text-sm bg-[color-mix(in srgb, var(--color) 20%, #000000 80%)] h-8 py-[6px] px-4"
+                style="color: var(--color-tool);">Key bindings</h2>
+            <div style="color: color-mix(in srgb, var(--color) 80%, #000000 20%);"
+                class="py-2 px-4 bg-[color-mix(in srgb, var(--color) 10%, #000000 90%)] text-sm pb-6">
                 <div id="keyBindings">
                     <div class="mb-2">
                         <span>Play/Pause:</span>
@@ -279,8 +294,10 @@
                     </div>
                 </div>
             </div>
-            <h2 class="text-sm bg-[color-mix(in srgb, var(--color) 20%, #000000 80%)] h-8 py-[6px] px-4" style="color: var(--color-tool);">Waveform information</h2>
-            <div style="color: color-mix(in srgb, var(--color) 80%, #000000 20%); height: auto;" class="py-2 px-4 bg-[color-mix(in srgb, var(--color) 10%, #000000 90%)] text-sm pb-6">
+            <h2 class="text-sm bg-[color-mix(in srgb, var(--color) 20%, #000000 80%)] h-8 py-[6px] px-4"
+                style="color: var(--color-tool);">Waveform information</h2>
+            <div style="color: color-mix(in srgb, var(--color) 80%, #000000 20%); height: auto;"
+                class="py-2 px-4 bg-[color-mix(in srgb, var(--color) 10%, #000000 90%)] text-sm pb-6">
                 <div id="audioStats">
                     <div class="mb-2">
                         <span class="font-medium">Sample Rate:</span>
@@ -321,8 +338,10 @@
                     }
                 </script>
             </div>
-            <h2 class="text-sm bg-[color-mix(in srgb, var(--color) 20%, #000000 80%)] h-8 py-[6px] px-4" style="color: var(--color);">Filter</h2>
-            <div style="color: color-mix(in srgb, var(--color) 80%, #000000 20%); height: auto;" class="py-2 px-4 bg-[color-mix(in srgb, var(--color) 10%, #000000 90%)] text-sm pb-6">
+            <h2 class="text-sm bg-[color-mix(in srgb, var(--color) 20%, #000000 80%)] h-8 py-[6px] px-4"
+                style="color: var(--color);">Filter</h2>
+            <div style="color: color-mix(in srgb, var(--color) 80%, #000000 20%); height: auto;"
+                class="py-2 px-4 bg-[color-mix(in srgb, var(--color) 10%, #000000 90%)] text-sm pb-6">
                 <div id="filterControls">
                     <div class="mb-2">
                         <span class="font-medium">Apply 2nd order SOS filter:</span>
@@ -342,7 +361,7 @@
                         </button>
                     </div>
                 </div>
-        </div>
+            </div>
     </section>
     <div id="statusBar"
         style="width: 100vw; height: 32px; position: absolute; bottom: 0; left: 0; background-color: color-mix(in lab, var(--color) 20%, #000000 80%); display: flex; align-items: center; justify-content:space-between; gap: 16px;">

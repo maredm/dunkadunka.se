@@ -135,52 +135,54 @@ class AudioFile {
         try {
             // Stop any existing playback
             this.stop();
-            
+
             // Request microphone access
-            const stream = await navigator.mediaDevices.getUserMedia({ 
+            const stream = await navigator.mediaDevices.getUserMedia({
                 audio: {
                     sampleRate: this.sampleRate,
                     channelCount: 1,
                     echoCancellation: false,
                     noiseSuppression: false,
                     autoGainControl: false
-                } 
+                }
             });
-            
+
             // Create MediaRecorder for real-time audio capture
             this.mediaRecorder = new MediaRecorder(stream);
             this.recordedChunks = [];
             this.recording = true;
-            
+
             // Set up real-time audio processing
             const source = this.ctx.createMediaStreamSource(stream);
             const processor = this.ctx.createScriptProcessor(4096, 1, 1);
-            
+
             // Initialize recording buffer
             this.recordingBuffer = [];
             this.recordingSampleRate = this.ctx.sampleRate;
-            
+
             processor.onaudioprocess = (e) => {
                 if (!this.recording) return;
-                
+
                 const inputData = e.inputBuffer.getChannelData(0);
                 // Copy input data to our recording buffer
                 this.recordingBuffer.push(new Float32Array(inputData));
-                
+
                 // Update audioBuffer in real-time for visualization
                 this.updateRecordingBuffer();
             };
-            
+
             source.connect(processor);
             processor.connect(this.ctx.destination);
-            
+
             this.recordingSource = source;
             this.recordingProcessor = processor;
             this.recordingStream = stream;
-            
+
+            this.recordingStartSample = this.playhead.position || 0;
+
             console.log('Recording started');
             return true;
-            
+
         } catch (err) {
             console.error('Error starting recording:', err);
             alert('Failed to start recording: ' + err.message);
@@ -190,34 +192,97 @@ class AudioFile {
 
     updateRecordingBuffer() {
         if (!this.recordingBuffer || this.recordingBuffer.length === 0) return;
-        
-        // Calculate total samples
-        const totalSamples = this.recordingBuffer.reduce((sum, chunk) => sum + chunk.length, 0);
-        
-        // Create new AudioBuffer with current recording data
-        const newBuffer = this.ctx.createBuffer(1, totalSamples, this.recordingSampleRate);
-        const channelData = newBuffer.getChannelData(0);
-        
-        // Copy all recorded chunks into the new buffer
-        let offset = 0;
+
+        // Flatten recorded chunks into a single Float32Array
+        const totalRecorded = this.recordingBuffer.reduce((s, c) => s + c.length, 0);
+        const recorded = new Float32Array(totalRecorded);
+        let off = 0;
         for (const chunk of this.recordingBuffer) {
-            channelData.set(chunk, offset);
-            offset += chunk.length;
+            recorded.set(chunk, off);
+            off += chunk.length;
         }
-        
-        // Update the main audioBuffer
-        this.audioBuffer = newBuffer;
-        this.sampleRate = this.recordingSampleRate;
-        
-        // Update view to show new data
-        this.view.end = totalSamples;
-        if (this.view.followPlayhead) {
-            const visibleDuration = 5 * this.sampleRate; // Show last 5 seconds
-            this.view.start = Math.max(0, totalSamples - visibleDuration);
+
+        // Helper: simple linear resampler (if sample rates differ)
+        function resampleLinear(input, inRate, outRate) {
+            if (inRate === outRate) return input;
+            const ratio = outRate / inRate;
+            const outLen = Math.round(input.length * ratio);
+            const out = new Float32Array(outLen);
+            for (let i = 0; i < outLen; i++) {
+            const t = i / ratio;
+            const i0 = Math.floor(t);
+            const i1 = Math.min(input.length - 1, i0 + 1);
+            const alpha = t - i0;
+            out[i] = (1 - alpha) * input[i0] + alpha * input[i1];
+            }
+            return out;
         }
-        
-        // Process waveform data for visualization
-        this.processWaveformData();
+
+        // If we have an existing audioBuffer, insert/overwrite from playhead; otherwise create new buffer
+        if (this.audioBuffer) {
+            const targetRate = this.audioBuffer.sampleRate || this.recordingSampleRate;
+            const rec = resampleLinear(recorded, this.recordingSampleRate, targetRate);
+            const R = rec.length;
+
+            // Determine insert position in samples (playhead.position is in samples in this codebase)
+            const insertPos = Math.max(0, Math.floor(this.recordingStartSample));
+
+            const oldLen = this.audioBuffer.length;
+            const numChannels = this.audioBuffer.numberOfChannels;
+
+            // New length must accommodate either original trailing samples beyond overwrite or extend if recording goes past end
+            const newLen = Math.max(oldLen, insertPos + R);
+
+            const combined = this.ctx.createBuffer(numChannels, newLen, targetRate);
+
+            for (let ch = 0; ch < numChannels; ch++) {
+            const oldCh = this.audioBuffer.getChannelData(ch);
+            const outCh = combined.getChannelData(ch);
+
+            // Copy existing data up to insertPos
+            if (insertPos > 0) {
+                outCh.set(oldCh.subarray(0, Math.min(oldLen, insertPos)), 0);
+            }
+
+            // Write recorded data (mono recorded data duplicated to all channels)
+            outCh.set(rec, insertPos);
+
+            // If there are leftover old samples after the inserted region, copy them after the inserted block
+            const tailStartOld = insertPos + R;
+            if (tailStartOld < oldLen) {
+                outCh.set(oldCh.subarray(tailStartOld, oldLen), tailStartOld);
+            }
+            }
+
+            this.audioBuffer = combined;
+            this.sampleRate = targetRate;
+
+            // Update view/end to reflect new data length
+            this.view.end = this.audioBuffer.length;
+            if (this.view.followPlayhead) {
+            const visibleDuration = 5 * this.sampleRate; // show last ~5s
+            this.view.start = Math.max(0, this.audioBuffer.length - visibleDuration);
+            }
+
+            // Recompute waveform envelope for visualization
+            this.processWaveformData();
+        } else {
+            // No existing audio: create buffer from recorded data (use recordingSampleRate)
+            const newBuf = this.ctx.createBuffer(1, totalRecorded, this.recordingSampleRate);
+            newBuf.copyToChannel(recorded, 0, 0);
+
+            this.audioBuffer = newBuf;
+            this.sampleRate = this.recordingSampleRate;
+
+            this.view.start = 0;
+            this.view.end = totalRecorded;
+            if (this.view.followPlayhead) {
+            const visibleDuration = 5 * this.sampleRate;
+            this.view.start = Math.max(0, totalRecorded - visibleDuration);
+            }
+
+            this.processWaveformData();
+        }
     }
 
     stopRecording() {
@@ -238,9 +303,9 @@ class AudioFile {
             this.recordingStream.getTracks().forEach(track => track.stop());
             this.recordingStream = null;
         }
-        
+
         console.log('Recording stopped, total samples:', this.audioBuffer ? this.audioBuffer.length : 0);
-        
+
         // Return the final recorded audio buffer
         return this.audioBuffer;
     }
@@ -544,7 +609,10 @@ window.addEventListener('keydown', (ev) => {
                     const recordStartOffset = window.audioFile.playhead.position || 0;
                     console.log('Recording started with Shift+Space');
                     // Set up interval to call renderWaveform every second during recording
-                        const tick = () => {
+                    if (spectrogramRendered) {
+                        clearSpectrogram();
+                    }
+                    const tick = () => {
                         if (!window.audioFile.recording) {
                             return;
                         }
@@ -554,16 +622,16 @@ window.addEventListener('keydown', (ev) => {
                         console.log('Current recorded length:', window.audioFile.length, 'samples');
                         console.log('View range:', window.audioFile.view.start, '-', window.audioFile.view.end);
 
-                            //window.audioFile.processWaveformData();
-                            renderWaveform();
-                            const elapsed = window.audioFile.ctx.currentTime - recordStartTime;
-                            const cur = recordStartOffset + elapsed * window.audioFile.sampleRate;
-                            window.audioFile.playhead.position = Math.min(window.audioFile.length, cur);
-
-                            waveformVis._playhead.updateVisual();
-                            requestAnimationFrame(tick);
-                        };
+                        //window.audioFile.processWaveformData();
+                        renderWaveform(); 
+                        const elapsed = window.audioFile.ctx.currentTime - recordStartTime;
+                        const cur = recordStartOffset + elapsed * window.audioFile.sampleRate;
+                        window.audioFile.playhead.position = Math.min(window.audioFile.length, cur);
+                       
+                        waveformVis._playhead.updateVisual();
                         requestAnimationFrame(tick);
+                    };
+                    requestAnimationFrame(tick);
                     // Auto-stop recording after 10 seconds
                 }
             });
@@ -572,10 +640,10 @@ window.addEventListener('keydown', (ev) => {
             const recordedBuffer = window.audioFile.stopRecording();
             console.log('Recording stopped with Shift+Space');
             window.audioFile.resetView();
-                            window.audioFile.processWaveformData();
-                            renderWaveform();
-                            renderSpectrogram(true, 0, 'spectrogramCanvas1');
-                            waveformVis._playhead.updateVisual();
+            window.audioFile.processWaveformData();
+            renderWaveform();
+            renderSpectrogram(true);
+            waveformVis._playhead.updateVisual();
         }
     }
 });
@@ -877,7 +945,7 @@ function renderSpectrogram(rerender = false, channel = 0, id = 'spectrogramCanva
         window.fftSize = 1024;
         changeFftSize(true);
     }
-    
+
     const element = document.getElementById(id);
     if (!element) {
         console.warn('renderSpectrogram: no element with id', id);
@@ -1249,7 +1317,7 @@ function renderWaveform() {
 
     // compute visible window in samples
     //window.audioFile.view.start = Math.max(0, Math.min(audioLength - 1, Math.round(window.audioFile.view.start || window._zoom.start)));
- //window.audioFile.view.end = Math.max(window.audioFile.view.start + 1, Math.min(audioLength, Math.round(window.audioFile.view.end || window._zoom.end)));
+    //window.audioFile.view.end = Math.max(window.audioFile.view.start + 1, Math.min(audioLength, Math.round(window.audioFile.view.end || window._zoom.end)));
 
 
     const ticks = [-4, -Math.SQRT2 * 2, -2, -Math.SQRT2, -1, -Math.SQRT1_2, -0.5, -Math.SQRT1_2 * 0.5, -0.25];
@@ -1340,7 +1408,7 @@ function renderWaveform() {
     })();
 
     // render vertical grid lines and time labels into the #waveformXAxis element (if present)
-    (function renderYAxis() {
+    (function renderXAxis() {
         const select = document.getElementById('timeDisplaySelect');
         const axis = document.getElementById('waveformXAxis');
         axis.innerHTML = '';
@@ -1354,6 +1422,9 @@ function renderWaveform() {
 
         const candidates = [2 / 48000, 0.00002, 0.00005, 0.0001, 0.0002, 0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.20, 0.5, 1, 2, 5, 10, 30, 60, 120, 300, 600, 1800, 3600];
 
+        if (!visibleSeconds) {
+            return; // avoid infinite loop below
+        }
         // prefer a candidate that yields between ~4 and ~20 lines in the view
         let interval = candidates.find(c => {
             const lines = visibleSeconds / c;
@@ -1699,6 +1770,16 @@ function renderWaveform() {
             axisHighlight.style.visibility = 'hidden';
             axis.appendChild(axisHighlight);
 
+            const axisHighlightStart = document.createElement('div');
+            axisHighlightStart.style.position = 'absolute';
+            axisHighlightStart.style.top = '0';
+            axisHighlightStart.style.height = '100%';
+            axisHighlightStart.style.background = uiColor;
+            axisHighlightStart.style.width = '2px';
+            axisHighlightStart.style.pointerEvents = 'none';
+            axisHighlightStart.style.visibility = 'hidden';
+            axis.appendChild(axisHighlightStart);
+
             const axisHighlights = document.createElement('div');
             axisHighlights.style.position = 'absolute';
             axisHighlights.style.top = 'calc(50vh - 12px)';
@@ -1709,6 +1790,16 @@ function renderWaveform() {
             axisHighlights.style.visibility = 'hidden';
             axis.appendChild(axisHighlights);
 
+            const axisSelection = document.createElement('div');
+            axisSelection.style.position = 'absolute';
+            axisSelection.style.top = '0';
+            axisSelection.style.height = '100%';
+            axisSelection.style.background = uiColor + '22';
+            axisSelection.style.pointerEvents = 'none';
+            axisSelection.style.visibility = 'hidden';
+            axis.appendChild(axisSelection);
+            waveformVis._playhead._axisSelection = axisSelection;
+
             if (window.MutationObserver) {
                 const mo = new MutationObserver(() => {
                     try {
@@ -1716,6 +1807,8 @@ function renderWaveform() {
                         if (!vis || vis === 'hidden') {
                             axisHighlight.style.visibility = 'hidden';
                             axisHighlights.style.visibility = 'hidden';
+                            axisSelection.style.visibility = 'hidden';
+                            axisHighlightStart.style.visibility = 'hidden';
                             return;
                         }
                         axisHighlight.style.visibility = 'visible';
@@ -1731,6 +1824,21 @@ function renderWaveform() {
                         } else if (window.audioFile.recording) {
                             axisHighlight.style.background = highlightColorRecording + 'ff';
                             axisHighlights.style.background = highlightColorRecording + '55';
+                            axisSelection.style.visibility = 'visible';
+                            axisSelection.style.background = highlightColorRecording + '22';
+
+                            const offset = window.audioFile.length - (window.audioFile.recordingStartSample || 0);
+                            const startX = xForSample(window.audioFile.recordingStartSample || 0, displayWidth);
+                            
+                            const endX = xForSample(window.audioFile.length-offset, displayWidth);
+                            const selX = Math.min(startX, endX);
+                            const selW = Math.abs(xForSample(window.audioFile.playhead.position, displayWidth) - startX);
+                            axisSelection.style.left = `${selX}px`;
+                            axisSelection.style.width = `${Math.max(1, selW)}px`;
+
+                            axisHighlightStart.style.left = `${startX - 1}px`;
+                            axisHighlightStart.style.background = highlightColorRecording + 'ff';
+                            axisHighlightStart.style.visibility = 'visible';
                         } else {
                             axisHighlight.style.background = uiColor + 'ff';
                             axisHighlights.style.background = uiColor + '55';
@@ -1760,6 +1868,7 @@ function renderWaveform() {
             if (ph.labelBg) ph.labelBg.setAttribute('visibility', 'hidden');
             return;
         }
+        console.log(window.audioFile.playhead.position, window.audioFile.view.start, window.audioFile.view.end);
         const x = xForSample(window.audioFile.playhead.position, displayWidth);
         ph.line.setAttribute('x1', String(x));
         ph.line.setAttribute('x2', String(x));
@@ -1816,7 +1925,6 @@ function renderWaveform() {
         window.audioFile.playhead.inited = true;
 
         waveformVis.addEventListener('click', (e) => {
-            if (e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return; // ignore modified clicks
             const rect = waveformVis.getBoundingClientRect();
             const xPosition = clamp(e.clientX - rect.left, 0, rect.width);
             const sample = sampleForX(xPosition, Math.max(1, Math.floor(rect.width)));
@@ -1917,7 +2025,7 @@ function renderWaveform() {
                 if (window.audioFile.playing) {
                     window.audioFile.stop();
                     console.log('Playback stopped');
-                    
+
                     waveformVis._playhead.updateVisual();
                 } else {
                     // if no currentSample, start at window.audioFile.view.start; else at currentSample
@@ -1935,7 +2043,11 @@ function renderWaveform() {
                     window.audioFile.playhead.raf = requestAnimationFrame(tick);
                 };
                 window.audioFile.playhead.raf = requestAnimationFrame(tick);
+                
+                
+                waveformVis._playhead.updateVisual();
             }
+            
         });
     })();
 
@@ -2141,6 +2253,20 @@ function applyFilter(filterCoeff = A_WEIGHTING_COEFFICIENTS) {
     renderWaveform();
     renderSpectrogram(true, 0, 'spectrogramCanvas1');
 }
+
+function newFile() {
+    window.audioFile.stop();
+    window.audioFile = new AudioFile();
+    setLoadingState(false);
+    renderWaveform();
+    renderSpectrogram(true, 0, 'spectrogramCanvas1');
+    document.getElementById('fileTitle').innerText = 'No filename entered';
+    window.audioFile.filename = '';
+    window.audioFile.startRecording();
+    window.audioFile.stopRecording();
+}
+window.newFile = newFile;
+
 window.applyFilter = applyFilter;
 // Make function globally available
 window.toggleSidePanel = toggleSidePanel;
