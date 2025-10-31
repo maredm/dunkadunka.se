@@ -17,16 +17,8 @@ body {
 }
 
 /* Custom Dropdown Styles */
-.dropdown {position: relative; display: inline-block;}
-.dropdown button {color: white; padding: 4px 12px; border-radius: 4px; cursor: pointer;}
-.dropdown button:hover {background-color: #374151;}
-.dropdown:hover .dropdown-content {display: block;}
-.dropdown-content {display: none; position: absolute; left: 0; padding-top: 4px; color: black; min-width: 160px; border-radius: 4px; box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2); z-index: 1;}
-.dropdown-content a:first-child {border-top-left-radius: 4px; border-top-right-radius: 4px;}
-.dropdown-content a:last-child {border-bottom-left-radius: 4px; border-bottom-right-radius: 4px;}
-.dropdown-content a {display: block; padding: 8px 16px; text-decoration: none; color: black; background-color: white;}
-.dropdown-content a:hover {background-color: #e5e7eb;}
-
+.dropdown-content { padding-top: 1px; @apply text-sm; display: none; cursor: pointer; position: absolute; left: 0; color: color-mix(in lab, var(--color) 80%, #ffffff 20%); min-width: 160px; border-radius: 4px; box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2); z-index: 90; background-color: color-mix(in lab, var(--color) 15%, #000000 85%);}
+.dropdown-content * { width: 100%; text-align: left;}
 * {
     box-sizing: border-box;
     user-select: none;
@@ -48,12 +40,13 @@ label.button-custom {
     padding-top: 6px;
 }
 .button-custom {
+    z-index: 100;
     color: color-mix(in lab, var(--color) 80%, #ffffff 20%);
-    height:32px; 
-    display:block; 
+    height:32px;
     user-select:none; 
     cursor:pointer; 
     border:none;
+    @apply text-sm;
 }
 .button-custom:hover {
     background-color: color-mix(in lab, var(--color) 25%, #000000 75%);

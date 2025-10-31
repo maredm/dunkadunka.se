@@ -86,24 +86,58 @@
 
 <body class="bg-black" style="overflow: hidden;">
     <header class="w-full flex items-center justify-between p-0" style="background-color: color-mix(in lab, var(--color) 20%, #000000 80%); height: 32px;">
-        <div class="flex items-center gap-3" style="cursor: pointer;">
-            <input id="wavefileInput" type="file" accept="audio/*" class="text-white text-sm px-2 py-1 rounded"
+        <div class="flex items-center gap-3">
+        <div class="dropdown">
+            <button class="text-sm px-4 button-custom z-99" onmousedown="toggleMenu('fileNavMenu')">File</button>
+            <div id="fileNavMenu" class="dropdown-content" onmouseup="toggleMenu('fileNavMenu')">
+                <input id="wavefileInput" type="file" accept="audio/*" class="text-white text-sm px-2 py-1 rounded"
                 style="color: var(--color); background-color: #00000000; display: none; cursor: pointer;">
             <label for="wavefileInput"
                 class="text-sm px-4 button-custom"
                 style="height: 32px; display: block; user-select: none; cursor: pointer;">Open...</label>
             <button id="saveAsBtn" title="Save as..." aria-label="Save as"
                 class="text-sm px-4 button-custom"
-                style="height:32px; display:block; user-select:none; cursor:pointer; border:none;"
                 onclick="window.audioFile.downloadWav();">
                 Save as...
             </button>
             <button id="saveViewAsBtn" title="Save as..." aria-label="Save as"
                 class="text-sm px-4 button-custom"
-                style="height:32px; display:block; user-select:none; cursor:pointer; border:none;"
                 onclick="window.audioFile.downloadWav(window.audioFile.view.start, window.audioFile.view.end);">
                 Save current view as...
             </button>
+        </div>
+            </div>
+            <div class="dropdown">
+            <button class="text-sm px-4 button-custom z-99" onmousedown="toggleMenu('viewNavMenu')">View</button>
+            <div id="viewNavMenu" class="dropdown-content" style="left: 64px;" onmouseup="toggleMenu('viewNavMenu')">
+                <input id="wavefileInput" type="file" accept="audio/*" class="text-white text-sm px-2 py-1 rounded"
+                style="color: var(--color); background-color: #00000000; display: none; cursor: pointer;">
+                <button id="fullscreenBtn" title="Fullscreen" aria-label="Fullscreen"
+                class="text-sm px-4 button-custom"
+                onclick="toggleFullscreen();">
+                Fullscreen
+            </button>
+            </div>
+            </div>
+            <script>
+                function toggleMenu(menuId) {
+                    const menu = document.getElementById(menuId);
+                    if (menu.style.display === 'block') {
+                        menu.style.display = 'none';
+                    } else {
+                        window.addEventListener('click', function hideMenu(event) {
+                            if (!menu.contains(event.target) && event.target !== menu.previousElementSibling) {
+                                menu.style.display = 'none';
+                                window.removeEventListener('click', hideMenu);
+                            }
+                        });
+                        menu.style.display = 'block';
+                    }
+                }
+            </script>
+        </div>
+        <div class="flex items-center gap-3" style="cursor: pointer;">
+            
         </div>
         <div class="flex-1 flex items-center justify-center"
             style="position: absolute; top: 0; margin: 0 auto; width: calc(100% - 200px); left: 0; right: 0; z-index: -99;">
@@ -126,11 +160,6 @@
                 class="text-sm px-4 button-custom"
                 onclick="window.toggleSidePanel();updateAudioStats();">
                 Show/hide info panel
-            </button>
-            <button id="fullscreenBtn" title="Fullscreen" aria-label="Fullscreen"
-                class="text-sm px-4 button-custom"
-                onclick="toggleFullscreen();">
-                Fullscreen
             </button>
         </div>
         <script>
@@ -185,7 +214,7 @@
                 </button>
             </div>
             
-            <div id="waveformXAxis" class="absolute" style="width: calc(100vw - 52px); height: 32px; top: 0; z-index: 90;" alt="Play from"></div>
+            <div id="waveformXAxis" class="absolute" style="width: calc(100vw - 52px); height: 32px; top: 0; z-index: 80;" alt="Play from"></div>
             <div id="waveformLoading"
                 style="width:100%;height:calc(100vh - 48px);left:0;display:flex;align-items:center;justify-content:center;flex-direction:column;color:#ccc; position:absolute; top: 32px; background-color: #00000088;">
                 <svg width="80" height="40" viewBox="0 0 24 12" fill="var(--color-tool)" id="loadingAnimation">
