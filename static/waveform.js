@@ -552,6 +552,8 @@ class AudioFile {
         sample = Math.max(0, Math.min(this.audioBuffer.length - 1, Math.floor(sample)));
         this.stop();
 
+        this.setAudioDestination(localStorage.getItem('preferredAudioOutputId'));
+        
         const source = this.ctx.createBufferSource();
         this.source = source;
         source.buffer = this.audioBuffer;
@@ -592,6 +594,59 @@ class AudioFile {
         }
         this.playing = false;
     }
+
+    setAudioDestination(destination) {
+         // route playback to the preferred output device (if configured)
+        try {
+            if (destination && typeof HTMLAudioElement !== 'undefined' && typeof HTMLAudioElement.prototype.setSinkId === 'function') {
+                // create a MediaStream destination to capture WebAudio output
+                const mediaDest = this.ctx.createMediaStreamDestination();
+
+                // ensure we have a reusable hidden <audio> element to play that stream on the chosen device
+                if (!this._outputAudio) {
+                    this._outputAudio = document.createElement('audio');
+                    this._outputAudio.id = 'outputAudioElement';
+                    this._outputAudio.autoplay = true;
+                    this._outputAudio.muted = false;
+                    this._outputAudio.style.display = 'none';
+                    document.body.appendChild(this._outputAudio);
+                }
+
+                // attach the stream and attempt to set the sinkId (may be async / require permissions)
+                this._outputAudio.srcObject = mediaDest.stream;
+                this._outputAudio.setSinkId(destination).then(() => {
+                    // start playback of the routed stream
+                    this._outputAudio.play().catch(() => { /* ignore play() failures */ });
+                    console.log('Routed audio to output device id:', destination);
+                }).catch((err) => {
+                    console.warn('Failed to set audio output device (setSinkId):', err);
+                    // still attempt to play on default device
+                    this._outputAudio.play().catch(() => {});
+                });
+
+                // Intercept the next createBufferSource() so its .connect(this.ctx.destination) calls
+                // are redirected to our mediaDest. Restore original factory immediately after one use.
+                const origCreateBufferSource = this.ctx.createBufferSource.bind(this.ctx);
+                this.ctx.createBufferSource = () => {
+                    const node = origCreateBufferSource();
+                    const origConnect = node.connect.bind(node);
+                    node.connect = function (dest, ...rest) {
+                        // if code attempts to connect to the AudioContext destination, route to mediaDest
+                        if (dest === this.ctx?.destination || dest === (this.ctx && this.ctx.destination)) {
+                            return origConnect(mediaDest, ...rest);
+                        }
+                        return origConnect(dest, ...rest);
+                    }.bind(this);
+                    // restore the original factory so only the immediate source is proxied
+                    this.ctx.createBufferSource = origCreateBufferSource;
+                    return node;
+                };
+            }
+        } catch (err) {
+            console.warn('Error while attempting to route audio output device:', err);
+        }
+    }
+
 }
 
 // Recording functionality

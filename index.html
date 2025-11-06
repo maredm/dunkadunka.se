@@ -121,13 +121,24 @@
                     </button>
                 </div>
             </div>
-            <div class="dropdown">
+                        <div class="dropdown">
                 <button class="text-sm px-4 button-custom z-99" onmousedown="toggleMenu('calculateNavMenu')">Calculate</button>
                 <div id="calculateNavMenu" class="dropdown-content" style="left: 142px;"
                     onmouseup="toggleMenu('calculateNavMenu')">
                     <button id="frequencyAnalysisButton" title="Frequency analysis" aria-label="Frequency analysis"
                         class="text-sm px-4 button-custom" onclick="alert('Frequency analysis coming soon!');">
                         Frequency analysis
+                    </button>
+                </div>
+            </div>
+            <!-- Hardware menu -->
+            <div class="dropdown">
+                <button class="text-sm px-4 button-custom z-99" onmousedown="toggleMenu('hardwareNavMenu')">Settings</button>
+                <div id="hardwareNavMenu" class="dropdown-content" style="left: 232px;"
+                    onmouseup="toggleMenu('hardwareNavMenu')">
+                    <button id="deviceSettingsBtn" title="Audio Hardware" aria-label="Audio Hardware"
+                        class="text-sm px-4 button-custom" onclick="openDeviceSettings();">
+                        Audio Hardware
                     </button>
                 </div>
             </div>
@@ -363,7 +374,7 @@
                 </div>
             </div>
     </section>
-    <div id="statusBar"
+        <div id="statusBar"
         style="width: 100vw; height: 32px; position: absolute; bottom: 0; left: 0; background-color: color-mix(in lab, var(--color) 20%, #000000 80%); display: flex; align-items: center; justify-content:space-between; gap: 16px;">
         <span id="fftSizeDisplay" class="text-sm px-4 py-[6px]"
             style="color:color-mix(in lab, var(--color) 80%, #000000 20%); user-select:none; display:block; max-width:60vw; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
@@ -380,7 +391,156 @@
         </div>
         <span id="waveformStatus" class="text-sm px-2 py-1" style="color: var(--color);">Status</span>
     </div>
+
+    <!-- Device settings modal -->
+    <div id="deviceSettingsModal"
+         style="display:none; position:fixed; inset:0; background:#00000088; z-index:1000; align-items:center; justify-content:center;">
+        <div role="dialog" aria-modal="true" aria-labelledby="deviceSettingsTitle"
+             style="width:min(560px, 92vw); background: color-mix(in lab, var(--color) 10%, #000000 90%); border:1px solid color-mix(in lab, var(--color) 33%, #000000 67%); border-radius:8px; box-shadow:0 10px 40px #000000aa;">
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 16px; background: color-mix(in lab, var(--color) 20%, #000000 80%); border-top-left-radius:8px; border-top-right-radius:8px;">
+                <h3 id="deviceSettingsTitle" class="text-sm" style="color: var(--color-tool); margin:0;">Device settings</h3>
+                <button class="text-sm px-3 button-custom" style="height:28px;" onclick="closeDeviceSettings();">Close</button>
+            </div>
+            <div style="padding:16px; color: color-mix(in srgb, var(--color) 80%, #000000 20%);" class="text-sm">
+                <div class="mb-3" style="margin-bottom:12px;">
+                    <label for="inputDeviceSelect" class="font-medium" style="display:block; margin-bottom:6px;">Input device</label>
+                    <select id="inputDeviceSelect" class="text-white text-sm px-2 py-1 rounded"
+                        style="width:100%; color: var(--color); background-color:#00000000; border:1px solid color-mix(in lab, var(--color) 33%, #000000 67%);">
+                        <option value="">Default input</option>
+                    </select>
+                </div>
+                <div class="mb-3" style="margin-bottom:12px;">
+                    <label for="outputDeviceSelect" class="font-medium" style="display:block; margin-bottom:6px;">Output device</label>
+                    <select id="outputDeviceSelect" class="text-white text-sm px-2 py-1 rounded"
+                        style="width:100%; color: var(--color); background-color:#00000000; border:1px solid color-mix(in lab, var(--color) 33%, #000000 67%);">
+                        <option value="">Default output</option>
+                    </select>
+                    <small id="sinkSupportNote" style="display:block; margin-top:6px; color: color-mix(in lab, var(--color) 60%, #000000 40%);"></small>
+                </div>
+                <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
+                    <button class="text-sm px-4 button-custom" style="height:32px;" onclick="refreshAudioDeviceList();">Refresh list</button>
+                    <button class="text-sm px-4 button-custom" style="height:32px;" onclick="saveDeviceSelections();">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
+        // Device settings logic
+        const INPUT_KEY = 'preferredAudioInputId';
+        const OUTPUT_KEY = 'preferredAudioOutputId';
+
+        function openDeviceSettings() {
+            const modal = document.getElementById('deviceSettingsModal');
+            modal.style.display = 'flex';
+            initDeviceSettings();
+        }
+
+        function closeDeviceSettings() {
+            const modal = document.getElementById('deviceSettingsModal');
+            modal.style.display = 'none';
+        }
+
+        async function ensureDeviceAccess() {
+            try {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+                // Request permission so labels are revealed
+                await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            } catch (_) {
+                // Permission may be denied; device labels may be blank
+            }
+        }
+
+        async function refreshAudioDeviceList() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+                console.warn('MediaDevices API not available');
+                return;
+            }
+
+            await ensureDeviceAccess();
+
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const inputSel = document.getElementById('inputDeviceSelect');
+            const outputSel = document.getElementById('outputDeviceSelect');
+
+            inputSel.innerHTML = '<option class="bg-black" value="">Default input</option>';
+            outputSel.innerHTML = '<option class="bg-black" value="">Default output</option>';
+
+            const inputId = localStorage.getItem(INPUT_KEY) || '';
+            const outputId = localStorage.getItem(OUTPUT_KEY) || '';
+
+            devices.forEach(d => {
+                if (d.kind === 'audioinput') {
+                    const opt = document.createElement('option');
+                    opt.value = d.deviceId;
+                    opt.textContent = d.label || `Microphone (${d.deviceId.slice(0, 8)}…)`;
+                    opt.classList.add('bg-black');
+                    if (d.deviceId === inputId) opt.selected = true;
+                    inputSel.appendChild(opt);
+                } else if (d.kind === 'audiooutput') {
+                    const opt = document.createElement('option');
+                    opt.value = d.deviceId;
+                    opt.textContent = d.label || `Speaker (${d.deviceId.slice(0, 8)}…)`;
+                    opt.classList.add('bg-black');
+                    if (d.deviceId === outputId) opt.selected = true;
+                    outputSel.appendChild(opt);
+                }
+            });
+
+            const note = document.getElementById('sinkSupportNote');
+            const sinkSupported = typeof HTMLMediaElement !== 'undefined' && 'setSinkId' in HTMLMediaElement.prototype;
+            note.textContent = sinkSupported
+                ? 'Output routing supported on this browser.'
+                : 'Output routing (setSinkId) not supported by this browser.';
+        }
+
+        async function applyOutputDevice(deviceId) {
+            const router = document.getElementById('outputAudioElement') || document.getElementById('appOutputRouter');
+            if (!router) return;
+
+            if ('setSinkId' in HTMLMediaElement.prototype) {
+                try {
+                    await router.setSinkId(deviceId || '');
+                } catch (e) {
+                    console.warn('Failed to set sinkId:', e);
+                }
+            }
+        }
+
+        function saveDeviceSelections() {
+            const inputSel = document.getElementById('inputDeviceSelect');
+            const outputSel = document.getElementById('outputDeviceSelect');
+
+            localStorage.setItem(INPUT_KEY, inputSel.value || '');
+            localStorage.setItem(OUTPUT_KEY, outputSel.value || '');
+
+            applyOutputDevice(outputSel.value || '');
+            closeDeviceSettings();
+        }
+
+        async function initDeviceSettings() {
+            await refreshAudioDeviceList();
+
+            // Persist immediately when changed
+            const inputSel = document.getElementById('inputDeviceSelect');
+            const outputSel = document.getElementById('outputDeviceSelect');
+        }
+
+        // Update list if devices change while modal is open
+        if (navigator.mediaDevices && 'ondevicechange' in navigator.mediaDevices) {
+            navigator.mediaDevices.addEventListener('devicechange', () => {
+                const modal = document.getElementById('deviceSettingsModal');
+                if (modal && modal.style.display === 'flex') {
+                    refreshAudioDeviceList();
+                }
+            });
+        }
+
+        // Apply preferred output on load (best-effort)
+        document.addEventListener('DOMContentLoaded', () => {
+            const outId = localStorage.getItem(OUTPUT_KEY);
+            if (outId) applyOutputDevice(outId);
+        });
         console.log('waveform.html script loaded');
     </script>
     <script src="static/waveform.js" type="module"></script>
