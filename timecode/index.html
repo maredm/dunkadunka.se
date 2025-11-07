@@ -121,14 +121,21 @@
     </div>
 
     <script>
-        let fps = 1;
+        const _DEFAULT_FPS = 1;
+        let fps = _DEFAULT_FPS;
+
+        const fpsInput = document.getElementById('fpsInput');
+        const fpsDisplay = document.getElementById('currentFPS');
+
+        fpsInput.value = fps;
+        fpsDisplay.innerText = fps;
 
         function formatTimecode(date) {
             const hours = String(date.getHours()).padStart(2, '0');
             const minutes = String(date.getMinutes()).padStart(2, '0');
             const seconds = String(date.getSeconds()).padStart(2, '0');
             const milliseconds = String(Math.floor(date.getMilliseconds()*fps/1000)).padStart(2, '0');
-            return `${hours}:${minutes}:${seconds}:${milliseconds}`;
+            return `${hours}${minutes}${seconds}${milliseconds}`;
         }
 
         function updateTimecodeQR() {
@@ -150,8 +157,6 @@
             });
         }
         function updateFPS() {
-            const fpsInput = document.getElementById('fpsInput');
-            const fpsDisplay = document.getElementById('currentFPS');
             fpsDisplay.innerText = fpsInput.value;
             const newFPS = parseInt(fpsInput.value);
             
