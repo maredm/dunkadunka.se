@@ -41,19 +41,22 @@ label.button-custom {
 }
 .button-custom {
     z-index: 100;
-    color: color-mix(in lab, var(--color) 80%, #ffffff 20%);
+    color: color-mix(in lab, var(--color) 70%, #ffffff 30%);
     height:32px;
     user-select:none; 
     cursor:pointer; 
     border:none;
     @apply text-sm;
+    font-weight: 300;
+    border-right: 1px solid transparent;
 }
 .button-custom:hover {
-    background-color: color-mix(in lab, var(--color) 25%, #000000 75%);
+    background-color: color-mix(in lab, var(--color) 20%, #000000 80%);
 }
 .button-custom:active {
     padding-top: 1px;
-    background-color: color-mix(in lab, var(--color) 10%, #000000 90%);
+    background-color: color-mix(in lab, var(--color) 5%, #000000 95%);
+    border-right: 1px solid color-mix(in lab, var(--color) 0%, #000000 100%);
 }
 label.button-custom:active {
     padding-top: 7px;

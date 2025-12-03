@@ -779,7 +779,8 @@ const r = document.querySelector(':root');
 
 //uiColor = '#9095aa';
 //uiColor = '#a0a8c0';
-uiColor = '#a0a0c0';
+//uiColor = '#a0a0c0';  
+uiColor = '#e1e5f1ff';
 const uiColorTool = uiColor;
 r.style.setProperty('--color-tool', uiColorTool);
 r.style.setProperty('--color', uiColor);
