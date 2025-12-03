@@ -684,6 +684,8 @@ window.addEventListener('keydown', (ev) => {
                         window.audioFile.playhead.position = Math.min(window.audioFile.length, cur);
                        
                         waveformVis._playhead.updateVisual();
+                        updateStatus();
+
                         requestAnimationFrame(tick);
                     };
                     requestAnimationFrame(tick);
@@ -1921,6 +1923,7 @@ function renderWaveform() {
             ph.line.setAttribute('visibility', 'hidden');
             if (ph.label) ph.label.setAttribute('visibility', 'hidden');
             if (ph.labelBg) ph.labelBg.setAttribute('visibility', 'hidden');
+            updateStatus();
             return;
         }
         console.log(window.audioFile.playhead.position, window.audioFile.view.start, window.audioFile.view.end);
@@ -1966,6 +1969,7 @@ function renderWaveform() {
         } catch (err) {
             console.error('Error updating playhead label:', err);
         }
+        updateStatus();
     };
 
     // Ensure playhead vertical size matches current render
@@ -2109,13 +2113,35 @@ function renderWaveform() {
     // ensure playhead visual is updated for this render (reposition if necessary)
     if (waveformVis._playhead) waveformVis._playhead.updateVisual();
 
-    // update status text with current zoom window
-    status.innerHTML = `View: &nbsp; ${fmtSec(window.audioFile.view.start / window.audioFile.sampleRate, false, true, 0.01)} — ${fmtSec(window.audioFile.view.end / window.audioFile.sampleRate, false, true, 0.01)} (${fmtSamples(window.audioFile.view.start)} — ${fmtSamples(window.audioFile.view.end)}) &nbsp; Duration: ${fmtSec(window.audioFile.visibleSamples / window.audioFile.sampleRate, false, true, 0.01)} (${fmtSamples(window.audioFile.visibleSamples)})`;
+    updateStatus();
 
     // stop further rendering in the outer function (we handled drawing here)
     return;
 
 }
+
+function updateStatus() {
+        // update status text with current zoom window
+    const startTime = fmtSec(window.audioFile.view.start / window.audioFile.sampleRate, true, true, 0.01);
+    const endTime = fmtSec(window.audioFile.view.end / window.audioFile.sampleRate, true, true, 0.01);
+    const startSamples = fmtSamples(window.audioFile.view.start);
+    const endSamples = fmtSamples(window.audioFile.view.end);
+    const durTime = fmtSec(window.audioFile.visibleSamples / window.audioFile.sampleRate, true, true, 0.01);
+    const durSamples = fmtSamples(window.audioFile.visibleSamples);
+
+    let phTime = '-';
+    let phSample = '-';
+    if (window.audioFile.playhead.position != null) {
+        phTime = fmtSec(window.audioFile.playhead.position / window.audioFile.sampleRate, true, true, 0.01);
+        phSample = fmtSamples(window.audioFile.playhead.position.toFixed(0));
+    }
+
+    status.innerHTML =
+        `Playhead: ${phTime} (#${phSample})` +
+        ` &nbsp; View:&nbsp; ${startTime} — ${endTime} (#${startSamples} — ${endSamples})` +
+        ` &nbsp; Duration: ${durTime} (#${durSamples})`;
+}
+
 
 function clearSpectrogram() {
     spectrogramRendered = false;
