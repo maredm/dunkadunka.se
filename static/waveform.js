@@ -1927,7 +1927,6 @@ function renderWaveform() {
             updateStatus();
             return;
         }
-        console.log(window.audioFile.playhead.position, window.audioFile.view.start, window.audioFile.view.end);
         const x = xForSample(window.audioFile.playhead.position, displayWidth);
         ph.line.setAttribute('x1', String(x));
         ph.line.setAttribute('x2', String(x));
