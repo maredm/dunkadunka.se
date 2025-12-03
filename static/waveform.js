@@ -794,7 +794,7 @@ const lineColor = lineColorOptions[0];
 //const uiColor = '#cc781e';
 const uiColorTicks = 'color-mix(in lab, ' + uiColorTool + ' 50%, #000000 50%)';
 const uiColorLabels = 'color-mix(in lab, ' + uiColorTool + ' 90%, #000000 10%)';
-const gridColor = uiColor + '44'; // semi-transparent
+const gridColor = uiColor + '22'; // semi-transparent
 const highlightColor = '#ffffff' + '55'; // more opaque
 
 export function computeFFT(dataArray) {
@@ -1446,7 +1446,7 @@ function renderWaveform() {
         }
         const gridLines = y_ticks.length - 1;
         for (let i = 0; i <= gridLines; i++) {
-            const gridColor = (i - 1 === Math.floor(gridLines / 2)) ? uiColorTicks : uiColor + '44';
+            const gridColor = (i - 1 === Math.floor(gridLines / 2)) ? uiColor + '44' : uiColor + '22';
             const y = y_ticks[i];
             if (ticks[i] != 0 && Math.abs(centerY - y) < 20) {
                 // skip near-center tick (overlaps 0 dB)
