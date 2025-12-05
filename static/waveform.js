@@ -103,30 +103,29 @@ class AudioFile {
     applySOSFilter(a = A_WEIGHTING_COEFFICIENTS.a, b = A_WEIGHTING_COEFFICIENTS.b) {
         if (!this.audioBuffer) return;
         for (let channel = 0; channel < this.audioBuffer.numberOfChannels; channel++) {
-            const input = this.samples(channel);
-            let out = new Float32Array(input.length);
+            let buffer = this.audioBuffer.getChannelData(channel);
 
             let x = new Array(b.length).fill(0);
             let y = new Array(a.length).fill(0);
 
             // process samples
-            for (let n = 0; n < input.length; n++) {
-                x[0] = input[n];
+            for (let n = 0; n < buffer.length; n++) {
+                x[0] = buffer[n];
                 // Direct Form I
                 let sum = b[0] * x[0];
                 for (let i = 1; i < b.length; i++) {
                     sum += b[i] * x[i] - a[i] * y[i];
                 }
                 y[0] = sum / a[0];
-                out[n] = y[0];
 
                 for (let i = b.length - 1; i > 0; i--) {
                     x[i] = x[i - 1];
                     y[i] = y[i - 1];
                 }
+
+                buffer[n] = y[0];
             }
 
-            this.audioBuffer.copyToChannel(out, channel);
             console.log('Applied SOS filter to channel', channel);
         }
     }
@@ -953,7 +952,7 @@ function zoomWaveform(e) {
 (function createYScaleControl() {
     // expose current step globally for use by rendering code (0..19)
     window.yScaleStepsTotal = 20;
-    window.yScaleStep = localStorage.getItem('yScaleStep') !== null ? localStorage.getItem('yScaleStep') : 0; // 0 => fully linear, 19 => fully logarithmic
+    window.yScaleStep = localStorage.getItem('yScaleStep') !== null ? localStorage.getItem('yScaleStep') : 19; // 0 => fully linear, 19 => fully logarithmic
 
     function applyYScaleStep(step) {
         step = Math.max(0, Math.min(window.yScaleStepsTotal - 1, Math.round(step)));
@@ -963,11 +962,14 @@ function zoomWaveform(e) {
 
     // keyboard shortcuts: Ctrl+Alt+ArrowUp / ArrowDown to change step
     document.addEventListener('keydown', (e) => {
-        if (e.ctrlKey && e.altKey && !e.shiftKey) {
+        console.log(e.key, e.ctrlKey, e.altKey, e.shiftKey);
+        if (e.altKey && !e.shiftKey) {
             if (e.key === 'ArrowUp') {
+                console.log('CTRL+ALT+UP detected');
                 e.preventDefault();
                 applyYScaleStep(window.yScaleStep + 1);
             } else if (e.key === 'ArrowDown') {
+                console.log('CTRL+ALT+DOWN detected');
                 e.preventDefault();
                 applyYScaleStep(window.yScaleStep - 1);
             }
