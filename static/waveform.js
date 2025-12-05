@@ -780,7 +780,7 @@ const r = document.querySelector(':root');
 //uiColor = '#9095aa';
 //uiColor = '#a0a8c0';
 //uiColor = '#a0a0c0';  
-uiColor = '#c5cbdd';
+uiColor = '#b5c0e0';
 const uiColorTool = uiColor;
 r.style.setProperty('--color-tool', uiColorTool);
 r.style.setProperty('--color', uiColor);
