@@ -452,7 +452,7 @@ async function setItem(key: string, value: string): Promise<void> {
             tx.onabort = () => reject(tx.error);
         });
         // mirror to sessionStorage for synchronous reads elsewhere
-        try { sessionStorage.setItem(key, value); } catch { /* ignore */ }
+        try { setItem(key, value); } catch { /* ignore */ }
     } catch (e) {
         console.error('setItem(idb) failed', e);
     }
@@ -483,28 +483,28 @@ function saveState(): void {
         name: (tab as HTMLElement).textContent?.replace('×', '').trim()
     }));
     
-    sessionStorage.setItem('tabs', JSON.stringify(tabs));
+    setItem('tabs', JSON.stringify(tabs));
 }
 
-function loadState(): void {
-    const savedTabs = sessionStorage.getItem('tabs');
-    if (savedTabs) {
-        try {
-            const tabs = JSON.parse(savedTabs);
-            console.log('Loaded saved tabs:', tabs);
+async function loadState(): Promise<void> {
+    try {
+        const savedTabs = await getItem('tabs');
+        if (!savedTabs) return;
+        const tabs = JSON.parse(savedTabs);
+        console.log('Loaded saved tabs:', tabs);
 
-            tabs.forEach((tab: { id: string; name: string }) => {
-                // Call createAnalysisTab for each tab
-                const analysisData = JSON.parse(sessionStorage.getItem(`analysis-${tab.id}`) || 'null');
-                if (analysisData) {
-                    console.log('Restoring analysis tab:', analysisData);
-                    createAnalysisTab(analysisData.responseData, analysisData.referenceData, analysisData.filename, analysisData.referenceFilename);
-                }
-            });
-            // Tabs will be recreated when user analyzes files again
-        } catch (e) {
-            console.error('Failed to load saved state:', e);
+        for (const tab of tabs as { id: string; name: string }[]) {
+            // Call createAnalysisTab for each tab
+            const raw = await getItem(`analysis-${tab.id}`);
+            const analysisData = raw ? JSON.parse(raw) : null;
+            if (analysisData) {
+                console.log('Restoring analysis tab:', analysisData);
+                createAnalysisTab(analysisData.responseData, analysisData.referenceData, analysisData.filename, analysisData.referenceFilename);
+            }
         }
+        // Tabs will be recreated when user analyzes files again
+    } catch (e) {
+        console.error('Failed to load saved state:', e);
     }
 }
 

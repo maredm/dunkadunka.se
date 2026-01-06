@@ -1473,7 +1473,7 @@ function setItem(key, value) {
                 case 2:
                     _state.sent();
                     try {
-                        sessionStorage.setItem(key, value);
+                        setItem(key, value);
                     } catch (unused) {}
                     return [
                         3,
@@ -1494,6 +1494,59 @@ function setItem(key, value) {
         });
     })();
 }
+function getItem(key) {
+    return _async_to_generator(function() {
+        var _ref, db2, tx, store, req, res, e;
+        return _ts_generator(this, function(_state) {
+            switch(_state.label){
+                case 0:
+                    _state.trys.push([
+                        0,
+                        3,
+                        ,
+                        4
+                    ]);
+                    return [
+                        4,
+                        openIDB()
+                    ];
+                case 1:
+                    db2 = _state.sent();
+                    tx = db2.transaction("kv", "readonly");
+                    store = tx.objectStore("kv");
+                    req = store.get(key);
+                    return [
+                        4,
+                        new Promise(function(resolve, reject) {
+                            req.onsuccess = function() {
+                                return resolve(req.result);
+                            };
+                            req.onerror = function() {
+                                return reject(req.error);
+                            };
+                        })
+                    ];
+                case 2:
+                    res = _state.sent();
+                    return [
+                        2,
+                        (_ref = res === null || res === void 0 ? void 0 : res.value) !== null && _ref !== void 0 ? _ref : null
+                    ];
+                case 3:
+                    e = _state.sent();
+                    console.error("getItem(idb) failed", e);
+                    return [
+                        2,
+                        null
+                    ];
+                case 4:
+                    return [
+                        2
+                    ];
+            }
+        });
+    })();
+}
 function saveState() {
     var tabs = Array.from(document.querySelectorAll(".tab[data-tab]")).map(function(tab) {
         var _tab_textContent;
@@ -1502,25 +1555,111 @@ function saveState() {
             name: (_tab_textContent = tab.textContent) === null || _tab_textContent === void 0 ? void 0 : _tab_textContent.replace("\xD7", "").trim()
         };
     });
-    sessionStorage.setItem("tabs", JSON.stringify(tabs));
+    setItem("tabs", JSON.stringify(tabs));
 }
 function loadState() {
-    var savedTabs = sessionStorage.getItem("tabs");
-    if (savedTabs) {
-        try {
-            var tabs = JSON.parse(savedTabs);
-            console.log("Loaded saved tabs:", tabs);
-            tabs.forEach(function(tab) {
-                var analysisData = JSON.parse(sessionStorage.getItem("analysis-".concat(tab.id)) || "null");
-                if (analysisData) {
-                    console.log("Restoring analysis tab:", analysisData);
-                    createAnalysisTab(analysisData.responseData, analysisData.referenceData, analysisData.filename, analysisData.referenceFilename);
-                }
-            });
-        } catch (e) {
-            console.error("Failed to load saved state:", e);
-        }
-    }
+    return _async_to_generator(function() {
+        var savedTabs, tabs, _iteratorNormalCompletion, _didIteratorError, _iteratorError, _iterator, _step, tab, raw, analysisData, err, e;
+        return _ts_generator(this, function(_state) {
+            switch(_state.label){
+                case 0:
+                    _state.trys.push([
+                        0,
+                        10,
+                        ,
+                        11
+                    ]);
+                    return [
+                        4,
+                        getItem("tabs")
+                    ];
+                case 1:
+                    savedTabs = _state.sent();
+                    if (!savedTabs) return [
+                        2
+                    ];
+                    tabs = JSON.parse(savedTabs);
+                    console.log("Loaded saved tabs:", tabs);
+                    _iteratorNormalCompletion = true, _didIteratorError = false, _iteratorError = undefined;
+                    _state.label = 2;
+                case 2:
+                    _state.trys.push([
+                        2,
+                        7,
+                        8,
+                        9
+                    ]);
+                    _iterator = tabs[Symbol.iterator]();
+                    _state.label = 3;
+                case 3:
+                    if (!!(_iteratorNormalCompletion = (_step = _iterator.next()).done)) return [
+                        3,
+                        6
+                    ];
+                    tab = _step.value;
+                    return [
+                        4,
+                        getItem("analysis-".concat(tab.id))
+                    ];
+                case 4:
+                    raw = _state.sent();
+                    analysisData = raw ? JSON.parse(raw) : null;
+                    if (analysisData) {
+                        console.log("Restoring analysis tab:", analysisData);
+                        createAnalysisTab(analysisData.responseData, analysisData.referenceData, analysisData.filename, analysisData.referenceFilename);
+                    }
+                    _state.label = 5;
+                case 5:
+                    _iteratorNormalCompletion = true;
+                    return [
+                        3,
+                        3
+                    ];
+                case 6:
+                    return [
+                        3,
+                        9
+                    ];
+                case 7:
+                    err = _state.sent();
+                    _didIteratorError = true;
+                    _iteratorError = err;
+                    return [
+                        3,
+                        9
+                    ];
+                case 8:
+                    try {
+                        if (!_iteratorNormalCompletion && _iterator.return != null) {
+                            _iterator.return();
+                        }
+                    } finally{
+                        if (_didIteratorError) {
+                            throw _iteratorError;
+                        }
+                    }
+                    return [
+                        7
+                    ];
+                case 9:
+                    return [
+                        3,
+                        11
+                    ];
+                case 10:
+                    e = _state.sent();
+                    console.error("Failed to load saved state:", e);
+                    return [
+                        3,
+                        11
+                    ];
+                case 11:
+                    return [
+                        2
+                    ];
+            }
+        });
+    })();
 }
 loadState();
 //# sourceMappingURL=app.js.map
