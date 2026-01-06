@@ -2,6 +2,7 @@ import { FFT } from "./fft";
 import { getFractionalOctaveFrequencies, fractionalOctaveSmoothing } from "./fractional_octave_smoothing";
 import { abs } from "./math";
 import { computeFFT, db, smoothFFT, twoChannelFFT } from "./audio";
+import { storage } from "./storage";
 
 console.debug("App module loaded");
 
@@ -28,6 +29,8 @@ responseFileInput.addEventListener('change', () => {
     analyzeBtn.disabled = !responseFileInput.files?.length;
 });
 
+storage.dumpStorage();
+
 // Tab switching
 tabsContainer.addEventListener('click', (e: MouseEvent) => {
     const target = e.target as HTMLElement;
@@ -35,15 +38,16 @@ tabsContainer.addEventListener('click', (e: MouseEvent) => {
     if (target.classList.contains('tab-close')) {
         const tab = target.parentElement as HTMLElement;
         const tabId = tab.dataset.tab;
+        if (tabId == 'upload') return;
+
+        console.debug('Closing tab', tabId);
+        tab.remove();
+        document.querySelector(`[data-content="${tabId}"]`)?.remove();
+        storage.removeItem(`analysis-${tabId}`).catch(err => console.error('Failed to remove analysis from storage:', err));
         
-        if (tabId !== 'upload') {
-            tab.remove();
-            document.querySelector(`[data-content="${tabId}"]`)?.remove();
-            
-            // Activate upload tab if current was closed
-            if (tab.classList.contains('active')) {
-                switchTab('upload');
-            }
+        // Activate upload tab if current was closed
+        if (tab.classList.contains('active')) {
+            switchTab('upload');
         }
         e.stopPropagation();
     } else if (target.classList.contains('tab')) {
@@ -255,7 +259,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
     const tab = document.createElement('button');
     tab.className = 'tab tab-closable';
     tab.dataset.tab = tabId;
-    tab.innerHTML = `<span class="tab-icon-analysis"></span>${shortName} <span class="tab-close">×</span>`;
+    tab.innerHTML = `<span class="tab-icon-analysis"></span>${shortName} <span class="tab-close">✕</span>`;
     tabsContainer.appendChild(tab);
 
     // Create tab content
@@ -417,64 +421,13 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
     saveState();
 
     // Persist analysis using IndexedDB (mirrored to sessionStorage for compatibility)
-    setItem(`analysis-${tabId}`, JSON.stringify({
+    storage.setItem(`${tabId}`, JSON.stringify({
         filename,
         referenceFilename,
         responseData,
         referenceData,
     })).catch(err => console.error('Failed to persist analysis:', err));
 }
-
-// IndexedDB-backed storage helpers
-function openIDB(): Promise<IDBDatabase> {
-    return new Promise((resolve, reject) => {
-        const req = indexedDB.open('dunkadunka-storage', 1);
-        req.onupgradeneeded = () => {
-            const db = req.result;
-            if (!db.objectStoreNames.contains('kv')) {
-                db.createObjectStore('kv', { keyPath: 'key' });
-            }
-        };
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-    });
-}
-
-async function setItem(key: string, value: string): Promise<void> {
-    try {
-        const db = await openIDB();
-        const tx = db.transaction('kv', 'readwrite');
-        const store = tx.objectStore('kv');
-        store.put({ key, value });
-        await new Promise<void>((resolve, reject) => {
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
-            tx.onabort = () => reject(tx.error);
-        });
-        // mirror to sessionStorage for synchronous reads elsewhere
-        try { setItem(key, value); } catch { /* ignore */ }
-    } catch (e) {
-        console.error('setItem(idb) failed', e);
-    }
-}
-
-async function getItem(key: string): Promise<string | null> {
-    try {
-        const db = await openIDB();
-        const tx = db.transaction('kv', 'readonly');
-        const store = tx.objectStore('kv');
-        const req = store.get(key);
-        const res = await new Promise<any>((resolve, reject) => {
-            req.onsuccess = () => resolve(req.result);
-            req.onerror = () => reject(req.error);
-        });
-        return res?.value ?? null;
-    } catch (e) {
-        console.error('getItem(idb) failed', e);
-        return null;
-    }
-}
-
 
 // Save and load state from sessionStorage
 function saveState(): void {
@@ -483,19 +436,19 @@ function saveState(): void {
         name: (tab as HTMLElement).textContent?.replace('×', '').trim()
     }));
     
-    setItem('tabs', JSON.stringify(tabs));
+    storage.setItem('tabs', JSON.stringify(tabs));
 }
 
 async function loadState(): Promise<void> {
     try {
-        const savedTabs = await getItem('tabs');
+        const savedTabs = await storage.getItem('tabs');
         if (!savedTabs) return;
         const tabs = JSON.parse(savedTabs);
-        console.log('Loaded saved tabs:', tabs);
+        console.log('Loading saved tabs:', tabs);
 
         for (const tab of tabs as { id: string; name: string }[]) {
             // Call createAnalysisTab for each tab
-            const raw = await getItem(`analysis-${tab.id}`);
+            const raw = await storage.getItem(`${tab.id}`);
             const analysisData = raw ? JSON.parse(raw) : null;
             if (analysisData) {
                 console.log('Restoring analysis tab:', analysisData);

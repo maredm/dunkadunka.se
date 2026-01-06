@@ -1,7 +1,6 @@
 import { abs, closest, linspace } from './math';
 import { FFT } from './fft';
 import { fractionalOctaveSmoothing, getFractionalOctaveFrequencies } from './fractional_octave_smoothing';
-import { download } from './wave';
 
 console.debug("Audio module loaded");
 
@@ -335,7 +334,6 @@ export function twoChannelFFT(dataArray: number[] | Float32Array, reference: num
     const offset = reference.length + lag.estimatedLagSamples - 1;
     console.log('Applying offset of', offset, 'samples for alignment');
     referencePadded.set(reference.slice(0, Math.min(reference.length, fftSize) - offset), offset);
-    download(referencePadded, 48000, 'reference_aligned.wav');
 
     //const rmss = rms(referencePadded);
     const reference_ = computeFFT(referencePadded);  // Avoid log(0)

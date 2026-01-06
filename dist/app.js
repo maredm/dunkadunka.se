@@ -225,8 +225,8 @@ var FFT = /*#__PURE__*/ function() {
     _create_class(FFT, [
         {
             key: "fromComplexArray",
-            value: function fromComplexArray(complex, storage) {
-                var res = storage || new Array(complex.length >>> 1);
+            value: function fromComplexArray(complex, storage2) {
+                var res = storage2 || new Array(complex.length >>> 1);
                 for(var i = 0; i < complex.length; i += 2)res[i >>> 1] = complex[i];
                 return res;
             }
@@ -241,8 +241,8 @@ var FFT = /*#__PURE__*/ function() {
         },
         {
             key: "toComplexArray",
-            value: function toComplexArray(input, storage) {
-                var res = storage || this.createComplexArray();
+            value: function toComplexArray(input, storage2) {
+                var res = storage2 || this.createComplexArray();
                 for(var i = 0; i < res.length; i += 2){
                     res[i] = input[i >>> 1];
                     res[i + 1] = 0;
@@ -657,51 +657,6 @@ function fractionalOctaveSmoothing(frequencyData, fraction, frequencies) {
     }
     return smoothedData;
 }
-// src/wave.ts
-function download(samples) {
-    var sampleRate = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : 48e3, name = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : "output";
-    var channels = 1;
-    var bytesPerSample = 2;
-    var blockAlign = channels * bytesPerSample;
-    var byteRate = sampleRate * blockAlign;
-    var dataSize = samples.length * bytesPerSample;
-    var buffer = new ArrayBuffer(44 + dataSize);
-    var view = new DataView(buffer);
-    function writeString(offset2, str) {
-        for(var i = 0; i < str.length; i++)view.setUint8(offset2 + i, str.charCodeAt(i));
-    }
-    writeString(0, "RIFF");
-    view.setUint32(4, 36 + dataSize, true);
-    writeString(8, "WAVE");
-    writeString(12, "fmt ");
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true);
-    view.setUint16(22, channels, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, byteRate, true);
-    view.setUint16(32, blockAlign, true);
-    view.setUint16(34, 16, true);
-    writeString(36, "data");
-    view.setUint32(40, dataSize, true);
-    var offset = 44;
-    for(var i = 0; i < samples.length; i++, offset += 2){
-        var s = Math.max(-1, Math.min(1, Number(samples[i])));
-        view.setInt16(offset, s < 0 ? s * 32768 : s * 32767, true);
-    }
-    var blob = new Blob([
-        buffer
-    ], {
-        type: "audio/wav"
-    });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement("a");
-    a.href = url;
-    a.download = name + ".wav";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-}
 // src/audio.ts
 console.debug("Audio module loaded");
 window.FFT = FFT;
@@ -834,7 +789,6 @@ function twoChannelFFT(dataArray, reference, fftSize, windowType) {
     var offset = reference.length + lag.estimatedLagSamples - 1;
     console.log("Applying offset of", offset, "samples for alignment");
     referencePadded.set(reference.slice(0, Math.min(reference.length, fftSize) - offset), offset);
-    download(referencePadded, 48e3, "reference_aligned.wav");
     var reference_ = computeFFT(referencePadded);
     var signal_ = computeFFT(dataArray);
     var signalMags = signal_.magnitude.map(function(v) {
@@ -881,6 +835,313 @@ function twoChannelFFT(dataArray, reference, fftSize, windowType) {
         fftSize: fftSize
     };
 }
+// src/storage.ts
+function openIDB() {
+    return new Promise(function(resolve, reject) {
+        var req = indexedDB.open("dunkadunka-storage", 1);
+        req.onupgradeneeded = function() {
+            var db2 = req.result;
+            if (!db2.objectStoreNames.contains("kv")) {
+                db2.createObjectStore("kv", {
+                    keyPath: "key"
+                });
+            }
+        };
+        req.onsuccess = function() {
+            return resolve(req.result);
+        };
+        req.onerror = function() {
+            return reject(req.error);
+        };
+    });
+}
+function setItem(key, value) {
+    return _async_to_generator(function() {
+        var db2, tx, store, e;
+        return _ts_generator(this, function(_state) {
+            switch(_state.label){
+                case 0:
+                    _state.trys.push([
+                        0,
+                        3,
+                        ,
+                        4
+                    ]);
+                    return [
+                        4,
+                        openIDB()
+                    ];
+                case 1:
+                    db2 = _state.sent();
+                    tx = db2.transaction("kv", "readwrite");
+                    store = tx.objectStore("kv");
+                    store.put({
+                        key: key,
+                        value: value
+                    });
+                    return [
+                        4,
+                        new Promise(function(resolve, reject) {
+                            tx.oncomplete = function() {
+                                return resolve();
+                            };
+                            tx.onerror = function() {
+                                return reject(tx.error);
+                            };
+                            tx.onabort = function() {
+                                return reject(tx.error);
+                            };
+                        })
+                    ];
+                case 2:
+                    _state.sent();
+                    try {
+                        setItem(key, value);
+                    } catch (unused) {}
+                    return [
+                        3,
+                        4
+                    ];
+                case 3:
+                    e = _state.sent();
+                    console.error("setItem(idb) failed", e);
+                    return [
+                        3,
+                        4
+                    ];
+                case 4:
+                    return [
+                        2
+                    ];
+            }
+        });
+    })();
+}
+function getItem(key) {
+    return _async_to_generator(function() {
+        var _ref, db2, tx, store, req, res, e;
+        return _ts_generator(this, function(_state) {
+            switch(_state.label){
+                case 0:
+                    _state.trys.push([
+                        0,
+                        3,
+                        ,
+                        4
+                    ]);
+                    return [
+                        4,
+                        openIDB()
+                    ];
+                case 1:
+                    db2 = _state.sent();
+                    tx = db2.transaction("kv", "readonly");
+                    store = tx.objectStore("kv");
+                    req = store.get(key);
+                    return [
+                        4,
+                        new Promise(function(resolve, reject) {
+                            req.onsuccess = function() {
+                                return resolve(req.result);
+                            };
+                            req.onerror = function() {
+                                return reject(req.error);
+                            };
+                        })
+                    ];
+                case 2:
+                    res = _state.sent();
+                    return [
+                        2,
+                        (_ref = res === null || res === void 0 ? void 0 : res.value) !== null && _ref !== void 0 ? _ref : null
+                    ];
+                case 3:
+                    e = _state.sent();
+                    console.error("getItem(idb) failed", e);
+                    return [
+                        2,
+                        null
+                    ];
+                case 4:
+                    return [
+                        2
+                    ];
+            }
+        });
+    })();
+}
+function removeItem(key) {
+    return _async_to_generator(function() {
+        var db2, tx, store, e;
+        return _ts_generator(this, function(_state) {
+            switch(_state.label){
+                case 0:
+                    _state.trys.push([
+                        0,
+                        3,
+                        ,
+                        4
+                    ]);
+                    return [
+                        4,
+                        openIDB()
+                    ];
+                case 1:
+                    db2 = _state.sent();
+                    tx = db2.transaction("kv", "readwrite");
+                    store = tx.objectStore("kv");
+                    store.delete(key);
+                    return [
+                        4,
+                        new Promise(function(resolve, reject) {
+                            tx.oncomplete = function() {
+                                return resolve();
+                            };
+                            tx.onerror = function() {
+                                return reject(tx.error);
+                            };
+                            tx.onabort = function() {
+                                return reject(tx.error);
+                            };
+                        })
+                    ];
+                case 2:
+                    _state.sent();
+                    return [
+                        3,
+                        4
+                    ];
+                case 3:
+                    e = _state.sent();
+                    console.error("removeItem(idb) failed", e);
+                    return [
+                        3,
+                        4
+                    ];
+                case 4:
+                    return [
+                        2
+                    ];
+            }
+        });
+    })();
+}
+function clearStorage() {
+    return _async_to_generator(function() {
+        var db2, tx, store, e;
+        return _ts_generator(this, function(_state) {
+            switch(_state.label){
+                case 0:
+                    _state.trys.push([
+                        0,
+                        3,
+                        ,
+                        4
+                    ]);
+                    return [
+                        4,
+                        openIDB()
+                    ];
+                case 1:
+                    db2 = _state.sent();
+                    tx = db2.transaction("kv", "readwrite");
+                    store = tx.objectStore("kv");
+                    store.clear();
+                    return [
+                        4,
+                        new Promise(function(resolve, reject) {
+                            tx.oncomplete = function() {
+                                return resolve();
+                            };
+                            tx.onerror = function() {
+                                return reject(tx.error);
+                            };
+                            tx.onabort = function() {
+                                return reject(tx.error);
+                            };
+                        })
+                    ];
+                case 2:
+                    _state.sent();
+                    try {
+                        sessionStorage.clear();
+                    } catch (unused) {}
+                    return [
+                        3,
+                        4
+                    ];
+                case 3:
+                    e = _state.sent();
+                    console.error("clearStorage(idb) failed", e);
+                    return [
+                        3,
+                        4
+                    ];
+                case 4:
+                    return [
+                        2
+                    ];
+            }
+        });
+    })();
+}
+function dumpStorage() {
+    return _async_to_generator(function() {
+        var db2, tx, store, req, e;
+        return _ts_generator(this, function(_state) {
+            switch(_state.label){
+                case 0:
+                    _state.trys.push([
+                        0,
+                        2,
+                        ,
+                        3
+                    ]);
+                    return [
+                        4,
+                        openIDB()
+                    ];
+                case 1:
+                    db2 = _state.sent();
+                    tx = db2.transaction("kv", "readonly");
+                    store = tx.objectStore("kv");
+                    req = store.openCursor();
+                    req.onsuccess = function(event) {
+                        var cursor = event.target.result;
+                        if (cursor) {
+                            console.log("Key: ".concat(cursor.key, ", Value: ").concat(cursor.value.value));
+                            cursor.continue();
+                        }
+                    };
+                    req.onerror = function() {
+                        console.error("dumpStorage(idb) failed", req.error);
+                    };
+                    return [
+                        3,
+                        3
+                    ];
+                case 2:
+                    e = _state.sent();
+                    console.error("dumpStorage(idb) failed", e);
+                    return [
+                        3,
+                        3
+                    ];
+                case 3:
+                    return [
+                        2
+                    ];
+            }
+        });
+    })();
+}
+var storage = {
+    setItem: setItem,
+    getItem: getItem,
+    removeItem: removeItem,
+    clearStorage: clearStorage,
+    dumpStorage: dumpStorage
+};
 // src/app.ts
 console.debug("App module loaded");
 var root = document.documentElement;
@@ -896,18 +1157,22 @@ responseFileInput.addEventListener("change", function() {
     var _responseFileInput_files;
     analyzeBtn.disabled = !((_responseFileInput_files = responseFileInput.files) === null || _responseFileInput_files === void 0 ? void 0 : _responseFileInput_files.length);
 });
+storage.dumpStorage();
 tabsContainer.addEventListener("click", function(e) {
     var target = e.target;
     if (target.classList.contains("tab-close")) {
+        var _document_querySelector;
         var tab = target.parentElement;
         var tabId = tab.dataset.tab;
-        if (tabId !== "upload") {
-            var _document_querySelector;
-            tab.remove();
-            (_document_querySelector = document.querySelector('[data-content="'.concat(tabId, '"]'))) === null || _document_querySelector === void 0 ? void 0 : _document_querySelector.remove();
-            if (tab.classList.contains("active")) {
-                switchTab("upload");
-            }
+        if (tabId == "upload") return;
+        console.debug("Closing tab", tabId);
+        tab.remove();
+        (_document_querySelector = document.querySelector('[data-content="'.concat(tabId, '"]'))) === null || _document_querySelector === void 0 ? void 0 : _document_querySelector.remove();
+        storage.removeItem("analysis-".concat(tabId)).catch(function(err) {
+            return console.error("Failed to remove analysis from storage:", err);
+        });
+        if (tab.classList.contains("active")) {
+            switchTab("upload");
         }
         e.stopPropagation();
     } else if (target.classList.contains("tab")) {
@@ -1272,7 +1537,7 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
     var tab = document.createElement("button");
     tab.className = "tab tab-closable";
     tab.dataset.tab = tabId;
-    tab.innerHTML = '<span class="tab-icon-analysis"></span>'.concat(shortName, ' <span class="tab-close">\xd7</span>');
+    tab.innerHTML = '<span class="tab-icon-analysis"></span>'.concat(shortName, ' <span class="tab-close">✕</span>');
     tabsContainer.appendChild(tab);
     var content = document.createElement("div");
     content.className = "tab-content";
@@ -1404,7 +1669,7 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
         responsive: true
     });
     saveState();
-    setItem("analysis-".concat(tabId), JSON.stringify({
+    storage.setItem("".concat(tabId), JSON.stringify({
         filename: filename,
         referenceFilename: referenceFilename,
         responseData: responseData,
@@ -1412,140 +1677,6 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
     })).catch(function(err) {
         return console.error("Failed to persist analysis:", err);
     });
-}
-function openIDB() {
-    return new Promise(function(resolve, reject) {
-        var req = indexedDB.open("dunkadunka-storage", 1);
-        req.onupgradeneeded = function() {
-            var db2 = req.result;
-            if (!db2.objectStoreNames.contains("kv")) {
-                db2.createObjectStore("kv", {
-                    keyPath: "key"
-                });
-            }
-        };
-        req.onsuccess = function() {
-            return resolve(req.result);
-        };
-        req.onerror = function() {
-            return reject(req.error);
-        };
-    });
-}
-function setItem(key, value) {
-    return _async_to_generator(function() {
-        var db2, tx, store, e;
-        return _ts_generator(this, function(_state) {
-            switch(_state.label){
-                case 0:
-                    _state.trys.push([
-                        0,
-                        3,
-                        ,
-                        4
-                    ]);
-                    return [
-                        4,
-                        openIDB()
-                    ];
-                case 1:
-                    db2 = _state.sent();
-                    tx = db2.transaction("kv", "readwrite");
-                    store = tx.objectStore("kv");
-                    store.put({
-                        key: key,
-                        value: value
-                    });
-                    return [
-                        4,
-                        new Promise(function(resolve, reject) {
-                            tx.oncomplete = function() {
-                                return resolve();
-                            };
-                            tx.onerror = function() {
-                                return reject(tx.error);
-                            };
-                            tx.onabort = function() {
-                                return reject(tx.error);
-                            };
-                        })
-                    ];
-                case 2:
-                    _state.sent();
-                    try {
-                        setItem(key, value);
-                    } catch (unused) {}
-                    return [
-                        3,
-                        4
-                    ];
-                case 3:
-                    e = _state.sent();
-                    console.error("setItem(idb) failed", e);
-                    return [
-                        3,
-                        4
-                    ];
-                case 4:
-                    return [
-                        2
-                    ];
-            }
-        });
-    })();
-}
-function getItem(key) {
-    return _async_to_generator(function() {
-        var _ref, db2, tx, store, req, res, e;
-        return _ts_generator(this, function(_state) {
-            switch(_state.label){
-                case 0:
-                    _state.trys.push([
-                        0,
-                        3,
-                        ,
-                        4
-                    ]);
-                    return [
-                        4,
-                        openIDB()
-                    ];
-                case 1:
-                    db2 = _state.sent();
-                    tx = db2.transaction("kv", "readonly");
-                    store = tx.objectStore("kv");
-                    req = store.get(key);
-                    return [
-                        4,
-                        new Promise(function(resolve, reject) {
-                            req.onsuccess = function() {
-                                return resolve(req.result);
-                            };
-                            req.onerror = function() {
-                                return reject(req.error);
-                            };
-                        })
-                    ];
-                case 2:
-                    res = _state.sent();
-                    return [
-                        2,
-                        (_ref = res === null || res === void 0 ? void 0 : res.value) !== null && _ref !== void 0 ? _ref : null
-                    ];
-                case 3:
-                    e = _state.sent();
-                    console.error("getItem(idb) failed", e);
-                    return [
-                        2,
-                        null
-                    ];
-                case 4:
-                    return [
-                        2
-                    ];
-            }
-        });
-    })();
 }
 function saveState() {
     var tabs = Array.from(document.querySelectorAll(".tab[data-tab]")).map(function(tab) {
@@ -1555,7 +1686,7 @@ function saveState() {
             name: (_tab_textContent = tab.textContent) === null || _tab_textContent === void 0 ? void 0 : _tab_textContent.replace("\xD7", "").trim()
         };
     });
-    setItem("tabs", JSON.stringify(tabs));
+    storage.setItem("tabs", JSON.stringify(tabs));
 }
 function loadState() {
     return _async_to_generator(function() {
@@ -1571,7 +1702,7 @@ function loadState() {
                     ]);
                     return [
                         4,
-                        getItem("tabs")
+                        storage.getItem("tabs")
                     ];
                 case 1:
                     savedTabs = _state.sent();
@@ -1579,7 +1710,7 @@ function loadState() {
                         2
                     ];
                     tabs = JSON.parse(savedTabs);
-                    console.log("Loaded saved tabs:", tabs);
+                    console.log("Loading saved tabs:", tabs);
                     _iteratorNormalCompletion = true, _didIteratorError = false, _iteratorError = undefined;
                     _state.label = 2;
                 case 2:
@@ -1599,7 +1730,7 @@ function loadState() {
                     tab = _step.value;
                     return [
                         4,
-                        getItem("analysis-".concat(tab.id))
+                        storage.getItem("".concat(tab.id))
                     ];
                 case 4:
                     raw = _state.sent();
