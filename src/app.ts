@@ -416,13 +416,65 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
 
     saveState();
 
-    sessionStorage.setItem(`analysis-${tabId}`, JSON.stringify({
+    // Persist analysis using IndexedDB (mirrored to sessionStorage for compatibility)
+    setItem(`analysis-${tabId}`, JSON.stringify({
         filename,
         referenceFilename,
         responseData,
         referenceData,
-    }));
+    })).catch(err => console.error('Failed to persist analysis:', err));
 }
+
+// IndexedDB-backed storage helpers
+function openIDB(): Promise<IDBDatabase> {
+    return new Promise((resolve, reject) => {
+        const req = indexedDB.open('dunkadunka-storage', 1);
+        req.onupgradeneeded = () => {
+            const db = req.result;
+            if (!db.objectStoreNames.contains('kv')) {
+                db.createObjectStore('kv', { keyPath: 'key' });
+            }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+async function setItem(key: string, value: string): Promise<void> {
+    try {
+        const db = await openIDB();
+        const tx = db.transaction('kv', 'readwrite');
+        const store = tx.objectStore('kv');
+        store.put({ key, value });
+        await new Promise<void>((resolve, reject) => {
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+            tx.onabort = () => reject(tx.error);
+        });
+        // mirror to sessionStorage for synchronous reads elsewhere
+        try { sessionStorage.setItem(key, value); } catch { /* ignore */ }
+    } catch (e) {
+        console.error('setItem(idb) failed', e);
+    }
+}
+
+async function getItem(key: string): Promise<string | null> {
+    try {
+        const db = await openIDB();
+        const tx = db.transaction('kv', 'readonly');
+        const store = tx.objectStore('kv');
+        const req = store.get(key);
+        const res = await new Promise<any>((resolve, reject) => {
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+        return res?.value ?? null;
+    } catch (e) {
+        console.error('getItem(idb) failed', e);
+        return null;
+    }
+}
+
 
 // Save and load state from sessionStorage
 function saveState(): void {
