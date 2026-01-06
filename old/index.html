@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+    <title>DunkaDunka Lab</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="color-mix(in lab, var(--color) 50%, #000000 50%)">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="DunkaDunka Lab">
+    <link rel="apple-touch-icon" href="static/icons/icon-192x192.svg">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="static/styles.css">
+    <script>
+        // Configure Tailwind to use the Outfit font family
+        document.addEventListener('DOMContentLoaded', function () {
+            const style = document.createElement('style');
+            style.innerHTML = `
+                body {
+                    font-family: 'Outfit', sans-serif;
+                }
+            `;
+            document.head.appendChild(style);
+        });
+
+        // Register service worker for PWA functionality
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function () {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(function (registration) {
+                        console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                    }, function (err) {
+                        console.log('ServiceWorker registration failed: ', err);
+                    });
+            });
+
+            // Listen for messages from service worker (shared files)
+            navigator.serviceWorker.addEventListener('message', event => {
+                if (event.data && event.data.type === 'SHARED_FILE') {
+                    handleSharedFile(event.data.file);
+                }
+            });
+        }
+
+        // Handle files shared to the app
+        async function handleSharedFile(file) {
+            if (file && file.type.startsWith('audio/')) {
+                window.setLoadingState(true);
+                // Wait for the audio system to be ready
+                async function checkAudioReady() {
+                    if (window.audioFile && window.audioFile.loadFile) {
+                        window.audioFile.stop();
+                        await window.audioFile.loadFromFile(file);
+                        window.prevView = { start: 0, end: null, globalMax: null, globalMin: null, mags: null };
+                        window._zoom = null;
+                    } else {
+                        setTimeout(checkAudioReady, 100);
+                    }
+                };
+                await checkAudioReady();
+                const fileTitle = document.getElementById('fileTitle');
+                fileTitle.textContent = file.name;
+                window.setLoadingState(false);
+                window._zoom = null;
+                window.audioFile.resetView();
+                renderWaveform();
+                renderSpectrogram(true, 0, 'spectrogramCanvas1');
+                updateAudioStats();
+            }
+        }
+
+        // Handle file system access API if available
+        if ('launchQueue' in window) {
+            window.launchQueue.setConsumer((launchParams) => {
+                if (launchParams.files && launchParams.files.length) {
+                    launchParams.files[0].getFile().then(file => {
+                        handleSharedFile(file);
+                    });
+                }
+            });
+        }
+    </script>
+</head>
+
+<body class="bg-black" style="overflow: hidden;">
+    <header class="w-full flex items-center justify-between p-0"
+        style="background-color: color-mix(in lab, var(--color) 12%, #000000 88%); height: 32px;">
+        <div class="flex items-center gap-3">
+            <div class="dropdown">
+                <button class="text-sm px-4 button-custom z-99" onmousedown="toggleMenu('fileNavMenu')">File</button>
+
+                <div id="fileNavMenu" class="dropdown-content" onmouseup="toggleMenu('fileNavMenu')">
+                    <button id="saveViewAsBtn" title="New file" aria-label="New file" class="text-sm px-4 button-custom"
+                        onclick="window.newFile()">
+                        New file
+                    </button>
+                    <input id="wavefileInput" type="file" accept="audio/*" class="text-white text-sm px-2 py-1 rounded"
+                        style="color: var(--color); background-color: #00000000; display: none; cursor: pointer;">
+                    <label for="wavefileInput" class="text-sm px-4 button-custom"
+                        style="height: 32px; display: block; user-select: none; cursor: pointer;">Open...</label>
+                    <button id="saveAsBtn" title="Save as..." aria-label="Save as" class="text-sm px-4 button-custom"
+                        onclick="window.audioFile.downloadWav();">
+                        Save as...
+                    </button>
+                    <button id="saveViewAsBtn" title="Save as..." aria-label="Save as"
+                        class="text-sm px-4 button-custom"
+                        onclick="window.audioFile.downloadWav(window.audioFile.view.start, window.audioFile.view.end);">
+                        Save current view as...
+                    </button>
+                </div>
+            </div>
+            <div class="dropdown">
+                <button class="text-sm px-4 button-custom z-99" onmousedown="toggleMenu('viewNavMenu')">View</button>
+                <div id="viewNavMenu" class="dropdown-content" style="left: 64px;"
+                    onmouseup="toggleMenu('viewNavMenu')">
+                    <button id="fullscreenBtn" title="Fullscreen" aria-label="Fullscreen"
+                        class="text-sm px-4 button-custom" onclick="toggleFullscreen();">
+                        Fullscreen
+                    </button>
+                </div>
+            </div>
+                        <div class="dropdown">
+                <button class="text-sm px-4 button-custom z-99" onmousedown="toggleMenu('calculateNavMenu')">Calculate</button>
+                <div id="calculateNavMenu" class="dropdown-content" style="left: 142px;"
+                    onmouseup="toggleMenu('calculateNavMenu')">
+                    <button id="frequencyAnalysisButton" title="Frequency analysis" aria-label="Frequency analysis"
+                        class="text-sm px-4 button-custom" onclick="alert('Frequency analysis coming soon!');">
+                        Frequency analysis
+                    </button>
+                </div>
+            </div>
+            <!-- Hardware menu -->
+            <div class="dropdown">
+                <button class="text-sm px-4 button-custom z-99" onmousedown="toggleMenu('hardwareNavMenu')">Settings</button>
+                <div id="hardwareNavMenu" class="dropdown-content" style="left: 232px;"
+                    onmouseup="toggleMenu('hardwareNavMenu')">
+                    <button id="deviceSettingsBtn" title="Audio Hardware" aria-label="Audio Hardware"
+                        class="text-sm px-4 button-custom" onclick="openDeviceSettings();">
+                        Audio Hardware
+                    </button>
+                </div>
+            </div>
+            <script>
+                function toggleMenu(menuId) {
+                    const menu = document.getElementById(menuId);
+                    if (menu.style.display === 'block') {
+                        menu.style.display = 'none';
+                    } else {
+                        window.addEventListener('click', function hideMenu(event) {
+                            if (!menu.contains(event.target) && event.target !== menu.previousElementSibling) {
+                                menu.style.display = 'none';
+                                window.removeEventListener('click', hideMenu);
+                            }
+                        });
+                        menu.style.display = 'block';
+                    }
+                }
+            </script>
+        </div>
+        <div class="flex items-center gap-3" style="cursor: pointer;">
+
+        </div>
+        <div class="flex-1 flex items-center justify-center"
+            style="position: absolute; top: 0; margin: 0 auto; width: calc(100% - 200px); left: 0; right: 0; z-index: -99;">
+            <div style="text-align:center; pointer-events:none;">
+                <span id="fileTitle" class="text-sm px-4 py-[6px]"
+                    style="color: color-mix(in lab, var(--color) 80%, #000000 20%); user-select:none; display:block; max-width:60vw; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                    No file loaded
+                </span>
+            </div>
+        </div>
+        <div class="flex items-center gap-4">
+            <label for="timeDisplaySelect" class="text-sm text-gray-300"
+                style="color: color-mix(in lab, var(--color) 80%, #000000 20%); user-select: none;">Time
+                display:</label>
+            <select id="timeDisplaySelect" class="text-white text-sm px-2 py-1 rounded"
+                style="color: var(--color); background-color: #00000000; text-decoration: underline; user-select: none; cursor: pointer;">
+                <option value="seconds">Seconds</option>
+                <option value="samples">Samples</option>
+            </select>
+            <button id="sidePanelBtn" title="Toggle sidepanel" aria-label="Save as" class="text-sm px-4 button-custom"
+                onclick="window.toggleSidePanel();updateAudioStats();">
+                Show/hide info panel
+            </button>
+        </div>
+        <script>
+            function toggleFullscreen() {
+                if (!document.fullscreenElement) {
+                    const docElm = document.documentElement;
+                    if (docElm.requestFullscreen) {
+                        docElm.requestFullscreen();
+                    } else if (docElm.mozRequestFullScreen) { /* Firefox */
+                        docElm.mozRequestFullScreen();
+                    } else if (docElm.webkitRequestFullscreen) { /* Chrome, Safari & Opera */
+                        docElm.webkitRequestFullscreen();
+                    } else if (docElm.msRequestFullscreen) { /* IE/Edge */
+                        docElm.msRequestFullscreen();
+                    }
+                } else {
+                    document.exitFullscreen();
+                }
+            }
+        </script>
+    </header>
+    <section class="flex">
+        <!-- Measurement entries will be dynamically added here -->
+        <div class="mx-auto w-full"
+            style="background-color: color-mix(in lab, var(--color-tool) 6%, #000000 94%); height: calc(100vh - 64px); position: absolute; top: 32px; left: 0;"
+            id="container">
+            <div
+                style="position:absolute; top:0; right:0; width:52px; height:32px; display:flex; align-items:center; justify-content:center; z-index:50;">
+                <button id="resetZoomBtn" title="Reset zoom" aria-label="Reset zoom" alt="Reset zoom"
+                    class="button-custom"
+                    style="width:52px; color: color-mix(in lab, var(--color-tool) 10%, #000000 90%);">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="margin: auto;"
+                        xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                        <path d="M8 3H5a2 2 0 0 0-2 2v3" stroke="var(--color-tool)" stroke-width="1.6"
+                            stroke-linecap="round" stroke-linejoin="round" fill="none" />
+                        <path d="M16 21h3a2 2 0 0 0 2-2v-3" stroke="var(--color-tool)" stroke-width="1.6"
+                            stroke-linecap="round" stroke-linejoin="round" fill="none" />
+                        <path d="M21 8V5a2 2 0 0 0-2-2h-3" stroke="var(--color-tool)" stroke-width="1.6"
+                            stroke-linecap="round" stroke-linejoin="round" fill="none" />
+                        <path d="M3 16v3a2 2 0 0 0 2 2h3" stroke="var(--color-tool)" stroke-width="1.6"
+                            stroke-linecap="round" stroke-linejoin="round" fill="none" />
+
+                        <!-- Larger inner arrows pointing outwards -->
+                        <!-- Up arrow -->
+                        <polygon points="12,4 9,8 15,8" fill="var(--color-tool)" />
+                        <!-- Right arrow -->
+                        <polygon points="20,12 16,9 16,15" fill="var(--color-tool)" />
+                        <!-- Down arrow -->
+                        <polygon points="12,20 9,16 15,16" fill="var(--color-tool)" />
+                        <!-- Left arrow -->
+                        <polygon points="4,12 8,9 8,15" fill="var(--color-tool)" />
+                    </svg>
+                </button>
+            </div>
+
+            <div id="waveformXAxis" class="absolute"
+                style="width: calc(100vw - 52px); height: 32px; top: 0; z-index: 80;" alt="Play from"></div>
+            <div id="waveformLoading"
+                style="width:100%;height:calc(100vh - 48px);left:0;display:flex;align-items:center;justify-content:center;flex-direction:column;color:#ccc; position:absolute; top: 32px; background-color: #00000088;">
+                <svg width="80" height="40" viewBox="0 0 24 12" fill="var(--color-tool)" id="loadingAnimation">
+                    <rect x="0" y="4" width="3" height="4">
+                        <animate attributeName="height" values="4;10;4" dur="0.8s" repeatCount="indefinite" />
+                    </rect>
+                    <rect x="6" y="4" width="3" height="4">
+                        <animate attributeName="height" values="6;12;6" dur="0.8s" begin="0.2s"
+                            repeatCount="indefinite" />
+                    </rect>
+                    <rect x="12" y="4" width="3" height="4">
+                        <animate attributeName="height" values="4;10;4" dur="0.8s" begin="0.4s"
+                            repeatCount="indefinite" />
+                    </rect>
+                    <rect x="18" y="4" width="3" height="4">
+                        <animate attributeName="height" values="6;12;6" dur="0.8s" begin="0.6s"
+                            repeatCount="indefinite" />
+                    </rect>
+                </svg>
+                <small style="margin-top:8px;color:var(--color-tool);text-transform:uppercase" id="loadingText">Loading
+                    waveform</small>
+            </div>
+
+            <div id="spectrogramCanvas1YAxis" class="absolute"
+                style="right: 0; top: calc(50vh - 12px); width: 52px; height: calc(50vh - 52px);"></div>
+            <canvas id="spectrogramCanvas1"
+                style="width: calc(100% - 48px); height: calc(50vh - 52px); top: calc(50vh - 12px); left: 0;"
+                class="absolute" xmlns="http://www.w3.org/2000/svg" class="block bg-black"> </canvas>
+            <div id="waveformYAxis" class="absolute"
+                style="right: 0; top: 32px; width: 52px; height: calc(50vh - 56px);"></div>
+            <svg id="waveformSVG"
+                style="cursor: text; width: calc(100% - 52px); height: calc(50vh - 56px); position:absolute; top: 32px;"
+                xmlns="http://www.w3.org/2000/svg" class="block bg-black"></svg>
+
+        </div>
+        <!-- Side panel -->
+        <div id="sidePanel" class="lg:w-1/6 overflow-y-hide absolute top-8 right-0 hidden"
+            style="background-color:color-mix(in lab, var(--color) 10%, #000000 90%); calc(100vh - 64px); flex-direction: column; box-sizing: border-box; z-index: 100; border-left-color: color-mix(in lab, var(--color) 33%, #000000 67%); border-left-width: 1px; height: calc(100vh - 64px);">
+            <h2 class="text-sm bg-[color-mix(in srgb, var(--color) 20%, #000000 80%)] h-8 py-[6px] px-4"
+                style="color: var(--color-tool);">Key bindings</h2>
+            <div style="color: color-mix(in srgb, var(--color) 80%, #000000 20%);"
+                class="py-2 px-4 bg-[color-mix(in srgb, var(--color) 10%, #000000 90%)] text-sm pb-6">
+                <div id="keyBindings">
+                    <div class="mb-2">
+                        <span>Play/Pause:</span>
+                        <span class="font-semibold">Spacebar</span>
+                    </div>
+                    <div class="mb-2">
+                        <span>Increase FFT Size:</span>
+                        <span class="font-semibold">Ctrl + Shift + Up</span>
+                    </div>
+                    <div class="mb-2">
+                        <span>Decrease FFT Size:</span>
+                        <span class="font-semibold">Ctrl + Shift + Down</span>
+                    </div>
+                    <div class="mb-2">
+                        <span>More linear spectrogram:</span>
+                        <span class="font-semibold">Ctrl + Alt + Up</span>
+                    </div>
+                    <div class="mb-2">
+                        <span>More logarithmic spectrogram:</span>
+                        <span class="font-semibold">Ctrl + Alt + Down</span>
+                    </div>
+                </div>
+            </div>
+            <h2 class="text-sm bg-[color-mix(in srgb, var(--color) 20%, #000000 80%)] h-8 py-[6px] px-4"
+                style="color: var(--color-tool);">Waveform information</h2>
+            <div style="color: color-mix(in srgb, var(--color) 80%, #000000 20%); height: auto;"
+                class="py-2 px-4 bg-[color-mix(in srgb, var(--color) 10%, #000000 90%)] text-sm pb-6">
+                <div id="audioStats">
+                    <div class="mb-2">
+                        <span class="font-medium">Sample Rate:</span>
+                        <span id="sampleRate">—</span>
+                    </div>
+                    <div class="mb-2">
+                        <span class="font-medium">Duration:</span>
+                        <span id="duration">—</span>
+                    </div>
+                    <div class="mb-2">
+                        <span class="font-medium">File Name:</span>
+                        <span id="fileName">—</span>
+                    </div>
+                    <div class="mb-2">
+                        <span class="font-medium">RMS:</span>
+                        <span id="rmsValue">—</span>
+                    </div>
+                </div>
+                <script>
+                    function updateAudioStats() {
+                        if (window.audioFile) {
+                            document.getElementById('sampleRate').textContent = window.audioFile.sampleRate ? `${window.audioFile.sampleRate} Hz` : '—';
+                            document.getElementById('duration').textContent = window.audioFile.length ? `${(window.audioFile.length / window.audioFile.sampleRate).toFixed(3)} s` : '—';
+                            document.getElementById('fileName').textContent = window.audioFile.filename ? window.audioFile.filename : '—';
+                            // Calculate RMS if waveform data exists
+                            if (window.audioFile.samples(0) && window.audioFile.length < 1000 * window.audioFile.sampleRate) { // Limit to 1000 seconds for performance
+                                const channelData = window.audioFile.samples(0);
+                                let sumSquares = 0;
+                                for (let i = 0; i < window.audioFile.length; i++) {
+                                    sumSquares += channelData[i] * channelData[i];
+                                }
+                                const rms = Math.abs(sumSquares / window.audioFile.length);
+                                document.getElementById('rmsValue').textContent = (10 * Math.log10(rms)).toFixed(2) + ' dB';
+                            } else {
+                                document.getElementById('rmsValue').textContent = '—';
+                            }
+                        }
+                    }
+                </script>
+            </div>
+            <h2 class="text-sm bg-[color-mix(in srgb, var(--color) 20%, #000000 80%)] h-8 py-[6px] px-4"
+                style="color: var(--color);">Filter</h2>
+            <div style="color: color-mix(in srgb, var(--color) 80%, #000000 20%); height: auto;"
+                class="py-2 px-4 bg-[color-mix(in srgb, var(--color) 10%, #000000 90%)] text-sm pb-6">
+                <div id="filterControls">
+                    <div class="mb-2">
+                        <span class="font-medium">Apply 2nd order SOS filter:</span>
+                    </div>
+                    <div class="mb-2">
+                        <button id="applyFilterBtn" title="Apply filter" aria-label="Apply filter"
+                            class="text-sm px-4 button-custom"
+                            style="height:32px; display:block; user-select:none; cursor:pointer; border:none;"
+                            onclick="applyFilter();">
+                            Apply A-weighting Filter
+                        </button>
+                        <button id="applyFilterBtn" title="Apply filter" aria-label="Apply filter"
+                            class="text-sm px-4 button-custom"
+                            style="height:32px; display:block; user-select:none; cursor:pointer; border:none;"
+                            onclick="applyFilter({a: [1, -1.8153396116625289, 0.8310041056111546], b: [0.9115859293184209, -1.8231718586368417, 0.9115859293184209]});">
+                            Apply 100 Hz HPF Filter
+                        </button>
+                    </div>
+                </div>
+            </div>
+    </section>
+        <div id="statusBar"
+        style="width: 100vw; height: 32px; position: absolute; bottom: 0; left: 0; background-color: color-mix(in lab, var(--color-tool) 6%, #000000 94%); display: flex; align-items: center; justify-content:space-between; gap: 16px;">
+        <span id="fftSizeDisplay" class="text-sm px-4 py-[6px]"
+            style="color:color-mix(in lab, var(--color) 80%, #000000 20%); user-select:none; display:block; max-width:60vw; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+            No file loaded
+        </span>
+        <div class="flex-1 flex items-center justify-center"
+            style="position: absolute; top: 0; margin: 0 auto; width: calc(100% - 200px); left: 0; right: 0;">
+
+            <div style="text-align:center; pointer-events:none;">
+                <span id="spectrogramStatus" class="text-sm px-2 py-1" style="color: var(--color);">—</span>
+
+
+            </div>
+        </div>
+        <span id="waveformStatus" class="text-sm px-2 py-1" style="color: var(--color); font-family: monospace; font-size: small;"></span>
+    </div>
+
+    <!-- Device settings modal -->
+    <div id="deviceSettingsModal"
+         style="display:none; position:fixed; inset:0; background:#00000088; z-index:1000; align-items:center; justify-content:center;">
+        <div role="dialog" aria-modal="true" aria-labelledby="deviceSettingsTitle"
+             style="width:min(560px, 92vw); background: color-mix(in lab, var(--color) 10%, #000000 90%); border:1px solid color-mix(in lab, var(--color) 33%, #000000 67%); border-radius:8px; box-shadow:0 10px 40px #000000aa;">
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 16px; background: color-mix(in lab, var(--color) 20%, #000000 80%); border-top-left-radius:8px; border-top-right-radius:8px;">
+                <h3 id="deviceSettingsTitle" class="text-sm" style="color: var(--color-tool); margin:0;">Device settings</h3>
+                <button class="text-sm px-3 button-custom" style="height:28px;" onclick="closeDeviceSettings();">Close</button>
+            </div>
+            <div style="padding:16px; color: color-mix(in srgb, var(--color) 80%, #000000 20%);" class="text-sm">
+                <div class="mb-3" style="margin-bottom:12px;">
+                    <label for="inputDeviceSelect" class="font-medium" style="display:block; margin-bottom:6px;">Input device</label>
+                    <select id="inputDeviceSelect" class="text-white text-sm px-2 py-1 rounded"
+                        style="width:100%; color: var(--color); background-color:#00000000; border:1px solid color-mix(in lab, var(--color) 33%, #000000 67%);">
+                        <option value="">Default input</option>
+                    </select>
+                </div>
+                <div class="mb-3" style="margin-bottom:12px;">
+                    <label for="outputDeviceSelect" class="font-medium" style="display:block; margin-bottom:6px;">Output device</label>
+                    <select id="outputDeviceSelect" class="text-white text-sm px-2 py-1 rounded"
+                        style="width:100%; color: var(--color); background-color:#00000000; border:1px solid color-mix(in lab, var(--color) 33%, #000000 67%);">
+                        <option value="">Default output</option>
+                    </select>
+                    <small id="sinkSupportNote" style="display:block; margin-top:6px; color: color-mix(in lab, var(--color) 60%, #000000 40%);"></small>
+                </div>
+                <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
+                    <button class="text-sm px-4 button-custom" style="height:32px;" onclick="refreshAudioDeviceList();">Refresh list</button>
+                    <button class="text-sm px-4 button-custom" style="height:32px;" onclick="saveDeviceSelections();">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Device settings logic
+        const INPUT_KEY = 'preferredAudioInputId';
+        const OUTPUT_KEY = 'preferredAudioOutputId';
+
+        function openDeviceSettings() {
+            const modal = document.getElementById('deviceSettingsModal');
+            modal.style.display = 'flex';
+            initDeviceSettings();
+        }
+
+        function closeDeviceSettings() {
+            const modal = document.getElementById('deviceSettingsModal');
+            modal.style.display = 'none';
+        }
+
+        async function ensureDeviceAccess() {
+            try {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+                // Request permission so labels are revealed
+                await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            } catch (_) {
+                // Permission may be denied; device labels may be blank
+            }
+        }
+
+        async function refreshAudioDeviceList() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+                console.warn('MediaDevices API not available');
+                return;
+            }
+
+            await ensureDeviceAccess();
+
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const inputSel = document.getElementById('inputDeviceSelect');
+            const outputSel = document.getElementById('outputDeviceSelect');
+
+            inputSel.innerHTML = '<option class="bg-black" value="">Default input</option>';
+            outputSel.innerHTML = '<option class="bg-black" value="">Default output</option>';
+
+            const inputId = localStorage.getItem(INPUT_KEY) || '';
+            const outputId = localStorage.getItem(OUTPUT_KEY) || '';
+
+            devices.forEach(d => {
+                if (d.kind === 'audioinput') {
+                    const opt = document.createElement('option');
+                    opt.value = d.deviceId;
+                    opt.textContent = d.label || `Microphone (${d.deviceId.slice(0, 8)}…)`;
+                    opt.classList.add('bg-black');
+                    if (d.deviceId === inputId) opt.selected = true;
+                    inputSel.appendChild(opt);
+                } else if (d.kind === 'audiooutput') {
+                    const opt = document.createElement('option');
+                    opt.value = d.deviceId;
+                    opt.textContent = d.label || `Speaker (${d.deviceId.slice(0, 8)}…)`;
+                    opt.classList.add('bg-black');
+                    if (d.deviceId === outputId) opt.selected = true;
+                    outputSel.appendChild(opt);
+                }
+            });
+
+            const note = document.getElementById('sinkSupportNote');
+            const sinkSupported = typeof HTMLMediaElement !== 'undefined' && 'setSinkId' in HTMLMediaElement.prototype;
+            note.textContent = sinkSupported
+                ? 'Output routing supported on this browser.'
+                : 'Output routing (setSinkId) not supported by this browser.';
+        }
+
+        async function applyOutputDevice(deviceId) {
+            const router = document.getElementById('outputAudioElement') || document.getElementById('appOutputRouter');
+            if (!router) return;
+
+            if ('setSinkId' in HTMLMediaElement.prototype) {
+                try {
+                    await router.setSinkId(deviceId || '');
+                } catch (e) {
+                    console.warn('Failed to set sinkId:', e);
+                }
+            }
+        }
+
+        function saveDeviceSelections() {
+            const inputSel = document.getElementById('inputDeviceSelect');
+            const outputSel = document.getElementById('outputDeviceSelect');
+
+            localStorage.setItem(INPUT_KEY, inputSel.value || '');
+            localStorage.setItem(OUTPUT_KEY, outputSel.value || '');
+
+            applyOutputDevice(outputSel.value || '');
+            closeDeviceSettings();
+        }
+
+        async function initDeviceSettings() {
+            await refreshAudioDeviceList();
+
+            // Persist immediately when changed
+            const inputSel = document.getElementById('inputDeviceSelect');
+            const outputSel = document.getElementById('outputDeviceSelect');
+        }
+
+        // Update list if devices change while modal is open
+        if (navigator.mediaDevices && 'ondevicechange' in navigator.mediaDevices) {
+            navigator.mediaDevices.addEventListener('devicechange', () => {
+                const modal = document.getElementById('deviceSettingsModal');
+                if (modal && modal.style.display === 'flex') {
+                    refreshAudioDeviceList();
+                }
+            });
+        }
+
+        // Apply preferred output on load (best-effort)
+        document.addEventListener('DOMContentLoaded', () => {
+            const outId = localStorage.getItem(OUTPUT_KEY);
+            if (outId) applyOutputDevice(outId);
+        });
+        console.log('waveform.html script loaded');
+    </script>
+    <script src="static/waveform.js" type="module"></script>
+    
+</body>
+
+</html>

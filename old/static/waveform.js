@@ -525,8 +525,11 @@ class AudioFile {
     async loadFromUrl(url) {
         const resp = await fetch(url);
         if (!resp.ok) throw new Error(`Failed to fetch ${url}: ${resp.status}`);
-        const ab = await resp.arrayBuffer();
-        return this.loadWaveformFromArrayBuffer(ab);
+        this.stop();
+        const arrayBuffer = await resp.arrayBuffer();
+        const loadedBuffer = await this.loadWaveformFromArrayBuffer(arrayBuffer);
+        this.filename = url;
+        return loadedBuffer;
     }
 
     // attach an <input type="file"> or a text input with URL to this manager
@@ -2276,16 +2279,37 @@ document.getElementById('resetZoomBtn').addEventListener('click',
 
 document.addEventListener('DOMContentLoaded', async () => {
     prepareUIElements();
-    /*document.getElementById('fileTitle').innerText = `static/test4.wav`;
-    await window.audioFile.loadFile('test4.wav');
-    setLoadingState(false);*/
-    const loadingAninm = document.getElementById('loadingAnimation');
-    if (loadingAninm) {
-        loadingAninm.style.display = 'none';
-    }
-    const loadingText = document.getElementById('loadingText');
-    if (loadingText) {
-        loadingText.innerText = 'Click "Open..." to load a .wav file';
+    
+    // Check for ?path= query parameter to auto-load a file
+    const urlParams = new URLSearchParams(window.location.search);
+    const pathParam = urlParams.get('path');
+    
+    if (pathParam) {
+        try {
+            document.getElementById('fileTitle').innerText = pathParam;
+            await window.audioFile.loadFromUrl(pathParam);
+            setLoadingState(false);
+            window._zoom = null;
+            window.audioFile.resetView();
+            renderWaveform();
+            renderSpectrogram(true, 0, 'spectrogramCanvas1');
+        } catch (err) {
+            console.error('Failed to load audio from path parameter:', err);
+            setLoadingState(false);
+            alert(`Failed to load audio file from: ${pathParam}\n\nError: ${err.message}`);
+        }
+    } else {
+        /*document.getElementById('fileTitle').innerText = `static/test4.wav`;
+        await window.audioFile.loadFile('test4.wav');
+        setLoadingState(false);*/
+        const loadingAninm = document.getElementById('loadingAnimation');
+        if (loadingAninm) {
+            loadingAninm.style.display = 'none';
+        }
+        const loadingText = document.getElementById('loadingText');
+        if (loadingText) {
+            loadingText.innerText = 'Click "Open..." to load a .wav file';
+        }
     }
 });
 

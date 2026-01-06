@@ -1,0 +1,17 @@
+{
+  // Visit https://aka.ms/tsconfig to read more about this file
+    "compilerOptions": {
+        "module": "commonjs",
+        "target": "ES5",
+        "outDir": "static",
+        "rootDir": "src",
+        "lib": [
+            "es2015",
+            "dom"
+        ],
+        "esModuleInterop": true,
+        "forceConsistentCasingInFileNames": true,
+        "strict": true,
+        "skipLibCheck": true
+    }
+}

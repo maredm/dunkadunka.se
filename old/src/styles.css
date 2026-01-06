@@ -1,0 +1,68 @@
+/* ./your-css-folder/styles.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+@tailwind colgroup;
+@tailwind table;
+@tailwind scrollbar;
+@tailwind forms;
+@tailwind aspect-ratio;
+@tailwind line-clamp;
+@tailwind typography;
+
+body {
+    font-family: 'Outfit', sans-serif;
+    background-color: #f3f4f6; /* Tailwind's gray-100 */
+    color: #111827; /* Tailwind's gray-900 */
+}
+
+/* Custom Dropdown Styles */
+.dropdown-content { padding-top: 1px; @apply text-sm; display: none; cursor: pointer; position: absolute; left: 0; color: color-mix(in lab, var(--color) 80%, #ffffff 20%); min-width: 160px; border-radius: 4px; box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2); z-index: 90; background-color: color-mix(in lab, var(--color) 15%, #000000 85%);}
+.dropdown-content * { width: 100%; text-align: left;}
+* {
+    box-sizing: border-box;
+    user-select: none;
+}
+
+table { border-collapse: collapse; border-spacing: 0 0.5em; }
+tr:hover { background-color: #fafbfd; } /* Tailwind's gray-100 */
+td { padding: 0.25em 1em; } /* Tailwind's gray-200 */
+tr {
+    cursor: pointer;
+    border-bottom: 4px solid #fff; /* Default border color */
+    transition: border-color 0.3s ease;
+}
+body {
+    scrollbar-color: color-mix(in lab, var(--color) 20%, #000000 80%) color-mix(in lab, var(--color) 10%, #000000 90%);
+    scrollbar-width: thin;
+}
+label.button-custom {
+    padding-top: 6px;
+}
+.button-custom {
+    z-index: 100;
+    color: color-mix(in lab, var(--color) 70%, #ffffff 30%);
+    height:30px;
+    user-select:none; 
+    cursor:pointer; 
+    border:none;
+    @apply text-sm;
+    font-weight: 300;
+    border-right: 1px solid transparent;
+    border-bottom: 2px solid transparent;
+    border-top: 2px solid transparent;
+}
+.button-custom:hover {
+    background-color: color-mix(in lab, var(--color) 20%, #000000 80%);
+    border-top: 2px solid color-mix(in lab, var(--color) 30%, #000000 70%);
+}
+.button-custom:active {
+
+    border-top: 2px solid black;
+    padding-top: 1px;
+    background-color: color-mix(in lab, var(--color) 5%, #000000 95%);
+    border-right: 1px solid color-mix(in lab, var(--color) 0%, #000000 100%);
+}
+label.button-custom:active {
+    padding-top: 7px;
+}
