@@ -402,14 +402,7 @@ export function twoChannelImpulseResponse(y: number[] | Float32Array, x: number[
 export function twoChannelFFT(dataArray: number[] | Float32Array, reference: number[] | Float32Array, fftSize: number, offset: number): FFTResult {
     const dataPadded = new Float32Array(fftSize);
     const referencePadded = new Float32Array(fftSize);
-    /*
-    const lag = fftCorrelation(dataArray, reference);
-    console.log('Estimated lag (samples):', lag.estimatedLagSamples, 'Peak correlation:', lag.peakCorrelation);
-    console.log('Lag index:', lag.estimatedLagIndex);
-    console.log('Lags array:', referencePadded.length, lag.lags);
-    const offset = reference.length + lag.estimatedLagSamples - 1;
-    console.log('Applying offset of', offset, 'samples for alignment');
-    */
+
     if (offset >= 0) {
         referencePadded.set(reference.slice(0, Math.min(reference.length, fftSize) - offset), offset);
         dataPadded.set(dataArray.slice(0, Math.min(dataArray.length, fftSize)), 0);
