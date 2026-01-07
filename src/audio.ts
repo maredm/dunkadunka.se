@@ -1,18 +1,25 @@
-import { abs, closest, linspace, mod, nextPow2 } from './math';
+import { abs, average, closest, linspace, mod, nextPow2 } from './math';
 import { FFT } from './fft';
 import { fractionalOctaveSmoothing, getFractionalOctaveFrequencies } from './fractional_octave_smoothing';
+import { getSelectedWindow } from './windows';
 
 console.debug("Audio module loaded");
 
 (window as any).FFT = FFT; // Make FFT globally available
 
-export function rms(buffer: number[] | Float32Array): number {
+export function sum(buffer: number[] | Float32Array): number {
     let sum = 0;
     for (let i = 0; i < buffer.length; i++) {
         sum += buffer[i] * buffer[i];
     }
-    return Math.sqrt(sum / buffer.length);
+    return sum
 }
+
+export function rms(buffer: number[] | Float32Array): number {
+    return Math.sqrt(sum(buffer) / buffer.length);
+}
+
+
 
 export function normalize(input: number[] | Float32Array, peak: boolean = false): Float32Array {
     const signal = Float32Array.from(input);
@@ -33,9 +40,9 @@ export function db(value: Array<number>): Array<number>;
 export function db(value: number): number;
 export function db(value: Array<number> | number): Array<number> | number {
     if (Array.isArray(value)) {
-        return value.map(v => 20 * Math.log10(v + 1e-12));
+        return value.map(v => 20 * Math.log10(v + 1e-50));
     } else {
-        return 20 * Math.log10(value + 1e-12);
+        return 20 * Math.log10(value + 1e-50);
     }
 }
 
@@ -332,6 +339,61 @@ export function fftCorrelation(x: number[] | Float32Array, y: number[] | Float32
     };
 }
 
+export function fftConvolve(x: number[] | Float32Array, y: number[] | Float32Array, mode: 'same' | 'full' = 'same'): Array<number> {
+    const lenX = x.length;
+    const lenY = y.length;
+    const fullLen = lenX + lenY - 1;
+
+    // next pow2 >= fullLen
+    const n = nextPow2(fullLen);
+
+    // zero-pad inputs to length n
+    const xP = new Float32Array(n);
+    const yP = new Float32Array(n);
+    xP.set(x, 0);
+    yP.set(y, 0);
+
+    const fft = new FFT(n);
+    const A = fft.createComplexArray();
+    const B = fft.createComplexArray();
+
+    // forward real FFTs
+    fft.realTransform(A, xP);
+    fft.realTransform(B, yP);
+        // complete the spectrum to full complex arrays (negative freqs)
+    if (typeof fft.completeSpectrum === 'function') {
+        fft.completeSpectrum(A);
+        fft.completeSpectrum(B);
+    }
+
+    // multiply A * B -> convolution spectrum
+    const C = fft.createComplexArray();
+    for (let k = 0; k < n; k++) {
+        const ar = A[2 * k], ai = A[2 * k + 1];
+        const br = B[2 * k], bi = B[2 * k + 1];
+        C[2 * k] = ar * br - ai * bi;
+        C[2 * k + 1] = ai * br + ar * bi;
+    }
+
+    // inverse FFT
+    const out = fft.createComplexArray();
+    fft.inverseTransform(out, C);
+
+    // extract real part and normalize by n
+    const result = new Float64Array(fullLen);
+    for (let i = 0; i < fullLen; i++) {
+        result[i] = out[2 * i];
+    }
+
+    // return 'same' mode (centered, matching first input length)
+    if (mode === 'same') {
+        const start = Math.floor((fullLen - lenX) / 2);
+        return Array.from(result).slice(start, start + lenX);
+    }
+
+    return Array.from(result);
+}
+
 export interface ImpulseResponseResult {
     ir: Array<number>;
     ir_complex: Array<number>;
@@ -340,6 +402,266 @@ export interface ImpulseResponseResult {
     sampleRate: number;
     fftSize: number;
 }
+
+
+function max(arr: Array<number>): number {
+    let maxVal = -Infinity;
+    for (let i = 0; i < arr.length; i++) {
+        if (arr[i] > maxVal) {
+            maxVal = Math.abs(arr[i]);
+        }
+    }
+    return maxVal;
+}
+
+function normalizeToMax(arr: Array<number>): Array<number> {
+    const maxVal = max(arr);
+    if (maxVal === 0) return arr.slice(); // avoid division by zero
+    return arr.map(v => v / maxVal);
+}
+
+
+class Farina {
+    /* Farina deconvolution implementation according to the Python implementation: 
+    class Farina():
+        """Farina method."""
+
+        def __init__(self, stim, f_start=50, f_stop=22800, fs=48000):
+            self.stimulus = np.trim_zeros(stim)
+            self.f_start = f_start
+            self.f_stop = f_stop
+            self.fs = fs
+            self.last_instant = 0
+
+            self.deconv_signal = []
+            self.deconv_hash = 0
+
+        def lag_of_harmonic(self, n: np.ndarray):
+            return self.ell*np.log(n)
+
+        def margin_of_harmonic(self, n: np.ndarray):
+            return self.ell*np.log(n+1)-self.ell*np.log(n)
+
+        def max_safe_harmonic(self, window_size: float):
+            t = [
+                self.margin_of_harmonic(n)
+                for n in range(1, 1000)
+                if self.margin_of_harmonic(n) > window_size
+            ]
+            return len(t) if len(t) < 999 else None
+
+        def rate(self, length):
+            return 1/self.f_start*np.pi*np.round(length*self.f_start/np.log2(
+                self.f_stop/self.f_start))
+
+        def deconvolution(self, signal):
+            if hash(signal.tostring()) == self.deconv_hash:
+            return self.deconv_signal
+            bins = scipy.fftpack.helper.next_fast_len(len(signal))
+            ratio = self.f_stop/self.f_start
+            kend = 10**((-6*np.log2(ratio))/20)
+            k = np.log(kend)/self.duration
+            t = np.arange(0, 255788)/self.fs
+            k = np.exp(-t*k)
+            inv_stimulus = self.stimulus[-1::-1]/k/np.max(self.stimulus)
+
+            #signal_fft = scipy.fft(signal, bins)/np.sqrt(len(signal))
+            #stimulus_fft = scipy.fft(inv_stimulus, bins)/np.sqrt(len(inv_stimulus))
+
+            #h_fft = signal_fft*stimulus_fft.T
+
+            self.deconv_signal = scipy.signal.fftconvolve(signal, inv_stimulus, 'same')[-1::-1]/np.sqrt(len(signal))/58.5 ##scipy.ifft(h_fft)[::-1]*np.sqrt(len(h_fft))
+            self.deconv_hash = hash(signal.tostring())
+            return self.deconv_signal
+
+        def impulse_response(self, signal):
+            bins = scipy.fftpack.helper.next_fast_len(len(signal))
+
+            signal_fft = scipy.fft(signal, bins)
+            stimulus_fft = scipy.fft(self.stimulus, bins)
+            h_fft = signal_fft/stimulus_fft.T
+
+            h = scipy.ifft(h_fft)
+            return h
+
+        @property
+        def duration(self):
+            return len(np.trim_zeros(self.stimulus))/self.fs
+
+        def window(self, signal, at, length):
+            w = scipy.signal.windows.tukey(int(length * 2 * self.fs), 0.2)
+            size = int(length * self.fs)
+            sig = self.deconvolution(signal)
+            #print(at - size)
+            #print(at + size)
+            si = sig[at - size:at + size]
+
+            if len(si) == len(w):
+            return w*si.T
+            else:
+            return np.zeros_like(w)
+
+        def frequency_response(self, signal, length, num):
+            signal = np.pad(signal, (int(length * self.fs),int(length * self.fs)), 'constant')
+            print(self.instant(signal) + int(self.lag_of_harmonic(num) * self.fs))
+            signal = self.window(signal, self.instant(signal) + int(self.lag_of_harmonic(num) * self.fs), length)
+
+            bins = scipy.fftpack.helper.next_fast_len(len(signal))
+            et = np.abs(np.fft.fft(signal, bins))[0:int(bins/2+1)]
+            return et, np.fft.rfftfreq(bins)*self.fs
+
+        def instant(self, signal = None):
+            if signal is not None:
+            self.last_instant = np.argmax(self.deconvolution(signal))
+            if self.instant == 0:
+            print('No delay in signal.')
+            return self.last_instant
+
+        @property
+        def ell(self):
+            return 255788/np.log(self.f_stop/self.f_start)/self.fs
+    */
+    constructor(stimulus: Float32Array, f_start: number = 50, f_stop: number = 22800, fs: number = 48000) {
+        this.f_start = f_start;
+        this.f_stop = f_stop;
+        this.fs = fs;
+        this.stimulus = stimulus;
+    }
+
+    f_start: number;
+    f_stop: number;
+    fs: number;
+    stimulus: Float32Array;
+
+    lag_of_harmonic(n: number) {
+        return this.ell() * Math.log(n);
+    }
+
+    margin_of_harmonic(n: number) {
+        return this.ell() * Math.log(n + 1) - this.ell() * Math.log(n);
+    }
+
+    max_safe_harmonic(window_size: number): number | null {
+        const t: number[] = [];
+        for (let n = 1; n < 1000; n++) {
+            if (this.margin_of_harmonic(n) > window_size) {
+                t.push(this.margin_of_harmonic(n));
+            }
+        }
+        return t.length < 999 ? t.length : null;
+    }
+
+    ell(): number {
+        return 255788 / Math.log(this.f_stop / this.f_start) / this.fs;
+    }
+
+    rate(length: number): number {
+        return 1 / this.f_start * Math.PI * Math.round(length * this.f_start / Math.log2(this.f_stop / this.f_start));
+    }
+
+    duration(): number {
+        return this.stimulus.filter(v => v !== 0).length / this.fs;
+    }
+
+    window(signal: Float32Array, at: number, length: number): Float32Array {
+        const size = Math.floor(length * this.fs);
+        const window: Array<number> = getSelectedWindow('hanning', size);
+        const sig = this.deconvolution(signal);
+        const si = sig.slice(at - size, at + size);
+        const w = new Float32Array(size);
+        if (si.length === window.length) {
+            for (let i = 0; i < window.length; i++) {
+                w[i] = window[i] * si[i];
+            }
+            return w;
+        } else {
+            return new Float32Array(window.length); // zeros
+        }        
+    }
+
+    deconvolution(signal: Float32Array): Float32Array {
+        const fftSize = nextPow2(signal.length);
+        const ratio = this.f_stop / this.f_start;
+        const kend = Math.pow(10, (-6 * Math.log2(ratio)) / 20);
+        const k = Math.log(kend) / this.duration();
+        const t = new Float32Array(255788);
+        for (let i = 0; i < t.length; i++) {
+            t[i] = i / this.fs;
+        }
+        const exp_k = new Float32Array(t.length);
+        for (let i = 0; i < t.length; i++) {
+            exp_k[i] = Math.exp(-t[i] * k);
+        }
+
+        const inv_stimulus = new Float32Array(this.stimulus.length);
+        const maxStimulus = max(Array.from(this.stimulus));
+        for (let i = 0; i < this.stimulus.length; i++) {
+            inv_stimulus[i] = this.stimulus[this.stimulus.length - 1 - i] / exp_k[i] / maxStimulus;
+        }
+
+        const convolved = fftConvolve(signal, inv_stimulus, 'same');
+        const deconv_signal = new Float32Array(convolved.length);
+        for (let i = 0; i < convolved.length; i++) {
+            deconv_signal[i] = convolved[convolved.length - 1 - i] / Math.sqrt(signal.length) / 58.5;
+        }
+        return deconv_signal;
+    }
+    
+    
+}
+
+export function FarinaImpulseResponse(y: number[] | Float32Array, x: number[] | Float32Array): ImpulseResponseResult {
+    const n: number[] = linspace(0, x.length - 1, x.length);
+    const ratio: number = Math.log(22800 / 50);
+    const duration = x.length / 48000; // assuming 48kHz.
+    const k: number[] = n.map(v => Math.exp(v * ratio / x.length)); // simplified for first element
+    
+    const L = duration / ratio;
+    const rate = Math.log(10) * L;
+
+    const x_inv: Float32Array = new Float32Array(x.length);
+    for (let i = 0; i < x.length; i++) {
+        x_inv[i] = x[x.length - 1 - i] / k[i];
+    }
+
+    const measurementResponse = fftConvolve(y, x_inv, 'same');
+    const stimulusResponse = fftConvolve(x, x_inv, 'same');
+    const norm: number = Array.from(stimulusResponse).reduce((a, b) => Math.max(a, Math.abs(b)), 0);
+    
+    let sums: number = 0;
+    for (let i = 0; i < stimulusResponse.length; i++) {
+        sums += stimulusResponse[i];
+    }
+    // Real part / N gives impulse response. This is shifted by N/2.
+    const rmss = sum(x_inv) * 2 * y.length / x_inv.length; // RMS of input signal
+    const ir = Array.from(new Float32Array(measurementResponse.length));
+    for (let i = 0; i < measurementResponse.length; i++) {
+        ir[i] = measurementResponse[i] / norm; // normalize by input length
+    }
+
+    const ir_complex = Array.from(new Float32Array(measurementResponse.length * 2));
+    for (let i = 0; i < measurementResponse.length; i++) {
+        ir_complex[2 * i] = measurementResponse[i] / norm; // normalize by input length
+        ir_complex[2 * i + 1] = 0;
+    }
+
+    const peakAt = closest(100000000, ir) + (-measurementResponse.length) / 2;
+    /* const ir_complex = Array.from(measurementResponse); // copy
+    for (let i = 0; i < N; i++) {
+        ir_complex[2 * i] = measurementResponse[2 * mod(i + peakAt, N)];
+        ir_complex[2 * i + 1] = measurementResponse[2 * mod(i + peakAt, N) + 1];
+    }*/
+
+    return {
+        ir,
+        ir_complex,
+        t: Array.from(linspace((-measurementResponse.length - 1) / 2 / 48000, (measurementResponse.length - 1) / 2 / 48000, measurementResponse.length)), // assuming 48kHz
+        peakAt,
+        sampleRate: 48000,
+        fftSize: measurementResponse.length,
+    };
+}
+
 
 export function twoChannelImpulseResponse(y: number[] | Float32Array, x: number[] | Float32Array): ImpulseResponseResult {
     // Calculate the impulse response by taking the IFFT of the division of the FFTs of output and input signals.
@@ -363,7 +685,7 @@ export function twoChannelImpulseResponse(y: number[] | Float32Array, x: number[
 
     // Division A / B with regularization to avoid division by zero
     const C = fft.createComplexArray();
-    const epsilon = 1e-12;
+    const epsilon = 1e-20;
     for (let k = 0; k < N; k++) {
         const ar = A[2 * k], ai = A[2 * k + 1];
         const br = B[2 * k], bi = B[2 * k + 1];
@@ -379,7 +701,7 @@ export function twoChannelImpulseResponse(y: number[] | Float32Array, x: number[
     // Real part / N gives impulse response. This is shifted by N/2.
     const ir = Array.from(new Float32Array(N));
     for (let i = 0; i < N; i++) {
-        ir[i] = out[2 * (( i + N / 2) % N)];
+        ir[i] = out[2 * (( i + N / 2) % N)]; // normalize by input length
     }
 
     const peakAt = closest(100000000, ir) + (-N) / 2;
@@ -387,6 +709,12 @@ export function twoChannelImpulseResponse(y: number[] | Float32Array, x: number[
     for (let i = 0; i < N; i++) {
         ir_complex[2 * i] = out[2 * mod(i + peakAt, N)];
         ir_complex[2 * i + 1] = out[2 * mod(i + peakAt, N) + 1];
+    }
+
+    // Remove DC offset.
+    const mean = average(ir)
+    for (let i = 0; i < N; i++) {
+        ir[i] = ir[i] - mean;
     }
 
     return {
@@ -464,11 +792,23 @@ export function computeFFTFromIR(ir: ImpulseResponseResult, f_phase_wrap: number
     const phase: number[] = [];
 
     const N = nextPow2(ir.ir.length);
+    console.log(`Computing FFT from IR with size ${N}`);
     
     const fft = new FFT(N);
     const out = fft.createComplexArray();
 
-    fft.transform(out, ir.ir_complex);
+    if (ir.ir_complex[1] === 0) {
+        console.log("IR is in real format, converting to complex");
+        // real IR, convert to complex
+        const frame = new Float32Array(N);
+        for (let i = 0; i < N; i++) {
+            frame[i] = (ir.ir_complex[2 * i] || 0) * 1;
+        }
+        fft.realTransform(out, frame);
+    } else {
+        fft.transform(out, ir.ir_complex);
+    }
+    console.log(ir.ir_complex);
     
     for (let i = 0; i < N / 2; i++) {
         const re = out[2 * i];

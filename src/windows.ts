@@ -1,28 +1,33 @@
-// windows.js
+// windows.ts
 // Various window functions for signal processing.
 
-function hanningWindow(length) {
+export type WindowType = 'hanning' | 'hamming' | 'blackman' | 'rectangular' | 'gamma';
+
+function hanningWindow(length: number): Float32Array {
     const window = new Float32Array(length);
     for (let i = 0; i < length; i++) {
         window[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / (length - 1)));
     }
     return window;
 }
-function hammingWindow(length) {
+
+function hammingWindow(length: number): Float32Array {
     const window = new Float32Array(length);
     for (let i = 0; i < length; i++) {
         window[i] = 0.54 - 0.46 * Math.cos(2 * Math.PI * i / (length - 1));
     }
     return window;
 }
-function blackmanWindow(length) {
+
+function blackmanWindow(length: number): Float32Array {
     const window = new Float32Array(length);
     for (let i = 0; i < length; i++) {
         window[i] = (0.42 - 0.5 * Math.cos(2 * Math.PI * i / (length - 1)) + 0.08 * Math.cos(4 * Math.PI * i / (length - 1)));
     }
     return window;
 }
-function equirippleWindow(length, attenuation = 60) {
+
+function equirippleWindow(length: number, attenuation: number = 60): Float32Array {
     // Dolph-Chebyshev window (approximate equiripple)
     // attenuation: sidelobe attenuation in dB
     // Reference: https://en.wikipedia.org/wiki/Chebyshev_window
@@ -37,15 +42,15 @@ function equirippleWindow(length, attenuation = 60) {
     for (let n = 0; n <= M; n++) {
         let sum = 0;
         for (let k = 0; k <= M; k++) {
-            let x = tg * Math.cos(Math.PI * k / M);
+            const x = tg * Math.cos(Math.PI * k / M);
             // Chebyshev polynomial of degree M
-            let Tm;
+            let Tm: number;
             if (Math.abs(x) <= 1) {
                 Tm = Math.cos(M * Math.acos(x));
             } else {
                 Tm = Math.cosh(M * Math.acosh(x));
             }
-            let coeff = ((k === 0 || k === M) ? 0.5 : 1) * Tm * Math.cos(Math.PI * n * (k - M / 2) / M);
+            const coeff = ((k === 0 || k === M) ? 0.5 : 1) * Tm * Math.cos(Math.PI * n * (k - M / 2) / M);
             sum += coeff;
         }
         window[n] = sum;
@@ -53,7 +58,8 @@ function equirippleWindow(length, attenuation = 60) {
 
     return window;
 }
-function gammaFilter(length, alpha = 2, gamma = 0.5) {
+
+function gammaFilter(length: number, alpha: number = 2, gamma: number = 0.5): Float32Array {
     const window = new Float32Array(length);
     for (let i = 0; i < length; i++) {
         // Generalized gamma window: w[n] = ((n/(N-1))^alpha) * (1 - n/(N-1))^gamma
@@ -67,26 +73,28 @@ function gammaFilter(length, alpha = 2, gamma = 0.5) {
     }
     return window;
 }
-function rectangularWindow(length) {
+
+function rectangularWindow(length: number): Float32Array {
     const window = new Float32Array(length);
     window.fill(1);
     return window;
 }
-export function getSelectedWindow(windowType, length) {
+
+export function getSelectedWindow(windowType: WindowType, length: number): Array<number> {
     const type = windowType;
     let window = new Float32Array(length);
     let wcf = 1; // Window correction factor
-    if (type === 'hanning') window = hanningWindow(length); wcf = 2.000;
-    if (type === 'hamming') window = hammingWindow(length); wcf = 1.852;
-    if (type === 'blackman') window = blackmanWindow(length); wcf = 2.381;
-    if (type === 'rectangular') window = rectangularWindow(length); wcf = 1.000;
-    if (type === 'gamma') window = gammaFilter(length); wcf = 1.878;
+    if (type === 'hanning') { window = hanningWindow(length); wcf = 2.000; }
+    if (type === 'hamming') { window = hammingWindow(length); wcf = 1.852; }
+    if (type === 'blackman') { window = blackmanWindow(length); wcf = 2.381; }
+    if (type === 'rectangular') { window = rectangularWindow(length); wcf = 1.000; }
+    if (type === 'gamma') { window = gammaFilter(length); wcf = 1.878; }
     window = window.map(v => v / wcf); // Scale to max 2 for better visualization
 
-    return window;
+    return Array.from(window);
 }
 
-export function tukeyWindow(length, alpha = 0.5) {
+export function tukeyWindow(length: number, alpha: number = 0.5): Float32Array {
     if (length < 1) return new Float32Array(0);
     if (length === 1) return new Float32Array([1]);
     const N = length;

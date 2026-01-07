@@ -681,35 +681,38 @@ function fractionalOctaveSmoothing(frequencyData, fraction, frequencies) {
     var factor = Math.pow(2, 0.5 * fraction) - Math.pow(0.5, 0.5 * fraction);
     for(var p = 0; p < frequencies.length; p++){
         var i = closest(frequencies[p], frequenciesAll);
-        var sum = 0;
+        var sum2 = 0;
         var width = Math.round(0.5 * factor * (n * 0.5 - Math.abs(n * 0.5 - i)));
         if (width === 0) {
-            sum = frequencyData[i];
+            sum2 = frequencyData[i];
         } else {
             var as = frequencyData.slice(Math.round(i - width + 1), Math.min(Math.round(i + width), n - 1));
-            sum = average(as);
+            sum2 = average(as);
         }
-        smoothedData[p] = sum;
+        smoothedData[p] = sum2;
     }
     return smoothedData;
 }
 // src/audio.ts
 console.debug("Audio module loaded");
 window.FFT = FFT;
-function rms(buffer) {
-    var sum = 0;
+function sum(buffer) {
+    var sum2 = 0;
     for(var i = 0; i < buffer.length; i++){
-        sum += buffer[i] * buffer[i];
+        sum2 += buffer[i] * buffer[i];
     }
-    return Math.sqrt(sum / buffer.length);
+    return sum2;
+}
+function rms(buffer) {
+    return Math.sqrt(sum(buffer) / buffer.length);
 }
 function db(value) {
     if (Array.isArray(value)) {
         return value.map(function(v) {
-            return 20 * Math.log10(v + 1e-12);
+            return 20 * Math.log10(v + 1e-50);
         });
     } else {
-        return 20 * Math.log10(value + 1e-12);
+        return 20 * Math.log10(value + 1e-50);
     }
 }
 function smoothFFT(fftData, fraction, resolution) {
@@ -756,6 +759,87 @@ function computeFFT(data) {
         fftSize: fftSize
     };
 }
+function fftConvolve(x, y) {
+    var mode = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : "same";
+    var lenX = x.length;
+    var lenY = y.length;
+    var fullLen = lenX + lenY - 1;
+    var n = nextPow2(fullLen);
+    var xP = new Float32Array(n);
+    var yP = new Float32Array(n);
+    xP.set(x, 0);
+    yP.set(y, 0);
+    var fft = new FFT(n);
+    var A = fft.createComplexArray();
+    var B = fft.createComplexArray();
+    fft.realTransform(A, xP);
+    fft.realTransform(B, yP);
+    if (typeof fft.completeSpectrum === "function") {
+        fft.completeSpectrum(A);
+        fft.completeSpectrum(B);
+    }
+    var C = fft.createComplexArray();
+    for(var k = 0; k < n; k++){
+        var ar = A[2 * k], ai = A[2 * k + 1];
+        var br = B[2 * k], bi = B[2 * k + 1];
+        C[2 * k] = ar * br - ai * bi;
+        C[2 * k + 1] = ai * br + ar * bi;
+    }
+    var out = fft.createComplexArray();
+    fft.inverseTransform(out, C);
+    var result = new Float64Array(fullLen);
+    for(var i = 0; i < fullLen; i++){
+        result[i] = out[2 * i];
+    }
+    if (mode === "same") {
+        var start = Math.floor((fullLen - lenX) / 2);
+        return Array.from(result).slice(start, start + lenX);
+    }
+    return Array.from(result);
+}
+function FarinaImpulseResponse(y, x) {
+    var n = linspace(0, x.length - 1, x.length);
+    var ratio = Math.log(22800 / 50);
+    var duration = x.length / 48e3;
+    var k = n.map(function(v) {
+        return Math.exp(v * ratio / x.length);
+    });
+    var L = duration / ratio;
+    var rate = Math.log(10) * L;
+    var x_inv = new Float32Array(x.length);
+    for(var i = 0; i < x.length; i++){
+        x_inv[i] = x[x.length - 1 - i] / k[i];
+    }
+    var measurementResponse = fftConvolve(y, x_inv, "same");
+    var stimulusResponse = fftConvolve(x, x_inv, "same");
+    var norm = Array.from(stimulusResponse).reduce(function(a, b) {
+        return Math.max(a, Math.abs(b));
+    }, 0);
+    var sums = 0;
+    for(var i1 = 0; i1 < stimulusResponse.length; i1++){
+        sums += stimulusResponse[i1];
+    }
+    var rmss = sum(x_inv) * 2 * y.length / x_inv.length;
+    var ir = Array.from(new Float32Array(measurementResponse.length));
+    for(var i2 = 0; i2 < measurementResponse.length; i2++){
+        ir[i2] = measurementResponse[i2] / norm;
+    }
+    var ir_complex = Array.from(new Float32Array(measurementResponse.length * 2));
+    for(var i3 = 0; i3 < measurementResponse.length; i3++){
+        ir_complex[2 * i3] = measurementResponse[i3] / norm;
+        ir_complex[2 * i3 + 1] = 0;
+    }
+    var peakAt = closest(1e8, ir) + -measurementResponse.length / 2;
+    return {
+        ir: ir,
+        ir_complex: ir_complex,
+        t: Array.from(linspace((-measurementResponse.length - 1) / 2 / 48e3, (measurementResponse.length - 1) / 2 / 48e3, measurementResponse.length)),
+        // assuming 48kHz
+        peakAt: peakAt,
+        sampleRate: 48e3,
+        fftSize: measurementResponse.length
+    };
+}
 function twoChannelImpulseResponse(y, x) {
     var fullLen = y.length + x.length - 1;
     var N = nextPow2(fullLen);
@@ -769,7 +853,7 @@ function twoChannelImpulseResponse(y, x) {
     fft.realTransform(A, xP);
     fft.realTransform(B, yP);
     var C = fft.createComplexArray();
-    var epsilon = 1e-12;
+    var epsilon = 1e-20;
     for(var k = 0; k < N; k++){
         var ar = A[2 * k], ai = A[2 * k + 1];
         var br = B[2 * k], bi = B[2 * k + 1];
@@ -789,6 +873,10 @@ function twoChannelImpulseResponse(y, x) {
         ir_complex[2 * i1] = out[2 * mod(i1 + peakAt, N)];
         ir_complex[2 * i1 + 1] = out[2 * mod(i1 + peakAt, N) + 1];
     }
+    var mean = average(ir);
+    for(var i2 = 0; i2 < N; i2++){
+        ir[i2] = ir[i2] - mean;
+    }
     return {
         ir: ir,
         ir_complex: ir_complex,
@@ -804,14 +892,25 @@ function computeFFTFromIR(ir) {
     var magnitude = [];
     var phase = [];
     var N = nextPow2(ir.ir.length);
+    console.log("Computing FFT from IR with size ".concat(N));
     var fft = new FFT(N);
     var out = fft.createComplexArray();
-    fft.transform(out, ir.ir_complex);
-    for(var i = 0; i < N / 2; i++){
-        var re = out[2 * i];
-        var im = out[2 * i + 1];
-        magnitude[i] = abs(re, im);
-        phase[i] = Math.atan2(im, re);
+    if (ir.ir_complex[1] === 0) {
+        console.log("IR is in real format, converting to complex");
+        var frame = new Float32Array(N);
+        for(var i = 0; i < N; i++){
+            frame[i] = (ir.ir_complex[2 * i] || 0) * 1;
+        }
+        fft.realTransform(out, frame);
+    } else {
+        fft.transform(out, ir.ir_complex);
+    }
+    console.log(ir.ir_complex);
+    for(var i1 = 0; i1 < N / 2; i1++){
+        var re = out[2 * i1];
+        var im = out[2 * i1 + 1];
+        magnitude[i1] = abs(re, im);
+        phase[i1] = Math.atan2(im, re);
     }
     var frequency = linspace(0, 48e3 / 2, magnitude.length);
     var i_norm = closest(f_phase_wrap, frequency);
@@ -1153,6 +1252,227 @@ var storage = {
     clearStorage: clearStorage,
     dumpStorage: dumpStorage
 };
+// src/device-settings.ts
+var INPUT_KEY = "preferredAudioInputId";
+var OUTPUT_KEY = "preferredAudioOutputId";
+function openDeviceSettings() {
+    var modal = document.getElementById("deviceSettingsModal");
+    if (modal) {
+        modal.style.display = "flex";
+        initDeviceSettings();
+    }
+}
+function closeDeviceSettings() {
+    var modal = document.getElementById("deviceSettingsModal");
+    if (modal) {
+        modal.style.display = "none";
+    }
+}
+function ensureDeviceAccess() {
+    return _async_to_generator(function() {
+        var _;
+        return _ts_generator(this, function(_state) {
+            switch(_state.label){
+                case 0:
+                    _state.trys.push([
+                        0,
+                        2,
+                        ,
+                        3
+                    ]);
+                    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return [
+                        2
+                    ];
+                    return [
+                        4,
+                        navigator.mediaDevices.getUserMedia({
+                            audio: true,
+                            video: false
+                        })
+                    ];
+                case 1:
+                    _state.sent();
+                    return [
+                        3,
+                        3
+                    ];
+                case 2:
+                    _ = _state.sent();
+                    return [
+                        3,
+                        3
+                    ];
+                case 3:
+                    return [
+                        2
+                    ];
+            }
+        });
+    })();
+}
+function refreshAudioDeviceList() {
+    return _async_to_generator(function() {
+        var devices, inputSel, outputSel, inputId, outputId, note, sinkSupported;
+        return _ts_generator(this, function(_state) {
+            switch(_state.label){
+                case 0:
+                    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+                        console.warn("MediaDevices API not available");
+                        return [
+                            2
+                        ];
+                    }
+                    return [
+                        4,
+                        ensureDeviceAccess()
+                    ];
+                case 1:
+                    _state.sent();
+                    return [
+                        4,
+                        navigator.mediaDevices.enumerateDevices()
+                    ];
+                case 2:
+                    devices = _state.sent();
+                    inputSel = document.getElementById("inputDeviceSelect");
+                    outputSel = document.getElementById("outputDeviceSelect");
+                    if (!inputSel || !outputSel) return [
+                        2
+                    ];
+                    inputSel.innerHTML = '<option value="">Default input</option>';
+                    outputSel.innerHTML = '<option value="">Default output</option>';
+                    inputId = localStorage.getItem(INPUT_KEY) || "";
+                    outputId = localStorage.getItem(OUTPUT_KEY) || "";
+                    devices.forEach(function(d) {
+                        if (d.kind === "audioinput") {
+                            var opt = document.createElement("option");
+                            opt.value = d.deviceId;
+                            opt.textContent = d.label || "Microphone (".concat(d.deviceId.slice(0, 8), "…)");
+                            if (d.deviceId === inputId) opt.selected = true;
+                            inputSel.appendChild(opt);
+                        } else if (d.kind === "audiooutput") {
+                            var opt1 = document.createElement("option");
+                            opt1.value = d.deviceId;
+                            opt1.textContent = d.label || "Speaker (".concat(d.deviceId.slice(0, 8), "…)");
+                            if (d.deviceId === outputId) opt1.selected = true;
+                            outputSel.appendChild(opt1);
+                        }
+                    });
+                    note = document.getElementById("sinkSupportNote");
+                    if (note) {
+                        sinkSupported = typeof HTMLMediaElement !== "undefined" && "setSinkId" in HTMLMediaElement.prototype;
+                        note.textContent = sinkSupported ? "Output routing supported on this browser." : "Output routing (setSinkId) not supported by this browser.";
+                    }
+                    return [
+                        2
+                    ];
+            }
+        });
+    })();
+}
+function applyOutputDevice(deviceId) {
+    return _async_to_generator(function() {
+        var router, e;
+        return _ts_generator(this, function(_state) {
+            switch(_state.label){
+                case 0:
+                    router = document.getElementById("appOutputRouter");
+                    if (!router) return [
+                        2
+                    ];
+                    if (!("setSinkId" in HTMLMediaElement.prototype)) return [
+                        3,
+                        4
+                    ];
+                    _state.label = 1;
+                case 1:
+                    _state.trys.push([
+                        1,
+                        3,
+                        ,
+                        4
+                    ]);
+                    return [
+                        4,
+                        router.setSinkId(deviceId || "")
+                    ];
+                case 2:
+                    _state.sent();
+                    return [
+                        3,
+                        4
+                    ];
+                case 3:
+                    e = _state.sent();
+                    console.warn("Failed to set sinkId:", e);
+                    return [
+                        3,
+                        4
+                    ];
+                case 4:
+                    return [
+                        2
+                    ];
+            }
+        });
+    })();
+}
+function saveDeviceSelections() {
+    var inputSel = document.getElementById("inputDeviceSelect");
+    var outputSel = document.getElementById("outputDeviceSelect");
+    if (!inputSel || !outputSel) return;
+    localStorage.setItem(INPUT_KEY, inputSel.value || "");
+    localStorage.setItem(OUTPUT_KEY, outputSel.value || "");
+    applyOutputDevice(outputSel.value || "");
+    closeDeviceSettings();
+}
+function initDeviceSettings() {
+    return _async_to_generator(function() {
+        var inputSel, outputSel;
+        return _ts_generator(this, function(_state) {
+            switch(_state.label){
+                case 0:
+                    return [
+                        4,
+                        refreshAudioDeviceList()
+                    ];
+                case 1:
+                    _state.sent();
+                    inputSel = document.getElementById("inputDeviceSelect");
+                    outputSel = document.getElementById("outputDeviceSelect");
+                    if (!inputSel || !outputSel) return [
+                        2
+                    ];
+                    inputSel.onchange = function() {
+                        localStorage.setItem(INPUT_KEY, inputSel.value || "");
+                    };
+                    outputSel.onchange = function() {
+                        localStorage.setItem(OUTPUT_KEY, outputSel.value || "");
+                        applyOutputDevice(outputSel.value || "");
+                    };
+                    return [
+                        2
+                    ];
+            }
+        });
+    })();
+}
+if (navigator.mediaDevices && "ondevicechange" in navigator.mediaDevices) {
+    navigator.mediaDevices.addEventListener("devicechange", function() {
+        var modal = document.getElementById("deviceSettingsModal");
+        if (modal && modal.style.display === "flex") {
+            refreshAudioDeviceList();
+        }
+    });
+}
+document.addEventListener("DOMContentLoaded", function() {
+    var outId = localStorage.getItem(OUTPUT_KEY);
+    if (outId) applyOutputDevice(outId);
+});
+window.openDeviceSettings = openDeviceSettings;
+window.closeDeviceSettings = closeDeviceSettings;
+window.refreshAudioDeviceList = refreshAudioDeviceList;
+window.saveDeviceSelections = saveDeviceSelections;
 // src/app.ts
 console.debug("App module loaded");
 var root = document.documentElement;
@@ -1600,11 +1920,14 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
             }
         });
         var ir = twoChannelImpulseResponse(responseData.data, referenceData ? referenceData.data : new Float32Array(responseData.data.length));
+        var farina_ir = FarinaImpulseResponse(responseData.data, referenceData ? referenceData.data : new Float32Array(responseData.data.length));
         console.log("Impulse response peak at", ir.peakAt);
         irPeakAt = ir.peakAt;
         tracesIR.push({
             x: ir.t,
-            y: ir.ir,
+            y: db(ir.ir.map(function(v) {
+                return Math.abs(v);
+            })),
             type: "scatter",
             mode: "lines",
             name: "Dual-FFT Impulse Response",
@@ -1613,7 +1936,21 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
                 width: 2
             }
         });
-        var transferFunction = computeFFTFromIR(ir);
+        tracesIR.push({
+            x: farina_ir.t,
+            y: db(farina_ir.ir.map(function(v) {
+                return Math.abs(v);
+            })),
+            type: "scatter",
+            mode: "lines",
+            name: "Farina Impulse Response",
+            line: {
+                color: "#d73a49",
+                width: 2
+            }
+        });
+        var transferFunction = computeFFTFromIR(ir, 100);
+        var transferFunctionF = computeFFTFromIR(farina_ir, 100);
         var smoothedFreqResponse = smoothFFT(transferFunction, 1 / 6, 1 / 48);
         tracesMagnitude.push({
             x: transferFunction.frequency,
@@ -1623,6 +1960,17 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
             name: "Dual-FFT Transfer Function (Raw)",
             line: {
                 color: "#d73a4933",
+                width: 1
+            }
+        });
+        tracesMagnitude.push({
+            x: transferFunctionF.frequency,
+            y: db(transferFunctionF.magnitude),
+            type: "scatter",
+            mode: "lines",
+            name: "Farina Transfer Function",
+            line: {
+                color: "#2600ff",
                 width: 1
             }
         });

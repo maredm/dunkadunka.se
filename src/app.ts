@@ -1,5 +1,7 @@
-import { computeFFT, computeFFTFromIR, db, rms, smoothFFT, twoChannelImpulseResponse } from "./audio";
+import { computeFFT, computeFFTFromIR, db, FarinaImpulseResponse, rms, smoothFFT, twoChannelImpulseResponse } from "./audio";
+import { nextPow2 } from "./math";
 import { storage } from "./storage";
+import "./device-settings";
 
 console.debug("App module loaded");
 
@@ -340,19 +342,29 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             line: { color: '#0366d6', width: 2 }
         });
         const ir = twoChannelImpulseResponse(responseData.data, referenceData ? referenceData.data : new Float32Array(responseData.data.length));
+        const farina_ir = FarinaImpulseResponse(responseData.data, referenceData ? referenceData.data : new Float32Array(responseData.data.length));
+
         console.log('Impulse response peak at', ir.peakAt);
         irPeakAt = ir.peakAt;
 
         tracesIR.push({
             x: ir.t,
-            y: ir.ir,        
+            y: db(ir.ir.map(v => Math.abs(v))),        
             type: 'scatter',
             mode: 'lines',
             name: 'Dual-FFT Impulse Response',
             line: { color: '#d73a49', width: 2 }
         });
-
-        const transferFunction = computeFFTFromIR(ir);
+        tracesIR.push({
+            x: farina_ir.t,
+            y: db(farina_ir.ir.map(v => Math.abs(v))),        
+            type: 'scatter',
+            mode: 'lines',
+            name: 'Farina Impulse Response',
+            line: { color: '#d73a49', width: 2 }
+        });
+        const transferFunction = computeFFTFromIR(ir, 100);
+        const transferFunctionF = computeFFTFromIR(farina_ir, 100);
         // const dreferenceFFT = twoChannelFFT(responseData.data, referenceData.data, nextPow2(referenceData.data.length), -5627);
         const smoothedFreqResponse = smoothFFT(transferFunction, 1/6, 1/48);
 
@@ -363,6 +375,14 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             mode: 'lines',
             name: 'Dual-FFT Transfer Function (Raw)',
             line: { color: '#d73a4933', width: 1 }
+        });
+        tracesMagnitude.push({
+            x: transferFunctionF.frequency,
+            y: db(transferFunctionF.magnitude),
+            type: 'scatter',
+            mode: 'lines',
+            name: 'Farina Transfer Function',
+            line: { color: '#2600ff', width: 1 }
         });
         tracesMagnitude.push({
             x: smoothedFreqResponse.frequency,
