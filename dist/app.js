@@ -789,9 +789,6 @@ function twoChannelImpulseResponse(y, x) {
         ir_complex[2 * i1] = out[2 * mod(i1 + peakAt, N)];
         ir_complex[2 * i1 + 1] = out[2 * mod(i1 + peakAt, N) + 1];
     }
-    console.log("Impulse response peak at sample:", peakAt);
-    console.log("Impulse response", ir_complex);
-    console.log("Impulse response (real)", ir);
     return {
         ir: ir,
         ir_complex: ir_complex,

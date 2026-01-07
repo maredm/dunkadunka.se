@@ -388,9 +388,6 @@ export function twoChannelImpulseResponse(y: number[] | Float32Array, x: number[
         ir_complex[2 * i] = out[2 * mod(i + peakAt, N)];
         ir_complex[2 * i + 1] = out[2 * mod(i + peakAt, N) + 1];
     }
-    console.log('Impulse response peak at sample:', peakAt);
-    console.log('Impulse response', ir_complex);
-    console.log('Impulse response (real)', ir);
 
     return {
         ir,
