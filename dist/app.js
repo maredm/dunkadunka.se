@@ -192,6 +192,14 @@ var abs = function(re) {
     var im = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : 0;
     return Math.sqrt(re * re + im * im);
 };
+var mod = function(n, m) {
+    return (n % m + m) % m;
+};
+var nextPow2 = function(v) {
+    var p = 1;
+    while(p < v)p <<= 1;
+    return p;
+};
 // src/fft.ts
 console.debug("FFT module loaded");
 var FFT = /*#__PURE__*/ function() {
@@ -673,12 +681,12 @@ function smoothFFT(fftData, fraction, resolution) {
     var frequency = fftData.frequency, magnitude = fftData.magnitude, phase = fftData.phase, fftSize = fftData.fftSize;
     var smoothedMagnitude = new Float32Array(magnitude.length);
     var fractionalFrequencies = getFractionalOctaveFrequencies(resolution, 20, 24e3, fftSize);
-    var smoothed = fractionalOctaveSmoothing(magnitude, fraction, fractionalFrequencies);
+    var smoothed = fractionalOctaveSmoothing(db(magnitude), fraction, fractionalFrequencies);
+    var smoothedPhase = fractionalOctaveSmoothing(phase, fraction, fractionalFrequencies);
     return {
         frequency: fractionalFrequencies,
         magnitude: Array.from(smoothed),
-        phase: phase,
-        // phase remains unchanged
+        phase: Array.from(smoothedPhase),
         fftSize: fftSize
     };
 }
@@ -713,126 +721,97 @@ function computeFFT(data) {
         fftSize: fftSize
     };
 }
-function fftCorrelation(x, y) {
-    var lenX = x.length;
-    var lenY = y.length;
-    var fullLen = lenX + lenY - 1;
-    var nextPow2 = function(v) {
-        var p = 1;
-        while(p < v)p <<= 1;
-        return p;
-    };
-    var n = nextPow2(fullLen);
-    var xP = new Float32Array(n);
-    var yP = new Float32Array(n);
-    xP.set(x, 0);
-    yP.set(y, 0);
-    var fft = new FFT(n);
+function twoChannelImpulseResponse(y, x) {
+    var fullLen = y.length + x.length - 1;
+    var N = nextPow2(fullLen);
+    var xP = new Float32Array(N);
+    var yP = new Float32Array(N);
+    xP.set(y, 0);
+    yP.set(x, 0);
+    var fft = new FFT(N);
     var A = fft.createComplexArray();
     var B = fft.createComplexArray();
     fft.realTransform(A, xP);
     fft.realTransform(B, yP);
-    if (typeof fft.completeSpectrum === "function") {
-        fft.completeSpectrum(A);
-        fft.completeSpectrum(B);
-    }
     var C = fft.createComplexArray();
-    for(var k = 0; k < n; k++){
+    var epsilon = 1e-12;
+    for(var k = 0; k < N; k++){
         var ar = A[2 * k], ai = A[2 * k + 1];
         var br = B[2 * k], bi = B[2 * k + 1];
-        C[2 * k] = ar * br + ai * bi;
-        C[2 * k + 1] = ai * br - ar * bi;
+        var denom = br * br + bi * bi + epsilon;
+        C[2 * k] = (ar * br + ai * bi) / denom;
+        C[2 * k + 1] = (ai * br - ar * bi) / denom;
     }
     var out = fft.createComplexArray();
     fft.inverseTransform(out, C);
-    var corr = new Float64Array(fullLen);
-    for(var i = 0; i < fullLen; i++){
-        corr[i] = out[2 * i] / n;
+    var ir = Array.from(new Float32Array(N));
+    for(var i = 0; i < N; i++){
+        ir[i] = out[2 * ((i + N / 2) % N)];
     }
-    var sumX2 = 0, sumY2 = 0;
-    for(var i1 = 0; i1 < lenX; i1++)sumX2 += x[i1] * x[i1];
-    for(var i2 = 0; i2 < lenY; i2++)sumY2 += y[i2] * y[i2];
-    var denom = Math.sqrt(sumX2 * sumY2);
-    var normalized = new Float64Array(fullLen);
-    if (denom > 0) {
-        for(var i3 = 0; i3 < fullLen; i3++)normalized[i3] = corr[i3] / denom;
-    } else {
-        for(var i4 = 0; i4 < fullLen; i4++)normalized[i4] = 0;
+    var peakAt = closest(1e8, ir) + -N / 2;
+    var ir_complex = out.slice();
+    for(var i1 = 0; i1 < N; i1++){
+        ir_complex[2 * i1] = out[2 * mod(i1 + peakAt, N)];
+        ir_complex[2 * i1 + 1] = out[2 * mod(i1 + peakAt, N) + 1];
     }
-    var lags = new Int32Array(fullLen);
-    for(var i5 = 0; i5 < fullLen; i5++)lags[i5] = i5 - (lenY - 1);
-    var peakIdx = 0;
-    var peakVal = -Infinity;
-    for(var i6 = 0; i6 < fullLen; i6++){
-        if (normalized[i6] > peakVal) {
-            peakVal = normalized[i6];
-            peakIdx = i6;
-        }
-    }
-    var estimatedLag = lags[peakIdx];
+    console.log("Impulse response peak at sample:", peakAt);
+    console.log("Impulse response", ir_complex);
+    console.log("Impulse response (real)", ir);
     return {
-        corr: normalized,
-        lags: lags,
-        estimatedLagSamples: estimatedLag,
-        estimatedLagIndex: peakIdx,
-        peakCorrelation: peakVal,
-        raw: corr,
-        nfft: n
+        ir: ir,
+        ir_complex: ir_complex,
+        t: Array.from(linspace((-N - 1) / 2 / 48e3, (N - 1) / 2 / 48e3, N)),
+        // assuming 48kHz
+        peakAt: peakAt,
+        sampleRate: 48e3,
+        fftSize: N
     };
 }
-function twoChannelFFT(dataArray, reference, fftSize, windowType) {
-    var referencePadded = new Float32Array(fftSize);
-    var lag = fftCorrelation(dataArray, reference);
-    console.log("Estimated lag (samples):", lag.estimatedLagSamples, "Peak correlation:", lag.peakCorrelation);
-    console.log("Lag index:", lag.estimatedLagIndex);
-    console.log("Lags array:", referencePadded.length, lag.lags);
-    var offset = reference.length + lag.estimatedLagSamples - 1;
-    console.log("Applying offset of", offset, "samples for alignment");
-    referencePadded.set(reference.slice(0, Math.min(reference.length, fftSize) - offset), offset);
-    var reference_ = computeFFT(referencePadded);
-    var signal_ = computeFFT(dataArray);
-    var signalMags = signal_.magnitude.map(function(v) {
-        return 20 * Math.log10(v === 0 ? 1e-20 : v);
-    });
-    var referenceMags = reference_.magnitude.map(function(v) {
-        return 20 * Math.log10(v === 0 ? 1e-20 : v);
-    });
-    var h = referenceMags.map(function(v, i) {
-        return signalMags[i] - v;
-    });
-    var frequency = linspace(0, 48e3 / 2, h.length);
-    var i_50 = closest(50, frequency);
-    var phase_signal = signal_.phase;
-    var phase_reference = reference_.phase;
-    var sphase = unwrapPhase(phase_signal.map(function(v, i) {
-        return v - phase_reference[i];
-    }));
-    var correction = Math.floor(sphase[i_50] / (2 * Math.PI) + 0.5) * (2 * Math.PI);
-    var phase = sphase.map(function(v) {
+function computeFFTFromIR(ir) {
+    var f_phase_wrap = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : 50;
+    var magnitude = [];
+    var phase = [];
+    var N = nextPow2(ir.ir.length);
+    var fft = new FFT(N);
+    var out = fft.createComplexArray();
+    fft.transform(out, ir.ir_complex);
+    for(var i = 0; i < N / 2; i++){
+        var re = out[2 * i];
+        var im = out[2 * i + 1];
+        magnitude[i] = abs(re, im);
+        phase[i] = Math.atan2(im, re);
+    }
+    var frequency = linspace(0, 48e3 / 2, magnitude.length);
+    var i_norm = closest(f_phase_wrap, frequency);
+    var unwraped_phase = unwrapPhase(phase);
+    var correction = Math.floor(unwraped_phase[i_norm] / (2 * Math.PI) + 0.5) * (2 * Math.PI);
+    var corrected_unwraped_phase = unwraped_phase.map(function(v) {
         return v - correction;
     });
     function unwrapPhase(phases) {
-        var N = phases.length;
-        var out = Array.from(new Float32Array(N));
-        if (N === 0) return out;
-        out[0] = phases[0];
-        var offset2 = 0;
-        for(var i = 1; i < N; i++){
+        var N2 = phases.length;
+        var out2 = Array.from(new Float32Array(N2));
+        if (N2 === 0) return out2;
+        out2[0] = phases[0];
+        var offset = 0;
+        for(var i = 1; i < N2; i++){
             var delta = phases[i] - phases[i - 1];
             if (delta > Math.PI) {
-                offset2 -= 2 * Math.PI;
+                offset -= 2 * Math.PI;
             } else if (delta < -Math.PI) {
-                offset2 += 2 * Math.PI;
+                offset += 2 * Math.PI;
             }
-            out[i] = phases[i] + offset2;
+            out2[i] = phases[i] + offset;
         }
-        return out;
+        return out2;
     }
     return {
         frequency: frequency,
-        magnitude: h,
-        phase: phase,
-        fftSize: fftSize
+        magnitude: magnitude,
+        phase: corrected_unwraped_phase.map(function(v) {
+            return v / Math.PI * 180;
+        }),
+        fftSize: N
     };
 }
 // src/storage.ts
@@ -1157,7 +1136,13 @@ responseFileInput.addEventListener("change", function() {
     var _responseFileInput_files;
     analyzeBtn.disabled = !((_responseFileInput_files = responseFileInput.files) === null || _responseFileInput_files === void 0 ? void 0 : _responseFileInput_files.length);
 });
-storage.dumpStorage();
+window.addEventListener("beforeunload", function(e) {
+    try {
+        saveState();
+    } catch (err) {
+        console.error("Failed to save state on beforeunload:", err);
+    }
+});
 tabsContainer.addEventListener("click", function(e) {
     var target = e.target;
     if (target.classList.contains("tab-close")) {
@@ -1174,6 +1159,7 @@ tabsContainer.addEventListener("click", function(e) {
         if (tab.classList.contains("active")) {
             switchTab("upload");
         }
+        saveState();
         e.stopPropagation();
     } else if (target.classList.contains("tab")) {
         var tabId1 = target.dataset.tab;
@@ -1542,15 +1528,27 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
     var content = document.createElement("div");
     content.className = "tab-content";
     content.dataset.content = tabId;
-    content.innerHTML = "\n        <h2>".concat(filename, '</h2>\n        <div class="loose-container">\n            <div id="plot-').concat(tabId, '"></div>\n            <div id="plot-').concat(tabId, '1"></div>\n        </div>\n    ');
+    content.innerHTML = '\n        <div class="loose-container">\n        <div class="analysis-description" style="margin-bottom:12px; font-size:0.95rem; color:#24292e;">\n            <strong>Analysis:</strong> Magnitude, phase and impulse‑response computed from the uploaded response (and optional reference) via FFT and a two‑channel impulse response.\n            <span style="margin-left:12px;">\n            \n            <strong>Smoothing:</strong> Fractional‑octave smoothing applied to the reference response (1/6 octave).</span>\n        </div>\n            <div id="plot-'.concat(tabId, '-magnitude" class="plot-medium"></div>\n            <div id="plot-').concat(tabId, '-phase" class="plot-medium"></div>\n            <div id="plot-').concat(tabId, '-ir" class="plot-medium"></div>\n        </div>\n    ');
     tabContents.appendChild(content);
     switchTab(tabId);
+    var ir = twoChannelImpulseResponse(responseData.data, referenceData ? referenceData.data : new Float32Array(responseData.data.length));
+    console.log("Impulse response peak at", ir.peakAt);
+    var trace2s = [
+        {
+            x: ir.t,
+            y: ir.ir,
+            type: "scatter",
+            mode: "lines",
+            name: "Impulse Response",
+            line: {
+                color: "#d73a49",
+                width: 2
+            }
+        }
+    ];
     console.log("Analyzing response file:", filename);
-    console.log(responseData, "response samples");
     var data = new Float32Array(responseData.data);
-    console.log("Response data loaded", data, "samples");
     var responseFFT = computeFFT(data);
-    console.log("Response FFT computed", responseFFT);
     var traces = [
         {
             x: responseFFT.frequency,
@@ -1566,14 +1564,14 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
     ];
     var trace1s = [];
     if (referenceData) {
-        var referenceFFT = twoChannelFFT(responseData.data, referenceData.data, responseFFT.fftSize, null);
+        var referenceFFT = computeFFTFromIR(ir);
         var smoothedFreqResponse = smoothFFT(referenceFFT, 1 / 6, 1 / 48);
         traces.push({
             x: referenceFFT.frequency,
-            y: referenceFFT.magnitude,
+            y: db(referenceFFT.magnitude),
             type: "scatter",
             mode: "lines",
-            name: "Frequency Response (Raw)",
+            name: "Magnitude (Raw)",
             line: {
                 color: "#d73a4933",
                 width: 1
@@ -1584,7 +1582,7 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
             y: smoothedFreqResponse.magnitude,
             type: "scatter",
             mode: "lines",
-            name: "Frequency Response (Smoothed)",
+            name: "Magnitude (Smoothed)",
             line: {
                 color: "#d73a49",
                 width: 2
@@ -1595,7 +1593,18 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
             y: referenceFFT.phase,
             type: "scatter",
             mode: "lines",
-            name: "Reference Phase",
+            name: "Phase (Raw)",
+            line: {
+                color: "#d73a4933",
+                width: 1
+            }
+        });
+        trace1s.push({
+            x: smoothedFreqResponse.frequency,
+            y: smoothedFreqResponse.phase,
+            type: "scatter",
+            mode: "lines",
+            name: "Phase (Smoothed)",
             line: {
                 color: "#d73a49",
                 width: 2
@@ -1603,7 +1612,7 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
         });
     }
     var layout = {
-        title: "Frequency Analysis",
+        title: "Magnitude Analysis",
         plotGlPixelRatio: 2,
         // For better clarity on high-DPI screens
         xaxis: {
@@ -1612,24 +1621,35 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
             gridcolor: "#e1e4e8",
             range: [
                 Math.log10(20),
-                Math.log10(24e3)
-            ]
+                Math.log10(2e4)
+            ],
+            tickformat: ".0f"
         },
         yaxis: {
             title: "Magnitude (dB)",
-            gridcolor: "#e1e4e8"
+            gridcolor: "#e1e4e8",
+            rangemode: "tozero"
         },
         legend: {
-            x: 0.02,
-            y: 0.98
+            x: 0.98,
+            y: 0.02,
+            xanchor: "right",
+            yanchor: "bottom"
         },
         plot_bgcolor: "#fafbfc",
         paper_bgcolor: "#fff",
+        staticPlot: false,
+        // Enable interactivity
+        dragmode: "pan",
+        showAxisDragHandles: true,
+        showAxisRangeEntryBoxes: true,
+        axisDragOnHover: true,
+        tightenLats: true,
         font: {
             family: "'Newsreader', Georgia, 'Times New Roman', Times, serif"
         }
     };
-    window.Plotly.newPlot("plot-".concat(tabId), traces, layout, {
+    window.Plotly.newPlot("plot-".concat(tabId, "-magnitude"), traces, layout, {
         responsive: true
     });
     var layouta = {
@@ -1640,16 +1660,24 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
             gridcolor: "#e1e4e8",
             range: [
                 Math.log10(20),
-                Math.log10(24e3)
-            ]
+                Math.log10(2e4)
+            ],
+            tickformat: ".0f"
         },
         yaxis: {
             title: "Phase (degrees)",
-            gridcolor: "#e1e4e8"
+            gridcolor: "#e1e4e8",
+            automargin: true,
+            range: [
+                -720,
+                720
+            ]
         },
         legend: {
-            x: 0.02,
-            y: 0.98
+            x: 0.98,
+            y: 0.02,
+            xanchor: "right",
+            yanchor: "bottom"
         },
         plot_bgcolor: "#fafbfc",
         paper_bgcolor: "#fff",
@@ -1665,7 +1693,45 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
             family: "'Newsreader', Georgia, 'Times New Roman', Times, serif"
         }
     };
-    window.Plotly.newPlot("plot-".concat(tabId, "1"), trace1s, layouta, {
+    window.Plotly.newPlot("plot-".concat(tabId, "-phase"), trace1s, layouta, {
+        responsive: true
+    });
+    var layouts = {
+        title: "Impulse response",
+        xaxis: {
+            title: "Amplitude",
+            gridcolor: "#e1e4e8",
+            range: [
+                -0.05 + ir.peakAt / ir.sampleRate,
+                0.05 + ir.peakAt / ir.sampleRate
+            ]
+        },
+        yaxis: {
+            title: "Phase (degrees)",
+            gridcolor: "#e1e4e8",
+            automargin: true
+        },
+        legend: {
+            x: 0.98,
+            y: 0.02,
+            xanchor: "right",
+            yanchor: "bottom"
+        },
+        plot_bgcolor: "#fafbfc",
+        paper_bgcolor: "#fff",
+        staticPlot: false,
+        // Enable interactivity
+        plotGlPixelRatio: 2,
+        // For better clarity on high-DPI screens
+        dragmode: "pan",
+        showAxisDragHandles: true,
+        showAxisRangeEntryBoxes: true,
+        axisDragOnHover: true,
+        font: {
+            family: "'Newsreader', Georgia, 'Times New Roman', Times, serif"
+        }
+    };
+    window.Plotly.newPlot("plot-".concat(tabId, "-ir"), trace2s, layouts, {
         responsive: true
     });
     saveState();
@@ -1687,6 +1753,7 @@ function saveState() {
         };
     });
     storage.setItem("tabs", JSON.stringify(tabs));
+    console.log("Saved state with tabs:", tabs);
 }
 function loadState() {
     return _async_to_generator(function() {
@@ -1736,7 +1803,6 @@ function loadState() {
                     raw = _state.sent();
                     analysisData = raw ? JSON.parse(raw) : null;
                     if (analysisData) {
-                        console.log("Restoring analysis tab:", analysisData);
                         createAnalysisTab(analysisData.responseData, analysisData.referenceData, analysisData.filename, analysisData.referenceFilename);
                     }
                     _state.label = 5;

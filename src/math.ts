@@ -35,3 +35,11 @@ export function clamp(v: number, lower: number, upper: number): number {
 export const average = (array: number[]): number => array.reduce((a, b) => a + b) / array.length;
 
 export const abs = (re: number, im: number = 0): number => Math.sqrt(re * re + im * im);
+
+export const mod = (n: number, m: number): number => ((n % m) + m) % m;
+
+export const nextPow2 = (v: number): number => {
+        let p = 1;
+        while (p < v) p <<= 1;
+        return p;
+    };

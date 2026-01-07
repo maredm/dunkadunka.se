@@ -1,7 +1,7 @@
 import { FFT } from "./fft";
 import { getFractionalOctaveFrequencies, fractionalOctaveSmoothing } from "./fractional_octave_smoothing";
-import { abs } from "./math";
-import { computeFFT, db, smoothFFT, twoChannelFFT } from "./audio";
+import { abs, nextPow2 } from "./math";
+import { computeFFT, computeFFTFromIR, db, smoothFFT, twoChannelFFT, twoChannelImpulseResponse } from "./audio";
 import { storage } from "./storage";
 
 console.debug("App module loaded");
@@ -29,7 +29,17 @@ responseFileInput.addEventListener('change', () => {
     analyzeBtn.disabled = !responseFileInput.files?.length;
 });
 
-storage.dumpStorage();
+// Save state when the user attempts to close or reload the window
+window.addEventListener('beforeunload', (e: BeforeUnloadEvent) => {
+    try {
+        saveState();
+    } catch (err) {
+        console.error('Failed to save state on beforeunload:', err);
+    }
+    // If you want to prompt the user to confirm leaving (browser-dependent), uncomment:
+    // e.preventDefault();
+    // e.returnValue = '';
+});
 
 // Tab switching
 tabsContainer.addEventListener('click', (e: MouseEvent) => {
@@ -49,6 +59,7 @@ tabsContainer.addEventListener('click', (e: MouseEvent) => {
         if (tab.classList.contains('active')) {
             switchTab('upload');
         }
+        saveState();
         e.stopPropagation();
     } else if (target.classList.contains('tab')) {
         const tabId = target.dataset.tab;
@@ -247,6 +258,25 @@ async function loadAudioFile(file: File): Promise<Audio> {
     };
 }
 
+/**
+ * Creates a new analysis tab in the UI and renders magnitude, phase and impulse-response plots for the provided audio.
+ *
+ * Description:
+ * - Performs spectral and time-domain analysis: computes the FFT of the response, computes an impulse response (two-channel) and derives an FFT from that IR for reference comparison.
+ * - Plots: Magnitude (dB) with raw and smoothed reference traces, Phase (degrees) with raw and smoothed traces, and the time-domain impulse response.
+ * - Smoothing: applies smoothFFT to the reference frequency response using the smoothing parameters 1/6 and 1/48 (producing "Magnitude (Smoothed)" and "Phase (Smoothed)").
+ *
+ * Side effects:
+ * - Mutates DOM by adding a closable tab button and corresponding tab content elements.
+ * - Renders plots using Plotly into the created tab content.
+ * - Persists analysis state to storage (IndexedDB/sessionStorage mirror).
+ *
+ * @param responseData - Audio buffer for the response file to analyze (Float32Array samples in Audio.data).
+ * @param referenceData - Optional Audio buffer for the reference file; when provided, reference magnitude/phase and smoothed curves are computed and plotted.
+ * @param filename - Display name for the response file (used in tab title and header).
+ * @param referenceFilename - Optional display name for the reference file (appended to tab title when present).
+ * @returns void
+ */
 function createAnalysisTab(responseData: Audio, referenceData: Audio | null, filename: string, referenceFilename: string | null): void {
     tabCounter++;
     const tabId = `analysis-${tabCounter}`;
@@ -267,10 +297,16 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
     content.className = 'tab-content';
     content.dataset.content = tabId;
     content.innerHTML = `
-        <h2>${filename}</h2>
         <div class="loose-container">
-            <div id="plot-${tabId}"></div>
-            <div id="plot-${tabId}1"></div>
+        <div class="analysis-description" style="margin-bottom:12px; font-size:0.95rem; color:#24292e;">
+            <strong>Analysis:</strong> Magnitude, phase and impulse‑response computed from the uploaded response (and optional reference) via FFT and a two‑channel impulse response.
+            <span style="margin-left:12px;">
+            
+            <strong>Smoothing:</strong> Fractional‑octave smoothing applied to the reference response (1/6 octave).</span>
+        </div>
+            <div id="plot-${tabId}-magnitude" class="plot-medium"></div>
+            <div id="plot-${tabId}-phase" class="plot-medium"></div>
+            <div id="plot-${tabId}-ir" class="plot-medium"></div>
         </div>
     `;
     tabContents.appendChild(content);
@@ -278,15 +314,23 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
     // Switch to new tab
     switchTab(tabId);
 
+    const ir = twoChannelImpulseResponse(responseData.data, referenceData ? referenceData.data : new Float32Array(responseData.data.length));
+    console.log('Impulse response peak at', ir.peakAt);
+
+    const trace2s: any[] = [{
+        x: ir.t,
+        y: ir.ir,        
+        type: 'scatter',
+        mode: 'lines',
+        name: 'Impulse Response',
+        line: { color: '#d73a49', width: 2 }
+    }];
+
     // Compute and plot FFTs
     console.log('Analyzing response file:', filename);
-    console.log(responseData, 'response samples');
     const data = new Float32Array(responseData.data);
-    console.log('Response data loaded', data, 'samples');
     
     const responseFFT = computeFFT(data);
-    console.log('Response FFT computed', responseFFT);
-    
     const traces: any[] = [{
         x: responseFFT.frequency,
         y: db(responseFFT.magnitude),
@@ -298,54 +342,15 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
     const trace1s: any[] = [];
 
     if (referenceData) {
-        const referenceFFT = twoChannelFFT(responseData.data, referenceData.data, responseFFT.fftSize, null);
-        
-        /*traces.push({
+        const referenceFFT = computeFFTFromIR(ir);
+        // const dreferenceFFT = twoChannelFFT(responseData.data, referenceData.data, nextPow2(referenceData.data.length), -5627);
+        const smoothedFreqResponse = smoothFFT(referenceFFT, 1/6, 1/48);
+        traces.push({
             x: referenceFFT.frequency,
             y: db(referenceFFT.magnitude),
             type: 'scatter',
             mode: 'lines',
-            name: 'Reference',
-            line: { color: '#28a745', width: 2 }
-        });
-
-        // Frequency response (difference)
-        const freqResponse = responseFFT.magnitude.map((val, i) => 
-            db(val) - db((referenceFFT.magnitude[i]))
-        );
-        
-        traces.push({
-            x: responseFFT.frequency,
-            y: freqResponse,
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Frequency Response',
-            line: { color: '#d73a4933', width: 1 }
-        });
-        
-        const smoothedFreqResponse = smoothFFT({
-            frequency: responseFFT.frequency,
-            magnitude: freqResponse,
-            phase: responseFFT.phase,
-            fftSize: responseFFT.fftSize
-        }, 1/3, 1/48);
-
-        traces.push({
-            x: smoothedFreqResponse.frequency,
-            y: smoothedFreqResponse.magnitude,
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Frequency Response',
-            line: { color: '#d73a49', width: 2 }
-        });
-        */
-        const smoothedFreqResponse = smoothFFT(referenceFFT, 1/6, 1/48);
-        traces.push({
-            x: referenceFFT.frequency,
-            y: referenceFFT.magnitude,
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Frequency Response (Raw)',
+            name: 'Magnitude (Raw)',
             line: { color: '#d73a4933', width: 1 }
         });
         traces.push({
@@ -353,7 +358,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             y: smoothedFreqResponse.magnitude,
             type: 'scatter',
             mode: 'lines',
-            name: 'Frequency Response (Smoothed)',
+            name: 'Magnitude (Smoothed)',
             line: { color: '#d73a49', width: 2 }
         });
 
@@ -362,33 +367,50 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             y: referenceFFT.phase,
             type: 'scatter',
             mode: 'lines',
-            name: 'Reference Phase',
+            name: 'Phase (Raw)',
+            line: { color: '#d73a4933', width: 1 }
+        });
+        trace1s.push({
+            x: smoothedFreqResponse.frequency,
+            y: smoothedFreqResponse.phase,
+            type: 'scatter',
+            mode: 'lines',
+            name: 'Phase (Smoothed)',
             line: { color: '#d73a49', width: 2 }
         });
     }
 
     const layout = {
-        title: 'Frequency Analysis',
+        title: 'Magnitude Analysis',
         plotGlPixelRatio: 2, // For better clarity on high-DPI screens
         xaxis: { 
             title: 'Frequency (Hz)', 
             type: 'log',
             gridcolor: '#e1e4e8',
-            range: [Math.log10(20), Math.log10(24000)],
+            range: [Math.log10(20), Math.log10(20000)],
+            tickformat: '.0f',
+
         },
         yaxis: { 
             title: 'Magnitude (dB)',
-            gridcolor: '#e1e4e8'
+            gridcolor: '#e1e4e8',
+            rangemode: 'tozero',
         },
-        legend: { x: 0.02, y: 0.98 },
+        legend: { x: 0.98, y: 0.02, xanchor: 'right', yanchor: 'bottom' },
         plot_bgcolor: '#fafbfc',
         paper_bgcolor: '#fff',
+        staticPlot: false, // Enable interactivity
+        dragmode: 'pan',
+        showAxisDragHandles: true,
+        showAxisRangeEntryBoxes: true,
+        axisDragOnHover: true,
+        tightenLats: true,
         font: {
             family: "'Newsreader', Georgia, 'Times New Roman', Times, serif",
         },
     };
 
-    (window as any).Plotly.newPlot(`plot-${tabId}`, traces, layout, { responsive: true });
+    (window as any).Plotly.newPlot(`plot-${tabId}-magnitude`, traces, layout, { responsive: true });
 
     const layouta = {
         title: 'Phase Analysis',
@@ -396,13 +418,16 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             title: 'Frequency (Hz)', 
             type: 'log',
             gridcolor: '#e1e4e8',
-            range: [Math.log10(20), Math.log10(24000)],
+            range: [Math.log10(20), Math.log10(20000)],
+            tickformat: '.0f',
         },
         yaxis: { 
             title: 'Phase (degrees)',
-            gridcolor: '#e1e4e8'
+            gridcolor: '#e1e4e8',
+            automargin: true,
+            range: [-720, 720],
         },
-        legend: { x: 0.02, y: 0.98 },
+        legend: { x: 0.98, y: 0.02, xanchor: 'right', yanchor: 'bottom' },
         plot_bgcolor: '#fafbfc',
         paper_bgcolor: '#fff',
         staticPlot: false, // Enable interactivity
@@ -416,8 +441,37 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
         },
     };
 
-    (window as any).Plotly.newPlot(`plot-${tabId}1`, trace1s, layouta, { responsive: true });
+    (window as any).Plotly.newPlot(`plot-${tabId}-phase`, trace1s, layouta, { responsive: true });
 
+
+
+    const layouts = {
+        title: 'Impulse response',
+        xaxis: { 
+            title: 'Amplitude', 
+            gridcolor: '#e1e4e8',
+            range: [-0.05 + ir.peakAt / ir.sampleRate, 0.05 + ir.peakAt / ir.sampleRate],
+        },
+        yaxis: { 
+            title: 'Phase (degrees)',
+            gridcolor: '#e1e4e8',
+            automargin: true,
+        },
+        legend: { x: 0.98, y: 0.02, xanchor: 'right', yanchor: 'bottom' },
+        plot_bgcolor: '#fafbfc',
+        paper_bgcolor: '#fff',
+        staticPlot: false, // Enable interactivity
+        plotGlPixelRatio: 2, // For better clarity on high-DPI screens
+        dragmode: 'pan',
+        showAxisDragHandles: true,
+        showAxisRangeEntryBoxes: true,
+        axisDragOnHover: true,
+        font: {
+            family: "'Newsreader', Georgia, 'Times New Roman', Times, serif",
+        },
+    };
+
+    (window as any).Plotly.newPlot(`plot-${tabId}-ir`, trace2s, layouts, { responsive: true });
     saveState();
 
     // Persist analysis using IndexedDB (mirrored to sessionStorage for compatibility)
@@ -437,6 +491,7 @@ function saveState(): void {
     }));
     
     storage.setItem('tabs', JSON.stringify(tabs));
+    console.log('Saved state with tabs:', tabs);
 }
 
 async function loadState(): Promise<void> {
@@ -451,7 +506,6 @@ async function loadState(): Promise<void> {
             const raw = await storage.getItem(`${tab.id}`);
             const analysisData = raw ? JSON.parse(raw) : null;
             if (analysisData) {
-                console.log('Restoring analysis tab:', analysisData);
                 createAnalysisTab(analysisData.responseData, analysisData.referenceData, analysisData.filename, analysisData.referenceFilename);
             }
         }

@@ -1,4 +1,4 @@
-import { abs, closest, linspace } from './math';
+import { abs, closest, linspace, mod, nextPow2 } from './math';
 import { FFT } from './fft';
 import { fractionalOctaveSmoothing, getFractionalOctaveFrequencies } from './fractional_octave_smoothing';
 
@@ -159,12 +159,19 @@ export function chirp(f_start: number, f_stop: number, duration: number | null =
     return [sweepWindowed, t, envelope];
 }
 
+export interface Audio {
+    sampleRate: number;
+    channels: number;
+    data: Float32Array[];
+}
+
 export interface FFTResult {
     frequency: number[];
     magnitude: number[];
     phase: number[];
     fftSize: number;
 }
+
 
 export function smoothFFT(fftData: FFTResult, fraction: number, resolution: number): FFTResult {
     const { frequency, magnitude, phase, fftSize } = fftData;
@@ -174,12 +181,13 @@ export function smoothFFT(fftData: FFTResult, fraction: number, resolution: numb
     const fractionalFrequencies = getFractionalOctaveFrequencies(resolution, 20, 24000, fftSize);
 
     // Apply fractional octave smoothing
-    const smoothed = fractionalOctaveSmoothing(magnitude, fraction, fractionalFrequencies);
+    const smoothed = fractionalOctaveSmoothing(db(magnitude), fraction, fractionalFrequencies);
+    const smoothedPhase = fractionalOctaveSmoothing(phase, fraction, fractionalFrequencies);
 
     return {
         frequency: fractionalFrequencies,
         magnitude: Array.from(smoothed),
-        phase, // phase remains unchanged
+        phase: Array.from(smoothedPhase),
         fftSize
     };
 }
@@ -324,20 +332,98 @@ export function fftCorrelation(x: number[] | Float32Array, y: number[] | Float32
     };
 }
 
-export function twoChannelFFT(dataArray: number[] | Float32Array, reference: number[] | Float32Array, fftSize: number, windowType: any): FFTResult {
-    const referencePadded = new Float32Array(fftSize);
+export interface ImpulseResponseResult {
+    ir: Array<number>;
+    ir_complex: Array<number>;
+    t: Array<number>;
+    peakAt: number;
+    sampleRate: number;
+    fftSize: number;
+}
 
+export function twoChannelImpulseResponse(y: number[] | Float32Array, x: number[] | Float32Array): ImpulseResponseResult {
+    // Calculate the impulse response by taking the IFFT of the division of the FFTs of output and input signals.
+    const fullLen = y.length + x.length - 1;
+    
+    const N = nextPow2(fullLen);
+
+    // zero-pad inputs to length n
+    const xP = new Float32Array(N);
+    const yP = new Float32Array(N);
+    xP.set(y, 0);
+    yP.set(x, 0);
+
+    const fft = new FFT(N);
+    const A = fft.createComplexArray();
+    const B = fft.createComplexArray();
+
+    // forward real FFTs
+    fft.realTransform(A, xP);
+    fft.realTransform(B, yP);
+
+    // Division A / B with regularization to avoid division by zero
+    const C = fft.createComplexArray();
+    const epsilon = 1e-12;
+    for (let k = 0; k < N; k++) {
+        const ar = A[2 * k], ai = A[2 * k + 1];
+        const br = B[2 * k], bi = B[2 * k + 1];
+        const denom = br * br + bi * bi + epsilon;
+        C[2 * k] = (ar * br + ai * bi) / denom;
+        C[2 * k + 1] = (ai * br - ar * bi) / denom;
+    }
+
+    // inverse FFT of cross-spectrum
+    const out = fft.createComplexArray();
+    fft.inverseTransform(out, C);
+
+    // Real part / N gives impulse response. This is shifted by N/2.
+    const ir = Array.from(new Float32Array(N));
+    for (let i = 0; i < N; i++) {
+        ir[i] = out[2 * (( i + N / 2) % N)];
+    }
+
+    const peakAt = closest(100000000, ir) + (-N) / 2;
+    const ir_complex = out.slice(); // copy
+    for (let i = 0; i < N; i++) {
+        ir_complex[2 * i] = out[2 * mod(i + peakAt, N)];
+        ir_complex[2 * i + 1] = out[2 * mod(i + peakAt, N) + 1];
+    }
+    console.log('Impulse response peak at sample:', peakAt);
+    console.log('Impulse response', ir_complex);
+    console.log('Impulse response (real)', ir);
+
+    return {
+        ir,
+        ir_complex,
+        t: Array.from(linspace((-N - 1) / 2 / 48000, (N - 1) / 2 / 48000, N)), // assuming 48kHz
+        peakAt,
+        sampleRate: 48000,
+        fftSize: N,
+    };
+}
+
+export function twoChannelFFT(dataArray: number[] | Float32Array, reference: number[] | Float32Array, fftSize: number, offset: number): FFTResult {
+    const dataPadded = new Float32Array(fftSize);
+    const referencePadded = new Float32Array(fftSize);
+    /*
     const lag = fftCorrelation(dataArray, reference);
     console.log('Estimated lag (samples):', lag.estimatedLagSamples, 'Peak correlation:', lag.peakCorrelation);
     console.log('Lag index:', lag.estimatedLagIndex);
     console.log('Lags array:', referencePadded.length, lag.lags);
     const offset = reference.length + lag.estimatedLagSamples - 1;
     console.log('Applying offset of', offset, 'samples for alignment');
-    referencePadded.set(reference.slice(0, Math.min(reference.length, fftSize) - offset), offset);
+    */
+    if (offset >= 0) {
+        referencePadded.set(reference.slice(0, Math.min(reference.length, fftSize) - offset), offset);
+        dataPadded.set(dataArray.slice(0, Math.min(dataArray.length, fftSize)), 0);
+    } else {
+        referencePadded.set(reference.slice(0, Math.min(reference.length, fftSize)), 0);
+        dataPadded.set(dataArray.slice(-offset, Math.min(dataArray.length, fftSize) + offset), -offset);
+    }
 
     //const rmss = rms(referencePadded);
     const reference_ = computeFFT(referencePadded);  // Avoid log(0)
-    const signal_ = computeFFT(dataArray);
+    const signal_ = computeFFT(dataPadded);
     const signalMags = signal_.magnitude.map(v => 20 * Math.log10(v === 0 ? 1e-20 : v));
     const referenceMags = reference_.magnitude.map(v => 20 * Math.log10(v === 0 ? 1e-20 : v));
     const h = referenceMags.map((v, i) => signalMags[i] - v); // dB difference
@@ -379,6 +465,58 @@ export function twoChannelFFT(dataArray: number[] | Float32Array, reference: num
         magnitude: h,
         phase,
         fftSize
+    };
+}
+
+export function computeFFTFromIR(ir: ImpulseResponseResult, f_phase_wrap: number = 50): FFTResult {
+    const magnitude: number[] = [];
+    const phase: number[] = [];
+
+    const N = nextPow2(ir.ir.length);
+    
+    const fft = new FFT(N);
+    const out = fft.createComplexArray();
+
+    fft.transform(out, ir.ir_complex);
+    
+    for (let i = 0; i < N / 2; i++) {
+        const re = out[2 * i];
+        const im = out[2 * i + 1];
+        magnitude[i] = abs(re, im);
+        phase[i] = Math.atan2(im, re); // phase in radians, range [-PI, PI].
+    }
+    const frequency = linspace(0, 48000 / 2, magnitude.length);
+
+    const i_norm = closest(f_phase_wrap, frequency); // Example usage of closest function
+    // phase difference (unwrap phases first)
+    const unwraped_phase = unwrapPhase(phase); // phase difference in radians
+    const correction = (Math.floor(unwraped_phase[i_norm] / (2 * Math.PI) + 0.5)) * (2 * Math.PI);
+    const corrected_unwraped_phase = unwraped_phase.map(v => (v - correction)); // relative to 50 Hz
+
+    // simple phase unwrapping (returns Float32Array)
+    function unwrapPhase(phases: number[]): Array<number> {
+        const N = phases.length;
+        const out = Array.from(new Float32Array(N));
+        if (N === 0) return out;
+        out[0] = phases[0];
+        let offset = 0;
+        for (let i = 1; i < N; i++) {
+            let delta = phases[i] - phases[i - 1];
+            if (delta > Math.PI) {
+                offset -= 2 * Math.PI;
+            } else if (delta < -Math.PI) {
+                offset += 2 * Math.PI;
+            }
+            out[i] = phases[i] + offset;
+        }
+        return out;
+    }
+
+    return {
+        frequency,
+        magnitude,
+        phase: corrected_unwraped_phase.map(v => v / Math.PI * 180),
+        fftSize: N,
     };
 }
 
