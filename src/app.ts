@@ -321,7 +321,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
         y: db(responseFFT.magnitude),
         type: 'scatter',
         mode: 'lines',
-        name: 'Recording',
+        name: 'Measurement signal',
         line: { color: '#0366d6', width: 2 }
     }];
     const tracesPhase: any[] = [];
@@ -336,7 +336,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             y: db(referenceFFT.magnitude),
             type: 'scatter',
             mode: 'lines',
-            name: 'Reference',
+            name: 'Reference signal',
             line: { color: '#0366d6', width: 2 }
         });
         const ir = twoChannelImpulseResponse(responseData.data, referenceData ? referenceData.data : new Float32Array(responseData.data.length));
@@ -348,7 +348,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             y: ir.ir,        
             type: 'scatter',
             mode: 'lines',
-            name: 'Impulse Response',
+            name: 'Dual-FFT Impulse Response',
             line: { color: '#d73a49', width: 2 }
         });
 
@@ -361,7 +361,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             y: db(transferFunction.magnitude),
             type: 'scatter',
             mode: 'lines',
-            name: 'Magnitude (Raw)',
+            name: 'Dual-FFT Transfer Function (Raw)',
             line: { color: '#d73a4933', width: 1 }
         });
         tracesMagnitude.push({
@@ -369,7 +369,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             y: smoothedFreqResponse.magnitude,
             type: 'scatter',
             mode: 'lines',
-            name: 'Magnitude (Smoothed)',
+            name: 'Dual-FFT Transfer Function (Smoothed)',
             line: { color: '#d73a49', width: 2 }
         });
 
@@ -378,7 +378,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             y: transferFunction.phase,
             type: 'scatter',
             mode: 'lines',
-            name: 'Phase (Raw)',
+            name: 'Dual-FFT Transfer Function (Raw)',
             line: { color: '#d73a4933', width: 1 }
         });
         tracesPhase.push({
@@ -386,7 +386,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             y: smoothedFreqResponse.phase,
             type: 'scatter',
             mode: 'lines',
-            name: 'Phase (Smoothed)',
+            name: 'Dual-FFT Transfer Function (Smoothed)',
             line: { color: '#d73a49', width: 2 }
         });
     }
@@ -421,6 +421,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             title: 'Magnitude (dB)',
             gridcolor: '#e1e4e8',
             rangemode: 'tozero',
+            range: [-90, 0],
         },
         ...plotSettings
     };

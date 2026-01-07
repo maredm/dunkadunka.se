@@ -1576,7 +1576,7 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
             y: db(responseFFT.magnitude),
             type: "scatter",
             mode: "lines",
-            name: "Recording",
+            name: "Measurement signal",
             line: {
                 color: "#0366d6",
                 width: 2
@@ -1593,7 +1593,7 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
             y: db(referenceFFT.magnitude),
             type: "scatter",
             mode: "lines",
-            name: "Reference",
+            name: "Reference signal",
             line: {
                 color: "#0366d6",
                 width: 2
@@ -1607,7 +1607,7 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
             y: ir.ir,
             type: "scatter",
             mode: "lines",
-            name: "Impulse Response",
+            name: "Dual-FFT Impulse Response",
             line: {
                 color: "#d73a49",
                 width: 2
@@ -1620,7 +1620,7 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
             y: db(transferFunction.magnitude),
             type: "scatter",
             mode: "lines",
-            name: "Magnitude (Raw)",
+            name: "Dual-FFT Transfer Function (Raw)",
             line: {
                 color: "#d73a4933",
                 width: 1
@@ -1631,7 +1631,7 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
             y: smoothedFreqResponse.magnitude,
             type: "scatter",
             mode: "lines",
-            name: "Magnitude (Smoothed)",
+            name: "Dual-FFT Transfer Function (Smoothed)",
             line: {
                 color: "#d73a49",
                 width: 2
@@ -1642,7 +1642,7 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
             y: transferFunction.phase,
             type: "scatter",
             mode: "lines",
-            name: "Phase (Raw)",
+            name: "Dual-FFT Transfer Function (Raw)",
             line: {
                 color: "#d73a4933",
                 width: 1
@@ -1653,7 +1653,7 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
             y: smoothedFreqResponse.phase,
             type: "scatter",
             mode: "lines",
-            name: "Phase (Smoothed)",
+            name: "Dual-FFT Transfer Function (Smoothed)",
             line: {
                 color: "#d73a49",
                 width: 2
@@ -1697,7 +1697,11 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
         yaxis: {
             title: "Magnitude (dB)",
             gridcolor: "#e1e4e8",
-            rangemode: "tozero"
+            rangemode: "tozero",
+            range: [
+                -90,
+                0
+            ]
         }
     }, plotSettings);
     window.Plotly.newPlot("plot-".concat(tabId, "-magnitude"), tracesMagnitude, layoutMagnitude, {
