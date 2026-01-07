@@ -448,11 +448,12 @@ export function twoChannelFFT(dataArray: number[] | Float32Array, reference: num
         if (N === 0) return out;
         out[0] = phases[0];
         let offset = 0;
+        const theta = Math.PI; // unwrapping threshold
         for (let i = 1; i < N; i++) {
             let delta = phases[i] - phases[i - 1];
-            if (delta > Math.PI) {
+            if (delta > theta) {
                 offset -= 2 * Math.PI;
-            } else if (delta < -Math.PI) {
+            } else if (delta < -theta) {
                 offset += 2 * Math.PI;
             }
             out[i] = phases[i] + offset;

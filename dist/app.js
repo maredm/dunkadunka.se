@@ -47,6 +47,34 @@ function _create_class(Constructor, protoProps, staticProps) {
     if (staticProps) _defineProperties(Constructor, staticProps);
     return Constructor;
 }
+function _define_property(obj, key, value) {
+    if (key in obj) {
+        Object.defineProperty(obj, key, {
+            value: value,
+            enumerable: true,
+            configurable: true,
+            writable: true
+        });
+    } else {
+        obj[key] = value;
+    }
+    return obj;
+}
+function _object_spread(target) {
+    for(var i = 1; i < arguments.length; i++){
+        var source = arguments[i] != null ? arguments[i] : {};
+        var ownKeys = Object.keys(source);
+        if (typeof Object.getOwnPropertySymbols === "function") {
+            ownKeys = ownKeys.concat(Object.getOwnPropertySymbols(source).filter(function(sym) {
+                return Object.getOwnPropertyDescriptor(source, sym).enumerable;
+            }));
+        }
+        ownKeys.forEach(function(key) {
+            _define_property(target, key, source[key]);
+        });
+    }
+    return target;
+}
 function _ts_generator(thisArg, body) {
     var f, y, t, _ = {
         label: 0,
@@ -668,6 +696,13 @@ function fractionalOctaveSmoothing(frequencyData, fraction, frequencies) {
 // src/audio.ts
 console.debug("Audio module loaded");
 window.FFT = FFT;
+function rms(buffer) {
+    var sum = 0;
+    for(var i = 0; i < buffer.length; i++){
+        sum += buffer[i] * buffer[i];
+    }
+    return Math.sqrt(sum / buffer.length);
+}
 function db(value) {
     if (Array.isArray(value)) {
         return value.map(function(v) {
@@ -1499,11 +1534,15 @@ function loadAudioFile(file) {
                 case 3:
                     audioBuffer = _state.sent();
                     console.log("Metadata:", metadata);
+                    console.log("Loaded audio file with RMS of", db(rms(Array.from(audioBuffer.getChannelData(0)))));
                     return [
                         2,
                         {
                             sampleRate: audioBuffer.sampleRate,
-                            data: Array.from(audioBuffer.getChannelData(0)),
+                            data: Array.from(audioBuffer.getChannelData(0)).map(function(x) {
+                                return x / 16384;
+                            }),
+                            // normalize 16-bit PCM
                             duration: audioBuffer.duration,
                             metadata: metadata
                         }
@@ -1528,13 +1567,45 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
     var content = document.createElement("div");
     content.className = "tab-content";
     content.dataset.content = tabId;
-    content.innerHTML = '\n        <div class="loose-container">\n        <div class="analysis-description" style="margin-bottom:12px; font-size:0.95rem; color:#24292e;">\n            <strong>Analysis:</strong> Magnitude, phase and impulse‑response computed from the uploaded response (and optional reference) via FFT and a two‑channel impulse response.\n            <span style="margin-left:12px;">\n            \n            <strong>Smoothing:</strong> Fractional‑octave smoothing applied to the reference response (1/6 octave).</span>\n        </div>\n            <div id="plot-'.concat(tabId, '-magnitude" class="plot-medium"></div>\n            <div id="plot-').concat(tabId, '-phase" class="plot-medium"></div>\n            <div id="plot-').concat(tabId, '-ir" class="plot-medium"></div>\n        </div>\n    ');
+    content.innerHTML = '\n        <div class="loose-container">\n            <div id="plot-'.concat(tabId, '-magnitude" class="plot-medium"></div>\n            <div id="plot-').concat(tabId, '-phase" class="plot-medium"></div>\n            <div id="plot-').concat(tabId, '-ir" class="plot-medium"></div>\n            <div class="analysis-description" style="margin-bottom:12px; font-size:0.95rem; color:#24292e;">\n                <p><strong>Analysis:</strong> Magnitude, phase and impulse‑response computed from the uploaded response (and optional reference) via FFT and a two‑channel impulse response.</p>\n                <p><strong>Smoothing:</strong> Fractional‑octave smoothing applied to the reference response (1/6 octave).</p>\n            </div>\n        </div>\n    ');
     tabContents.appendChild(content);
     switchTab(tabId);
-    var ir = twoChannelImpulseResponse(responseData.data, referenceData ? referenceData.data : new Float32Array(responseData.data.length));
-    console.log("Impulse response peak at", ir.peakAt);
-    var trace2s = [
+    console.log("Analyzing response file:", filename);
+    var data = new Float32Array(responseData.data);
+    var responseFFT = computeFFT(data);
+    var tracesMagnitude = [
         {
+            x: responseFFT.frequency,
+            y: db(responseFFT.magnitude),
+            type: "scatter",
+            mode: "lines",
+            name: "Recording",
+            line: {
+                color: "#0366d6",
+                width: 2
+            }
+        }
+    ];
+    var tracesPhase = [];
+    var tracesIR = [];
+    var irPeakAt = 0;
+    if (referenceData) {
+        var referenceFFT = computeFFT(referenceData.data);
+        tracesMagnitude.push({
+            x: referenceFFT.frequency,
+            y: db(referenceFFT.magnitude),
+            type: "scatter",
+            mode: "lines",
+            name: "Reference",
+            line: {
+                color: "#0366d6",
+                width: 2
+            }
+        });
+        var ir = twoChannelImpulseResponse(responseData.data, referenceData ? referenceData.data : new Float32Array(responseData.data.length));
+        console.log("Impulse response peak at", ir.peakAt);
+        irPeakAt = ir.peakAt;
+        tracesIR.push({
             x: ir.t,
             y: ir.ir,
             type: "scatter",
@@ -1544,31 +1615,12 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
                 color: "#d73a49",
                 width: 2
             }
-        }
-    ];
-    console.log("Analyzing response file:", filename);
-    var data = new Float32Array(responseData.data);
-    var responseFFT = computeFFT(data);
-    var traces = [
-        {
-            x: responseFFT.frequency,
-            y: db(responseFFT.magnitude),
-            type: "scatter",
-            mode: "lines",
-            name: "Response",
-            line: {
-                color: "#0366d6",
-                width: 2
-            }
-        }
-    ];
-    var trace1s = [];
-    if (referenceData) {
-        var referenceFFT = computeFFTFromIR(ir);
-        var smoothedFreqResponse = smoothFFT(referenceFFT, 1 / 6, 1 / 48);
-        traces.push({
-            x: referenceFFT.frequency,
-            y: db(referenceFFT.magnitude),
+        });
+        var transferFunction = computeFFTFromIR(ir);
+        var smoothedFreqResponse = smoothFFT(transferFunction, 1 / 6, 1 / 48);
+        tracesMagnitude.push({
+            x: transferFunction.frequency,
+            y: db(transferFunction.magnitude),
             type: "scatter",
             mode: "lines",
             name: "Magnitude (Raw)",
@@ -1577,7 +1629,7 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
                 width: 1
             }
         });
-        traces.push({
+        tracesMagnitude.push({
             x: smoothedFreqResponse.frequency,
             y: smoothedFreqResponse.magnitude,
             type: "scatter",
@@ -1588,9 +1640,9 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
                 width: 2
             }
         });
-        trace1s.push({
-            x: referenceFFT.frequency,
-            y: referenceFFT.phase,
+        tracesPhase.push({
+            x: transferFunction.frequency,
+            y: transferFunction.phase,
             type: "scatter",
             mode: "lines",
             name: "Phase (Raw)",
@@ -1599,7 +1651,7 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
                 width: 1
             }
         });
-        trace1s.push({
+        tracesPhase.push({
             x: smoothedFreqResponse.frequency,
             y: smoothedFreqResponse.phase,
             type: "scatter",
@@ -1611,25 +1663,9 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
             }
         });
     }
-    var layout = {
-        title: "Magnitude Analysis",
+    var plotSettings = {
         plotGlPixelRatio: 2,
         // For better clarity on high-DPI screens
-        xaxis: {
-            title: "Frequency (Hz)",
-            type: "log",
-            gridcolor: "#e1e4e8",
-            range: [
-                Math.log10(20),
-                Math.log10(2e4)
-            ],
-            tickformat: ".0f"
-        },
-        yaxis: {
-            title: "Magnitude (dB)",
-            gridcolor: "#e1e4e8",
-            rangemode: "tozero"
-        },
         legend: {
             x: 0.98,
             y: 0.02,
@@ -1649,10 +1685,28 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
             family: "'Newsreader', Georgia, 'Times New Roman', Times, serif"
         }
     };
-    window.Plotly.newPlot("plot-".concat(tabId, "-magnitude"), traces, layout, {
+    var layoutMagnitude = _object_spread({
+        title: "Magnitude Analysis",
+        xaxis: {
+            title: "Frequency (Hz)",
+            type: "log",
+            gridcolor: "#e1e4e8",
+            range: [
+                Math.log10(20),
+                Math.log10(2e4)
+            ],
+            tickformat: ".0f"
+        },
+        yaxis: {
+            title: "Magnitude (dB)",
+            gridcolor: "#e1e4e8",
+            rangemode: "tozero"
+        }
+    }, plotSettings);
+    window.Plotly.newPlot("plot-".concat(tabId, "-magnitude"), tracesMagnitude, layoutMagnitude, {
         responsive: true
     });
-    var layouta = {
+    var layoutPhase = _object_spread({
         title: "Phase Analysis",
         xaxis: {
             title: "Frequency (Hz)",
@@ -1672,66 +1726,28 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
                 -720,
                 720
             ]
-        },
-        legend: {
-            x: 0.98,
-            y: 0.02,
-            xanchor: "right",
-            yanchor: "bottom"
-        },
-        plot_bgcolor: "#fafbfc",
-        paper_bgcolor: "#fff",
-        staticPlot: false,
-        // Enable interactivity
-        plotGlPixelRatio: 2,
-        // For better clarity on high-DPI screens
-        dragmode: "pan",
-        showAxisDragHandles: true,
-        showAxisRangeEntryBoxes: true,
-        axisDragOnHover: true,
-        font: {
-            family: "'Newsreader', Georgia, 'Times New Roman', Times, serif"
         }
-    };
-    window.Plotly.newPlot("plot-".concat(tabId, "-phase"), trace1s, layouta, {
+    }, plotSettings);
+    window.Plotly.newPlot("plot-".concat(tabId, "-phase"), tracesPhase, layoutPhase, {
         responsive: true
     });
-    var layouts = {
+    var layoutIR = _object_spread({
         title: "Impulse response",
         xaxis: {
             title: "Amplitude",
             gridcolor: "#e1e4e8",
             range: [
-                -0.05 + ir.peakAt / ir.sampleRate,
-                0.05 + ir.peakAt / ir.sampleRate
+                -0.05 + irPeakAt / responseData.sampleRate,
+                0.05 + irPeakAt / responseData.sampleRate
             ]
         },
         yaxis: {
             title: "Phase (degrees)",
             gridcolor: "#e1e4e8",
             automargin: true
-        },
-        legend: {
-            x: 0.98,
-            y: 0.02,
-            xanchor: "right",
-            yanchor: "bottom"
-        },
-        plot_bgcolor: "#fafbfc",
-        paper_bgcolor: "#fff",
-        staticPlot: false,
-        // Enable interactivity
-        plotGlPixelRatio: 2,
-        // For better clarity on high-DPI screens
-        dragmode: "pan",
-        showAxisDragHandles: true,
-        showAxisRangeEntryBoxes: true,
-        axisDragOnHover: true,
-        font: {
-            family: "'Newsreader', Georgia, 'Times New Roman', Times, serif"
         }
-    };
-    window.Plotly.newPlot("plot-".concat(tabId, "-ir"), trace2s, layouts, {
+    }, plotSettings);
+    window.Plotly.newPlot("plot-".concat(tabId, "-ir"), tracesIR, layoutIR, {
         responsive: true
     });
     saveState();
