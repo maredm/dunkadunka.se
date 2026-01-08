@@ -2120,7 +2120,7 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
             name: "Dual-FFT Impulse Response",
             line: {
                 color: "#d73a49",
-                width: 2
+                width: 1
             }
         });
         var transferFunction = computeFFTFromIR(ir, 100);

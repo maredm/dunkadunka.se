@@ -353,7 +353,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             type: 'scatter',
             mode: 'lines',
             name: 'Dual-FFT Impulse Response',
-            line: { color: '#d73a49', width: 2 }
+            line: { color: '#d73a49', width: 1 }
         });
         /* tracesIR.push({
             x: farina_ir.t,
@@ -361,7 +361,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             type: 'scatter',
             mode: 'lines',
             name: 'Farina Impulse Response',
-            line: { color: '#d73a49', width: 2 }
+            line: { color: '#d73a49', width: 1 }
         }); */
         const transferFunction = computeFFTFromIR(ir, 100);
         const transferFunctionFarina = computeFFTFromIR(farina_ir, 100);
