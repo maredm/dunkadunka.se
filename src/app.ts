@@ -298,6 +298,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
     content.dataset.content = tabId;
     content.innerHTML = `
         <div class="loose-container">
+            <h5 class="text-xs italic text-gray-600">Frequency Response Analysis of ${filename}${referenceFilename ? ' / ' + referenceFilename : ''}</h5>
             <div id="plot-${tabId}-magnitude" class="plot-medium"></div>
             <div id="plot-${tabId}-phase" class="plot-medium"></div>
             <div id="plot-${tabId}-ir" class="plot-medium"></div>
