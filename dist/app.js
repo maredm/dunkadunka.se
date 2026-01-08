@@ -1,4 +1,12 @@
 "use strict";
+function _array_like_to_array(arr, len) {
+    if (len == null || len > arr.length) len = arr.length;
+    for(var i = 0, arr2 = new Array(len); i < len; i++)arr2[i] = arr[i];
+    return arr2;
+}
+function _array_without_holes(arr) {
+    if (Array.isArray(arr)) return _array_like_to_array(arr);
+}
 function asyncGeneratorStep(gen, resolve, reject, _next, _throw, key, arg) {
     try {
         var info = gen[key](arg);
@@ -60,6 +68,12 @@ function _define_property(obj, key, value) {
     }
     return obj;
 }
+function _iterable_to_array(iter) {
+    if (typeof Symbol !== "undefined" && iter[Symbol.iterator] != null || iter["@@iterator"] != null) return Array.from(iter);
+}
+function _non_iterable_spread() {
+    throw new TypeError("Invalid attempt to spread non-iterable instance.\\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method.");
+}
 function _object_spread(target) {
     for(var i = 1; i < arguments.length; i++){
         var source = arguments[i] != null ? arguments[i] : {};
@@ -74,6 +88,17 @@ function _object_spread(target) {
         });
     }
     return target;
+}
+function _to_consumable_array(arr) {
+    return _array_without_holes(arr) || _iterable_to_array(arr) || _unsupported_iterable_to_array(arr) || _non_iterable_spread();
+}
+function _unsupported_iterable_to_array(o, minLen) {
+    if (!o) return;
+    if (typeof o === "string") return _array_like_to_array(o, minLen);
+    var n = Object.prototype.toString.call(o).slice(8, -1);
+    if (n === "Object" && o.constructor) n = o.constructor.name;
+    if (n === "Map" || n === "Set") return Array.from(n);
+    if (n === "Arguments" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n)) return _array_like_to_array(o, minLen);
 }
 function _ts_generator(thisArg, body) {
     var f, y, t, _ = {
@@ -693,6 +718,76 @@ function fractionalOctaveSmoothing(frequencyData, fraction, frequencies) {
     }
     return smoothedData;
 }
+// src/windows.ts
+function hanningWindow(length) {
+    var window2 = new Float32Array(length);
+    for(var i = 0; i < length; i++){
+        window2[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / (length - 1)));
+    }
+    return window2;
+}
+function hammingWindow(length) {
+    var window2 = new Float32Array(length);
+    for(var i = 0; i < length; i++){
+        window2[i] = 0.54 - 0.46 * Math.cos(2 * Math.PI * i / (length - 1));
+    }
+    return window2;
+}
+function blackmanWindow(length) {
+    var window2 = new Float32Array(length);
+    for(var i = 0; i < length; i++){
+        window2[i] = 0.42 - 0.5 * Math.cos(2 * Math.PI * i / (length - 1)) + 0.08 * Math.cos(4 * Math.PI * i / (length - 1));
+    }
+    return window2;
+}
+function gammaFilter(length) {
+    var alpha = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : 2, gamma = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : 0.5;
+    var _Math;
+    var window2 = new Float32Array(length);
+    for(var i = 0; i < length; i++){
+        var x = i / (length - 1);
+        window2[i] = Math.pow(x, alpha) * Math.pow(1 - x, gamma);
+    }
+    var max2 = (_Math = Math).max.apply(_Math, _to_consumable_array(window2));
+    if (max2 > 0) {
+        for(var i1 = 0; i1 < length; i1++)window2[i1] /= max2;
+    }
+    return window2;
+}
+function rectangularWindow(length) {
+    var window2 = new Float32Array(length);
+    window2.fill(1);
+    return window2;
+}
+function getSelectedWindow(windowType, length) {
+    var type = windowType;
+    var window2 = new Float32Array(length);
+    var wcf = 1;
+    if (type === "hanning") {
+        window2 = hanningWindow(length);
+        wcf = 2;
+    }
+    if (type === "hamming") {
+        window2 = hammingWindow(length);
+        wcf = 1.852;
+    }
+    if (type === "blackman") {
+        window2 = blackmanWindow(length);
+        wcf = 2.381;
+    }
+    if (type === "rectangular") {
+        window2 = rectangularWindow(length);
+        wcf = 1;
+    }
+    if (type === "gamma") {
+        window2 = gammaFilter(length);
+        wcf = 1.878;
+    }
+    window2 = window2.map(function(v) {
+        return v / wcf;
+    });
+    return Array.from(window2);
+}
 // src/audio.ts
 console.debug("Audio module loaded");
 window.FFT = FFT;
@@ -797,44 +892,139 @@ function fftConvolve(x, y) {
     }
     return Array.from(result);
 }
+function max(arr) {
+    var maxVal = -Infinity;
+    for(var i = 0; i < arr.length; i++){
+        if (arr[i] > maxVal) {
+            maxVal = Math.abs(arr[i]);
+        }
+    }
+    return maxVal;
+}
+var Farina = /*#__PURE__*/ function() {
+    function Farina(stimulus) {
+        var f_start = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : 50, f_stop = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : 22800, fs = arguments.length > 3 && arguments[3] !== void 0 ? arguments[3] : 48e3;
+        _class_call_check(this, Farina);
+        this.deconvolved = [];
+        this.f_start = f_start;
+        this.f_stop = f_stop;
+        this.fs = fs;
+        this.stimulus = stimulus;
+    }
+    _create_class(Farina, [
+        {
+            key: "lag_of_harmonic",
+            value: function lag_of_harmonic(n) {
+                return this.ell() * Math.log(n);
+            }
+        },
+        {
+            key: "margin_of_harmonic",
+            value: function margin_of_harmonic(n) {
+                return this.ell() * Math.log(n + 1) - this.ell() * Math.log(n);
+            }
+        },
+        {
+            key: "max_safe_harmonic",
+            value: function max_safe_harmonic(window_size) {
+                var t = [];
+                for(var n = 1; n < 1e3; n++){
+                    if (this.margin_of_harmonic(n) > window_size) {
+                        t.push(this.margin_of_harmonic(n));
+                    }
+                }
+                return t.length < 999 ? t.length : null;
+            }
+        },
+        {
+            key: "ell",
+            value: function ell() {
+                return 255788 / Math.log(this.f_stop / this.f_start) / this.fs;
+            }
+        },
+        {
+            key: "rate",
+            value: function rate(length) {
+                return 1 / this.f_start * Math.PI * Math.round(length * this.f_start / Math.log2(this.f_stop / this.f_start));
+            }
+        },
+        {
+            key: "duration",
+            value: function duration() {
+                return this.stimulus.filter(function(v) {
+                    return v !== 0;
+                }).length / this.fs;
+            }
+        },
+        {
+            key: "instant",
+            value: function instant() {
+                return closest(1e8, this.deconvolved);
+            }
+        },
+        {
+            key: "window",
+            value: function window1(signal, at, length) {
+                var size = Math.floor(length * this.fs);
+                var window2 = getSelectedWindow("hanning", size);
+                var sig = this.deconvolution(signal);
+                var si = sig.slice(at - size / 2, at + size / 2);
+                var w = new Array(size);
+                return si;
+                if (si.length === window2.length) {
+                    for(var i = 0; i < window2.length; i++){
+                        w[i] = window2[i] * si[i];
+                    }
+                    return w;
+                } else {
+                    return new Array(window2.length);
+                }
+            }
+        },
+        {
+            key: "deconvolution",
+            value: function deconvolution(signal) {
+                var _this = this;
+                var n = linspace(0, this.stimulus.length - 1, this.stimulus.length);
+                var k = n.map(function(v) {
+                    return Math.exp(v / _this.ell() / _this.fs);
+                });
+                var inv_stimulus = this.stimulus.slice().reverse().map(function(v, i) {
+                    return v / k[i];
+                });
+                var deconvolved = fftConvolve(signal, inv_stimulus, "same").slice().reverse();
+                var norm = max(fftConvolve(this.stimulus, inv_stimulus, "same").map(function(v) {
+                    return Math.abs(v);
+                }));
+                this.deconvolved = deconvolved;
+                return deconvolved.map(function(v) {
+                    return v / norm;
+                });
+            }
+        }
+    ]);
+    return Farina;
+}();
 function FarinaImpulseResponse(y, x) {
-    var n = linspace(0, x.length - 1, x.length);
-    var ratio = Math.log(22800 / 50);
-    var duration = x.length / 48e3;
-    var k = n.map(function(v) {
-        return Math.exp(v * ratio / x.length);
-    });
-    var L = duration / ratio;
-    var rate = Math.log(10) * L;
-    var x_inv = new Float32Array(x.length);
-    for(var i = 0; i < x.length; i++){
-        x_inv[i] = x[x.length - 1 - i] / k[i];
+    var farina = new Farina(x, 50, 22800, 48e3);
+    var measurementResponse = farina.deconvolution(y);
+    console.log(farina.max_safe_harmonic(0.1));
+    var peakAt = farina.instant();
+    console.log("peakAt", peakAt);
+    var s = farina.window(y, peakAt + farina.lag_of_harmonic(1) * 48e3, 0.1);
+    var ir = Array.from(new Float32Array(s.length));
+    for(var i = 0; i < s.length; i++){
+        ir[i] = s[i];
     }
-    var measurementResponse = fftConvolve(y, x_inv, "same");
-    var stimulusResponse = fftConvolve(x, x_inv, "same");
-    var norm = Array.from(stimulusResponse).reduce(function(a, b) {
-        return Math.max(a, Math.abs(b));
-    }, 0);
-    var sums = 0;
-    for(var i1 = 0; i1 < stimulusResponse.length; i1++){
-        sums += stimulusResponse[i1];
+    var ir_complex = Array.from(new Float32Array(s.length * 2));
+    for(var i1 = 0; i1 < s.length; i1++){
+        ir_complex[2 * i1] = s[i1];
+        ir_complex[2 * i1 + 1] = 0;
     }
-    var rmss = sum(x_inv) * 2 * y.length / x_inv.length;
-    var ir = Array.from(new Float32Array(measurementResponse.length));
-    for(var i2 = 0; i2 < measurementResponse.length; i2++){
-        ir[i2] = measurementResponse[i2] / norm;
-    }
-    var ir_complex = Array.from(new Float32Array(measurementResponse.length * 2));
-    for(var i3 = 0; i3 < measurementResponse.length; i3++){
-        ir_complex[2 * i3] = measurementResponse[i3] / norm;
-        ir_complex[2 * i3 + 1] = 0;
-    }
-    var peakAt = closest(1e8, ir) + -measurementResponse.length / 2;
     return {
         ir: ir,
         ir_complex: ir_complex,
         t: Array.from(linspace((-measurementResponse.length - 1) / 2 / 48e3, (measurementResponse.length - 1) / 2 / 48e3, measurementResponse.length)),
-        // assuming 48kHz
         peakAt: peakAt,
         sampleRate: 48e3,
         fftSize: measurementResponse.length
@@ -897,15 +1087,14 @@ function computeFFTFromIR(ir) {
     var out = fft.createComplexArray();
     if (ir.ir_complex[1] === 0) {
         console.log("IR is in real format, converting to complex");
-        var frame = new Float32Array(N);
+        var frame = new Array(N);
         for(var i = 0; i < N; i++){
-            frame[i] = (ir.ir_complex[2 * i] || 0) * 1;
+            frame[i] = ir.ir_complex[2 * i] || 0;
         }
         fft.realTransform(out, frame);
     } else {
         fft.transform(out, ir.ir_complex);
     }
-    console.log(ir.ir_complex);
     for(var i1 = 0; i1 < N / 2; i1++){
         var re = out[2 * i1];
         var im = out[2 * i1 + 1];
@@ -1919,15 +2108,13 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
                 width: 2
             }
         });
-        var ir = twoChannelImpulseResponse(responseData.data, referenceData ? referenceData.data : new Float32Array(responseData.data.length));
-        var farina_ir = FarinaImpulseResponse(responseData.data, referenceData ? referenceData.data : new Float32Array(responseData.data.length));
+        var ir = twoChannelImpulseResponse(responseData.data, Array.from(referenceData ? referenceData.data : new Float32Array(responseData.data.length)));
+        var farina_ir = FarinaImpulseResponse(responseData.data, Array.from(referenceData ? referenceData.data : new Float32Array(responseData.data.length)));
         console.log("Impulse response peak at", ir.peakAt);
         irPeakAt = ir.peakAt;
         tracesIR.push({
             x: ir.t,
-            y: db(ir.ir.map(function(v) {
-                return Math.abs(v);
-            })),
+            y: ir.ir,
             type: "scatter",
             mode: "lines",
             name: "Dual-FFT Impulse Response",
@@ -1936,25 +2123,17 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
                 width: 2
             }
         });
-        tracesIR.push({
-            x: farina_ir.t,
-            y: db(farina_ir.ir.map(function(v) {
-                return Math.abs(v);
-            })),
-            type: "scatter",
-            mode: "lines",
-            name: "Farina Impulse Response",
-            line: {
-                color: "#d73a49",
-                width: 2
-            }
-        });
         var transferFunction = computeFFTFromIR(ir, 100);
-        var transferFunctionF = computeFFTFromIR(farina_ir, 100);
+        var transferFunctionFarina = computeFFTFromIR(farina_ir, 100);
         var smoothedFreqResponse = smoothFFT(transferFunction, 1 / 6, 1 / 48);
+        var smoothedFreqResponseFarina = smoothFFT(transferFunctionFarina, 1 / 6, 1 / 48);
+        var rmsValue = 1;
+        console.log("Reference RMS:", db(rmsValue));
         tracesMagnitude.push({
             x: transferFunction.frequency,
-            y: db(transferFunction.magnitude),
+            y: db(transferFunction.magnitude.map(function(v) {
+                return v * rmsValue;
+            })),
             type: "scatter",
             mode: "lines",
             name: "Dual-FFT Transfer Function (Raw)",
@@ -1964,19 +2143,10 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
             }
         });
         tracesMagnitude.push({
-            x: transferFunctionF.frequency,
-            y: db(transferFunctionF.magnitude),
-            type: "scatter",
-            mode: "lines",
-            name: "Farina Transfer Function",
-            line: {
-                color: "#2600ff",
-                width: 1
-            }
-        });
-        tracesMagnitude.push({
             x: smoothedFreqResponse.frequency,
-            y: smoothedFreqResponse.magnitude,
+            y: smoothedFreqResponse.magnitude.map(function(v) {
+                return v + db(rmsValue);
+            }),
             type: "scatter",
             mode: "lines",
             name: "Dual-FFT Transfer Function (Smoothed)",
@@ -2091,7 +2261,7 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
             ]
         },
         yaxis: {
-            title: "Phase (degrees)",
+            title: "Amplitude (gain)",
             gridcolor: "#e1e4e8",
             automargin: true
         }

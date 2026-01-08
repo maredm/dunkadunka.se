@@ -341,57 +341,70 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             name: 'Reference signal',
             line: { color: '#0366d6', width: 2 }
         });
-        const ir = twoChannelImpulseResponse(responseData.data, referenceData ? referenceData.data : new Float32Array(responseData.data.length));
-        const farina_ir = FarinaImpulseResponse(responseData.data, referenceData ? referenceData.data : new Float32Array(responseData.data.length));
+        const ir = twoChannelImpulseResponse(responseData.data, Array.from(referenceData ? referenceData.data : new Float32Array(responseData.data.length)));
+        const farina_ir = FarinaImpulseResponse(responseData.data, Array.from(referenceData ? referenceData.data : new Float32Array(responseData.data.length)));
 
         console.log('Impulse response peak at', ir.peakAt);
         irPeakAt = ir.peakAt;
 
         tracesIR.push({
             x: ir.t,
-            y: db(ir.ir.map(v => Math.abs(v))),        
+            y:ir.ir,        
             type: 'scatter',
             mode: 'lines',
             name: 'Dual-FFT Impulse Response',
             line: { color: '#d73a49', width: 2 }
         });
-        tracesIR.push({
+        /* tracesIR.push({
             x: farina_ir.t,
             y: db(farina_ir.ir.map(v => Math.abs(v))),        
             type: 'scatter',
             mode: 'lines',
             name: 'Farina Impulse Response',
             line: { color: '#d73a49', width: 2 }
-        });
+        }); */
         const transferFunction = computeFFTFromIR(ir, 100);
-        const transferFunctionF = computeFFTFromIR(farina_ir, 100);
+        const transferFunctionFarina = computeFFTFromIR(farina_ir, 100);
         // const dreferenceFFT = twoChannelFFT(responseData.data, referenceData.data, nextPow2(referenceData.data.length), -5627);
         const smoothedFreqResponse = smoothFFT(transferFunction, 1/6, 1/48);
+        const smoothedFreqResponseFarina = smoothFFT(transferFunctionFarina, 1/6, 1/48);
+        
+        const rmsValue = 1;  // rms(referenceData.data);
+        console.log('Reference RMS:', db(rmsValue));
 
         tracesMagnitude.push({
             x: transferFunction.frequency,
-            y: db(transferFunction.magnitude),
+            y: db(transferFunction.magnitude.map(v => v * rmsValue)),
             type: 'scatter',
             mode: 'lines',
             name: 'Dual-FFT Transfer Function (Raw)',
             line: { color: '#d73a4933', width: 1 }
         });
         tracesMagnitude.push({
-            x: transferFunctionF.frequency,
-            y: db(transferFunctionF.magnitude),
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Farina Transfer Function',
-            line: { color: '#2600ff', width: 1 }
-        });
-        tracesMagnitude.push({
             x: smoothedFreqResponse.frequency,
-            y: smoothedFreqResponse.magnitude,
+            y: smoothedFreqResponse.magnitude.map(v => v + db(rmsValue)),
             type: 'scatter',
             mode: 'lines',
             name: 'Dual-FFT Transfer Function (Smoothed)',
             line: { color: '#d73a49', width: 2 }
         });
+        /* tracesMagnitude.push({
+            x: transferFunctionFarina.frequency,
+            y: db(transferFunctionFarina.magnitude.map(v => v * rmsValue)),
+            type: 'scatter',
+            mode: 'lines',
+            name: 'Farina Transfer Function',
+            line: { color: '#341fad33', width: 1 }
+        });
+        tracesMagnitude.push({
+            x: smoothedFreqResponseFarina.frequency,
+            y: smoothedFreqResponseFarina.magnitude.map(v => v + db(rmsValue)),
+            type: 'scatter',
+            mode: 'lines',
+            name: 'Farina Transfer Function (Smoothed)',
+            line: { color: '#341fadff', width: 2 }
+        }); */
+
 
         tracesPhase.push({
             x: transferFunction.frequency,
@@ -476,7 +489,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             range: [-0.05 + irPeakAt / responseData.sampleRate, 0.05 + irPeakAt / responseData.sampleRate],
         },
         yaxis: { 
-            title: 'Phase (degrees)',
+            title: 'Amplitude (gain)',
             gridcolor: '#e1e4e8',
             automargin: true,
         },
