@@ -43,3 +43,11 @@ export const nextPow2 = (v: number): number => {
         while (p < v) p <<= 1;
         return p;
     };
+
+export function max(arr: Float32Array): number {
+    let maxVal = -Infinity;
+    for (let i = 0; i < arr.length; i++) {
+        if (arr[i] > maxVal) maxVal = Math.abs(arr[i]);
+    }
+    return maxVal;
+}

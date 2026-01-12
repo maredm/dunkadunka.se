@@ -1,4 +1,5 @@
-import { Audio, computeFFT, computeFFTFromIR, db, FarinaImpulseResponse, groupDelays, rms, smoothFFT, twoChannelImpulseResponse } from "./audio";
+import { Audio, computeFFT, computeFFTFromIR, db, FFTResult, groupDelays, ImpulseResponseResult, rms, smoothFFT, twoChannelImpulseResponse } from "./audio";
+import { FarinaImpulseResponse } from "./farina";
 import { storage } from "./storage";
 import { audio } from "./audio";
 import "./device-settings";
@@ -169,9 +170,11 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
 
     let irPeakAt = 0;
 
+    let referenceSamples = Float32Array.from([]);
+
     if (referenceData) {
-        const referenceSamples = referenceData.getChannelData(0);
-        const referenceFFT = computeFFT(referenceSamples);
+        referenceSamples = referenceData.getChannelData(0);
+        const referenceFFT: FFTResult = computeFFT(referenceSamples);
         tracesMagnitude.push({
             x: referenceFFT.frequency,
             y: db(referenceFFT.magnitude),
@@ -180,8 +183,8 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             name: 'Reference signal',
             line: { color: '#0366d6', width: 2 }
         });
-        const ir = twoChannelImpulseResponse(responseSamples, referenceSamples);
-        const farina_ir = FarinaImpulseResponse(responseSamples, referenceSamples);
+        const ir: ImpulseResponseResult = twoChannelImpulseResponse(responseSamples, referenceSamples);
+        const farina_ir: ImpulseResponseResult = FarinaImpulseResponse(responseSamples, referenceSamples);
 
         console.log('Impulse response peak at', ir.peakAt);
         irPeakAt = ir.peakAt;
@@ -363,8 +366,8 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
     storage.setItem(`${tabId}`, JSON.stringify({
         filename,
         referenceFilename,
-        responseData,
-        referenceData,
+        responseSamples: Array.from(responseSamples),
+        referenceSamples: referenceSamples.length > 0 ? Array.from(referenceSamples) : null,
     })).catch(err => console.error('Failed to persist analysis:', err));
 }
 
@@ -390,8 +393,9 @@ async function loadState(): Promise<void> {
             // Call createAnalysisTab for each tab
             const raw = await storage.getItem(`${tab.id}`);
             const analysisData = raw ? JSON.parse(raw) : null;
+            console.log('Restoring analysis data for tab', tab.id, analysisData);
             if (analysisData) {
-                createAnalysisTab(new Audio(analysisData.responseData), new Audio(analysisData.referenceData), analysisData.filename, analysisData.referenceFilename);
+                createAnalysisTab(Audio.fromSamples(Float32Array.from(analysisData.responseSamples)), analysisData.referenceSamples ? Audio.fromSamples(Float32Array.from(analysisData.referenceSamples)) : null, analysisData.filename, analysisData.referenceFilename);
             }
         }
         // Tabs will be recreated when user analyzes files again

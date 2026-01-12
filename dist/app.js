@@ -335,6 +335,13 @@ var nextPow2 = function(v) {
     while(p < v)p <<= 1;
     return p;
 };
+function max(arr) {
+    var maxVal = -Infinity;
+    for(var i = 0; i < arr.length; i++){
+        if (arr[i] > maxVal) maxVal = Math.abs(arr[i]);
+    }
+    return maxVal;
+}
 // src/fft.ts
 console.debug("FFT module loaded");
 var FFT = /*#__PURE__*/ function() {
@@ -800,58 +807,6 @@ function fractionalOctaveSmoothing(frequencyData, fraction, frequencies) {
     }
     return smoothedData;
 }
-// src/windows.ts
-function hanningWindow(length) {
-    var window2 = new Float32Array(length);
-    for(var i = 0; i < length; i++){
-        window2[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / (length - 1)));
-    }
-    return window2;
-}
-function hammingWindow(length) {
-    var window2 = new Float32Array(length);
-    for(var i = 0; i < length; i++){
-        window2[i] = 0.54 - 0.46 * Math.cos(2 * Math.PI * i / (length - 1));
-    }
-    return window2;
-}
-function blackmanWindow(length) {
-    var window2 = new Float32Array(length);
-    for(var i = 0; i < length; i++){
-        window2[i] = 0.42 - 0.5 * Math.cos(2 * Math.PI * i / (length - 1)) + 0.08 * Math.cos(4 * Math.PI * i / (length - 1));
-    }
-    return window2;
-}
-function rectangularWindow(length) {
-    var window2 = new Float32Array(length);
-    window2.fill(1);
-    return window2;
-}
-function getSelectedWindow(windowType, length) {
-    var type = windowType;
-    var window2 = new Float32Array(length);
-    var wcf = 1;
-    if (type === "hanning") {
-        window2 = hanningWindow(length);
-        wcf = 2;
-    }
-    if (type === "hamming") {
-        window2 = hammingWindow(length);
-        wcf = 1.852;
-    }
-    if (type === "blackman") {
-        window2 = blackmanWindow(length);
-        wcf = 2.381;
-    }
-    if (type === "rectangular") {
-        window2 = rectangularWindow(length);
-        wcf = 1;
-    }
-    window2 = window2.map(function(v) {
-        return v / wcf;
-    });
-    return window2;
-}
 // src/audio.ts
 console.debug("Audio module loaded");
 window.FFT = FFT;
@@ -873,6 +828,264 @@ function db(value) {
     } else {
         return 20 * Math.log10(value + 1e-50);
     }
+}
+function dbToLinear(db2) {
+    return Math.pow(10, db2 / 20);
+}
+function loadAudioFile(file) {
+    return _async_to_generator(function() {
+        var headerBuffer, ext, mime, metadata, wavInfo, mp3Info, arrayBuffer, audioContext, audioBuffer;
+        function getExt(name) {
+            return (name.split(".").pop() || "").toLowerCase();
+        }
+        function parseWav(buf) {
+            var dv = new DataView(buf);
+            function readStr(off, len) {
+                var s = "";
+                for(var i = 0; i < len; i++)s += String.fromCharCode(dv.getUint8(off + i));
+                return s;
+            }
+            if (readStr(0, 4) !== "RIFF" || readStr(8, 4) !== "WAVE") return null;
+            var offset = 12;
+            var info = {};
+            while(offset + 8 <= dv.byteLength){
+                var id = readStr(offset, 4);
+                var size = dv.getUint32(offset + 4, true);
+                if (id === "fmt ") {
+                    info.audioFormat = dv.getUint16(offset + 8, true);
+                    info.numChannels = dv.getUint16(offset + 10, true);
+                    info.sampleRate = dv.getUint32(offset + 12, true);
+                    info.byteRate = dv.getUint32(offset + 16, true);
+                    info.blockAlign = dv.getUint16(offset + 20, true);
+                    info.bitsPerSample = dv.getUint16(offset + 22, true);
+                } else if (id === "data") {
+                    info.dataChunkSize = size;
+                }
+                offset += 8 + size + size % 2;
+            }
+            if (info.sampleRate && info.byteRate && info.dataChunkSize) {
+                info.duration = info.dataChunkSize / info.byteRate;
+            }
+            return info;
+        }
+        function parseMp3(buf) {
+            var _sampleRates_versionKey;
+            var bytes = new Uint8Array(buf);
+            var offset = 0;
+            if (bytes[0] === 73 && bytes[1] === 68 && bytes[2] === 51) {
+                var size = (bytes[6] & 127) << 21 | (bytes[7] & 127) << 14 | (bytes[8] & 127) << 7 | bytes[9] & 127;
+                offset = 10 + size;
+            }
+            var headerIndex = -1;
+            for(var i = offset; i < bytes.length - 4; i++){
+                if (bytes[i] === 255 && (bytes[i + 1] & 224) === 224) {
+                    headerIndex = i;
+                    break;
+                }
+            }
+            if (headerIndex < 0) return null;
+            var b1 = bytes[headerIndex + 1];
+            var b2 = bytes[headerIndex + 2];
+            var b3 = bytes[headerIndex + 3];
+            var versionBits = b1 >> 3 & 3;
+            var layerBits = b1 >> 1 & 3;
+            var bitrateBits = b2 >> 4 & 15;
+            var sampleRateBits = b2 >> 2 & 3;
+            var channelMode = b3 >> 6 & 3;
+            var versions = {
+                0: "MPEG Version 2.5",
+                1: "reserved",
+                2: "MPEG Version 2 (ISO/IEC 13818-3)",
+                3: "MPEG Version 1 (ISO/IEC 11172-3)"
+            };
+            var layers = {
+                0: "reserved",
+                1: "Layer III",
+                2: "Layer II",
+                3: "Layer I"
+            };
+            var sampleRates = {
+                3: [
+                    44100,
+                    48e3,
+                    32e3
+                ],
+                2: [
+                    22050,
+                    24e3,
+                    16e3
+                ],
+                0: [
+                    11025,
+                    12e3,
+                    8e3
+                ]
+            };
+            var versionKey = versionBits;
+            var layerKey = layerBits;
+            var bitrateTable = {
+                // MPEG1 Layer III
+                "3_1": [
+                    0,
+                    32,
+                    40,
+                    48,
+                    56,
+                    64,
+                    80,
+                    96,
+                    112,
+                    128,
+                    160,
+                    192,
+                    224,
+                    256,
+                    320,
+                    0
+                ],
+                // MPEG2/2.5 Layer III
+                "0_1": [
+                    0,
+                    8,
+                    16,
+                    24,
+                    32,
+                    40,
+                    48,
+                    56,
+                    64,
+                    80,
+                    96,
+                    112,
+                    128,
+                    144,
+                    160,
+                    0
+                ],
+                "2_1": [
+                    0,
+                    8,
+                    16,
+                    24,
+                    32,
+                    40,
+                    48,
+                    56,
+                    64,
+                    80,
+                    96,
+                    112,
+                    128,
+                    144,
+                    160,
+                    0
+                ],
+                // fallback generic table for other layers/versions (best-effort)
+                "3_2": [
+                    0,
+                    32,
+                    48,
+                    56,
+                    64,
+                    80,
+                    96,
+                    112,
+                    128,
+                    160,
+                    192,
+                    224,
+                    256,
+                    320,
+                    384,
+                    0
+                ],
+                "3_3": [
+                    0,
+                    32,
+                    64,
+                    96,
+                    128,
+                    160,
+                    192,
+                    224,
+                    256,
+                    320,
+                    384,
+                    448,
+                    512,
+                    576,
+                    640,
+                    0
+                ]
+            };
+            var versionStr = versions[versionKey] || "unknown";
+            var layerStr = layers[layerKey] || "unknown";
+            var sampleRate = ((_sampleRates_versionKey = sampleRates[versionKey]) === null || _sampleRates_versionKey === void 0 ? void 0 : _sampleRates_versionKey[sampleRateBits]) || null;
+            var bitrateKbps = 0;
+            var tbKey = "".concat(versionKey, "_").concat(layerKey);
+            if (bitrateTable[tbKey]) {
+                bitrateKbps = bitrateTable[tbKey][bitrateBits] || 0;
+            } else if (bitrateTable["3_1"] && versionKey === 3 && layerKey === 1) {
+                bitrateKbps = bitrateTable["3_1"][bitrateBits] || 0;
+            }
+            var channels = channelMode === 3 ? 1 : 2;
+            var duration = null;
+            if (bitrateKbps > 0) {
+                duration = bytes.length * 8 / (bitrateKbps * 1e3);
+            }
+            return {
+                version: versionStr,
+                layer: layerStr,
+                bitrateKbps: bitrateKbps || null,
+                sampleRate: sampleRate,
+                channels: channels,
+                duration: duration
+            };
+        }
+        return _ts_generator(this, function(_state) {
+            switch(_state.label){
+                case 0:
+                    return [
+                        4,
+                        file.slice(0, 256 * 1024).arrayBuffer()
+                    ];
+                case 1:
+                    headerBuffer = _state.sent();
+                    ext = getExt(file.name);
+                    mime = file.type || "unknown";
+                    metadata = {};
+                    wavInfo = parseWav(headerBuffer);
+                    if (wavInfo) {
+                        metadata.format = "wav";
+                        metadata = Object.assign(metadata, wavInfo || {});
+                    } else if (mime === "audio/mpeg" || ext === "mp3") {
+                        mp3Info = parseMp3(headerBuffer);
+                        metadata.format = "mp3";
+                        metadata = Object.assign(metadata, mp3Info || {});
+                    } else {
+                        metadata.format = mime || ext || "unknown";
+                    }
+                    console.log("Extracted file metadata:", metadata);
+                    return [
+                        4,
+                        file.arrayBuffer()
+                    ];
+                case 2:
+                    arrayBuffer = _state.sent();
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    return [
+                        4,
+                        audioContext.decodeAudioData(arrayBuffer)
+                    ];
+                case 3:
+                    audioBuffer = _state.sent();
+                    return [
+                        2,
+                        Audio.fromAudioBuffer(audioBuffer, metadata)
+                    ];
+            }
+        });
+    })();
 }
 var Audio = /*#__PURE__*/ function(AudioBuffer1) {
     _inherits(_Audio, AudioBuffer1);
@@ -925,24 +1138,142 @@ var Audio = /*#__PURE__*/ function(AudioBuffer1) {
         {
             key: "fromAudioBuffer",
             value: function fromAudioBuffer(buffer, metadata) {
-                var audio = new _Audio({
+                var audio2 = new _Audio({
                     length: buffer.length,
                     numberOfChannels: buffer.numberOfChannels,
                     sampleRate: buffer.sampleRate
                 });
                 for(var ch = 0; ch < buffer.numberOfChannels; ch++){
-                    audio.copyToChannel(buffer.getChannelData(ch), ch);
+                    audio2.copyToChannel(buffer.getChannelData(ch), ch);
                 }
-                audio.metadata = metadata;
-                return audio;
+                audio2.metadata = metadata;
+                return audio2;
+            }
+        },
+        {
+            key: "fromSamples",
+            value: function fromSamples(samples) {
+                var sampleRate = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : 48e3, metadata = arguments.length > 2 ? arguments[2] : void 0;
+                if (!samples || samples.length == 0) return new _Audio({
+                    length: 0,
+                    numberOfChannels: 1,
+                    sampleRate: sampleRate
+                });
+                var audio2 = new _Audio({
+                    length: samples.length,
+                    numberOfChannels: 1,
+                    sampleRate: sampleRate
+                });
+                audio2.copyToChannel(samples, 0);
+                audio2.metadata = metadata;
+                return audio2;
             }
         }
     ]);
     return _Audio;
 }(_wrap_native_super(AudioBuffer));
+function chirp(f_start, f_stop) {
+    var duration = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : null, rate = arguments.length > 3 && arguments[3] !== void 0 ? arguments[3] : null, fade = arguments.length > 4 && arguments[4] !== void 0 ? arguments[4] : 0.01, fs = arguments.length > 5 && arguments[5] !== void 0 ? arguments[5] : 48e3;
+    var c = Math.log(f_stop / f_start);
+    var L;
+    var samples_count;
+    if (duration == null && rate == null) {
+        rate = 1;
+    }
+    if (duration == null) {
+        L = rate / Math.log(10);
+        samples_count = Math.round(L * c * fs);
+        duration = samples_count / fs;
+    } else {
+        L = duration / c;
+        rate = Math.log(10) * L;
+        samples_count = Math.round(L * c * fs);
+    }
+    samples_count = Math.max(1, samples_count);
+    var fade_in = Math.max(0, Math.floor(fade * fs));
+    var fade_out = Math.max(0, Math.floor(fade / 10 * fs));
+    var pre = Math.max(0, fade_in);
+    var post = Math.max(0, fade_out);
+    var phi = Float32Array.from({
+        length: pre + samples_count + post
+    }, function() {
+        return 0;
+    });
+    var offset = f_start * ((fade_in + 1) / fs);
+    for(var i = 0; i < pre; i++)phi[i] = f_start * (i / fs);
+    var baseIdx = pre;
+    for(var i1 = 0; i1 < samples_count; i1++){
+        var t2 = i1 / fs;
+        phi[baseIdx + i1] = L * f_start * (Math.exp(t2 / L) - 1) + offset;
+    }
+    var last = phi[baseIdx + samples_count - 1] || 0;
+    for(var i2 = 0; i2 < post; i2++){
+        phi[baseIdx + samples_count + i2] = last + f_stop * ((i2 + 1) / fs);
+    }
+    var sweep = Float32Array.from({
+        length: phi.length
+    }, function() {
+        return 0;
+    });
+    for(var i3 = 0; i3 < phi.length; i3++)sweep[i3] = Math.sin(2 * Math.PI * phi[i3]);
+    var t = Float32Array.from({
+        length: sweep.length
+    }, function() {
+        return 0;
+    });
+    for(var i4 = 0; i4 < sweep.length; i4++)t[i4] = i4 / fs;
+    var envMain = Float32Array.from({
+        length: t.length
+    }, function() {
+        return 0;
+    });
+    var factor = f_stop * duration * duration;
+    for(var i5 = 0; i5 < t.length; i5++)envMain[i5] = Math.exp(-t[i5] / L) / L * factor;
+    var startZeros = Math.floor(0.01 * fs);
+    var endZeros = Math.floor(1e-3 * fs);
+    var envelope = Float32Array.from({
+        length: startZeros + envMain.length + endZeros
+    }, function() {
+        return 0;
+    });
+    for(var i6 = 0; i6 < envMain.length; i6++){
+        envelope[startZeros + i6] = envMain[i6];
+    }
+    var window2 = Float32Array.from({
+        length: sweep.length
+    }, function() {
+        return 0;
+    });
+    for(var i7 = 0; i7 < sweep.length; i7++){
+        var w = 1;
+        if (fade_in > 0 && i7 < fade_in) {
+            w = i7 / Math.max(1, fade_in);
+        }
+        if (fade_out > 0 && i7 >= sweep.length - fade_out) {
+            var k = i7 - (sweep.length - fade_out);
+            w *= 1 - k / Math.max(1, fade_out);
+        }
+        window2[i7] = w;
+    }
+    var sweepWindowed = Float32Array.from({
+        length: sweep.length
+    }, function() {
+        return 0;
+    });
+    for(var i8 = 0; i8 < sweep.length; i8++)sweepWindowed[i8] = sweep[i8] * window2[i8];
+    return [
+        sweepWindowed,
+        t,
+        envelope
+    ];
+}
 function smoothFFT(fftData, fraction, resolution) {
     var frequency = fftData.frequency, magnitude = fftData.magnitude, phase = fftData.phase, fftSize = fftData.fftSize;
-    var smoothedMagnitude = new Float32Array(magnitude.length);
+    var smoothedMagnitude = Float32Array.from({
+        length: magnitude.length
+    }, function() {
+        return 0;
+    });
     var fractionalFrequencies = getFractionalOctaveFrequencies(resolution, 20, 24e3, fftSize);
     var smoothed = fractionalOctaveSmoothing(db(magnitude), fraction, fractionalFrequencies);
     var smoothedPhase = fractionalOctaveSmoothing(phase, fraction, fractionalFrequencies);
@@ -959,14 +1290,30 @@ function computeFFT(data) {
     console.log("Computing FFT with ".concat(fftSize, " bins for data length ").concat(data.length));
     var fft = new FFT(fftSize);
     var out = fft.createComplexArray();
-    var frame = new Float32Array(fftSize);
+    var frame = Float32Array.from({
+        length: fftSize
+    }, function() {
+        return 0;
+    });
     for(var i = 0; i < fftSize; i++){
         frame[i] = (data[i] || 0) * 1;
     }
     fft.realTransform(out, frame);
-    var frequency = new Float32Array(fftSize / 2);
-    var magnitude = new Float32Array(fftSize / 2);
-    var phase = new Float32Array(fftSize / 2);
+    var frequency = Float32Array.from({
+        length: fftSize / 2
+    }, function() {
+        return 0;
+    });
+    var magnitude = Float32Array.from({
+        length: fftSize / 2
+    }, function() {
+        return 0;
+    });
+    var phase = Float32Array.from({
+        length: fftSize / 2
+    }, function() {
+        return 0;
+    });
     for(var i1 = 0; i1 < fftSize / 2; i1++){
         var re = out[2 * i1];
         var im = out[2 * i1 + 1];
@@ -984,14 +1331,105 @@ function computeFFT(data) {
         fftSize: fftSize
     };
 }
+function fftCorrelation(x, y) {
+    var lenX = x.length;
+    var lenY = y.length;
+    var fullLen = lenX + lenY - 1;
+    var nextPow22 = function(v) {
+        var p = 1;
+        while(p < v)p <<= 1;
+        return p;
+    };
+    var n = nextPow22(fullLen);
+    var xP = Float32Array.from({
+        length: n
+    }, function() {
+        return 0;
+    });
+    var yP = Float32Array.from({
+        length: n
+    }, function() {
+        return 0;
+    });
+    xP.set(x, 0);
+    yP.set(y, 0);
+    var fft = new FFT(n);
+    var A = fft.createComplexArray();
+    var B = fft.createComplexArray();
+    fft.realTransform(A, xP);
+    fft.realTransform(B, yP);
+    if (typeof fft.completeSpectrum === "function") {
+        fft.completeSpectrum(A);
+        fft.completeSpectrum(B);
+    }
+    var C = fft.createComplexArray();
+    for(var k = 0; k < n; k++){
+        var ar = A[2 * k], ai = A[2 * k + 1];
+        var br = B[2 * k], bi = B[2 * k + 1];
+        C[2 * k] = ar * br + ai * bi;
+        C[2 * k + 1] = ai * br - ar * bi;
+    }
+    var out = fft.createComplexArray();
+    fft.inverseTransform(out, C);
+    var corr = Float64Array.from({
+        length: fullLen
+    }, function() {
+        return 0;
+    });
+    for(var i = 0; i < fullLen; i++){
+        corr[i] = out[2 * i] / n;
+    }
+    var sumX2 = 0, sumY2 = 0;
+    for(var i1 = 0; i1 < lenX; i1++)sumX2 += x[i1] * x[i1];
+    for(var i2 = 0; i2 < lenY; i2++)sumY2 += y[i2] * y[i2];
+    var denom = Math.sqrt(sumX2 * sumY2);
+    var normalized = Float64Array.from({
+        length: fullLen
+    }, function() {
+        return 0;
+    });
+    if (denom > 0) {
+        for(var i3 = 0; i3 < fullLen; i3++)normalized[i3] = corr[i3] / denom;
+    } else {
+        for(var i4 = 0; i4 < fullLen; i4++)normalized[i4] = 0;
+    }
+    var lags = new Int32Array(fullLen);
+    for(var i5 = 0; i5 < fullLen; i5++)lags[i5] = i5 - (lenY - 1);
+    var peakIdx = 0;
+    var peakVal = -Infinity;
+    for(var i6 = 0; i6 < fullLen; i6++){
+        if (normalized[i6] > peakVal) {
+            peakVal = normalized[i6];
+            peakIdx = i6;
+        }
+    }
+    var estimatedLag = lags[peakIdx];
+    return {
+        corr: normalized,
+        lags: lags,
+        estimatedLagSamples: estimatedLag,
+        estimatedLagIndex: peakIdx,
+        peakCorrelation: peakVal,
+        raw: corr,
+        nfft: n
+    };
+}
 function fftConvolve(x, y) {
     var mode = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : "same";
     var lenX = x.length;
     var lenY = y.length;
     var fullLen = lenX + lenY - 1;
     var n = nextPow2(fullLen);
-    var xP = new Float32Array(n);
-    var yP = new Float32Array(n);
+    var xP = Float32Array.from({
+        length: n
+    }, function() {
+        return 0;
+    });
+    var yP = Float32Array.from({
+        length: n
+    }, function() {
+        return 0;
+    });
     xP.set(x, 0);
     yP.set(y, 0);
     var fft = new FFT(n);
@@ -1012,7 +1450,11 @@ function fftConvolve(x, y) {
     }
     var out = fft.createComplexArray();
     fft.inverseTransform(out, C);
-    var result = new Float32Array(fullLen);
+    var result = Float32Array.from({
+        length: fullLen
+    }, function() {
+        return 0;
+    });
     for(var i = 0; i < fullLen; i++){
         result[i] = out[2 * i];
     }
@@ -1022,20 +1464,402 @@ function fftConvolve(x, y) {
     }
     return result;
 }
-function max(arr) {
-    var maxVal = -Infinity;
-    for(var i = 0; i < arr.length; i++){
-        if (arr[i] > maxVal) {
-            maxVal = Math.abs(arr[i]);
+function twoChannelImpulseResponse(y, x) {
+    var fullLen = y.length + x.length - 1;
+    var N = nextPow2(fullLen);
+    var xP = Float32Array.from({
+        length: N
+    }, function() {
+        return 0;
+    });
+    var yP = Float32Array.from({
+        length: N
+    }, function() {
+        return 0;
+    });
+    xP.set(y, 0);
+    yP.set(x, 0);
+    var fft = new FFT(N);
+    var A = fft.createComplexArray();
+    var B = fft.createComplexArray();
+    fft.realTransform(A, xP);
+    fft.realTransform(B, yP);
+    var C = fft.createComplexArray();
+    var epsilon = 1e-20;
+    for(var k = 0; k < N; k++){
+        var ar = A[2 * k], ai = A[2 * k + 1];
+        var br = B[2 * k], bi = B[2 * k + 1];
+        var denom = br * br + bi * bi + epsilon;
+        C[2 * k] = (ar * br + ai * bi) / denom;
+        C[2 * k + 1] = (ai * br - ar * bi) / denom;
+    }
+    var out = Float32Array.from(fft.createComplexArray());
+    fft.inverseTransform(out, C);
+    var ir = Float32Array.from({
+        length: N
+    }, function() {
+        return 0;
+    });
+    for(var i = 0; i < N; i++){
+        ir[i] = out[2 * ((i + N / 2) % N)];
+    }
+    var peakAt = closest(1e8, ir) + -N / 2;
+    var ir_complex = out.slice();
+    for(var i1 = 0; i1 < N; i1++){
+        ir_complex[2 * i1] = out[2 * mod(i1 + peakAt, N)];
+        ir_complex[2 * i1 + 1] = out[2 * mod(i1 + peakAt, N) + 1];
+    }
+    var mean = average(ir);
+    for(var i2 = 0; i2 < N; i2++){
+        ir[i2] = ir[i2] - mean;
+    }
+    return {
+        ir: ir,
+        ir_complex: ir_complex,
+        t: linspace((-N - 1) / 2 / 48e3, (N - 1) / 2 / 48e3, N),
+        // assuming 48kHz
+        peakAt: peakAt,
+        sampleRate: 48e3,
+        fftSize: N
+    };
+}
+function twoChannelFFT(dataArray, reference, fftSize, offset) {
+    var dataPadded = Float32Array.from({
+        length: fftSize
+    }, function() {
+        return 0;
+    });
+    var referencePadded = Float32Array.from({
+        length: fftSize
+    }, function() {
+        return 0;
+    });
+    if (offset >= 0) {
+        var refLen = Math.min(reference.length, Math.max(0, fftSize - offset));
+        for(var i = 0; i < refLen; i++){
+            referencePadded[offset + i] = reference[i];
+        }
+        var dataLen = Math.min(dataArray.length, fftSize);
+        for(var i1 = 0; i1 < dataLen; i1++){
+            dataPadded[i1] = dataArray[i1];
+        }
+    } else {
+        var refLen1 = Math.min(reference.length, fftSize);
+        for(var i2 = 0; i2 < refLen1; i2++){
+            referencePadded[i2] = reference[i2];
+        }
+        var start = -offset;
+        var dataLen1 = Math.min(dataArray.length, Math.max(0, fftSize - start));
+        for(var i3 = 0; i3 < dataLen1; i3++){
+            dataPadded[start + i3] = dataArray[i3];
         }
     }
-    return maxVal;
+    var reference_ = computeFFT(referencePadded);
+    var signal_ = computeFFT(dataPadded);
+    var signalMags = signal_.magnitude.map(function(v) {
+        return 20 * Math.log10(v === 0 ? 1e-20 : v);
+    });
+    var referenceMags = reference_.magnitude.map(function(v) {
+        return 20 * Math.log10(v === 0 ? 1e-20 : v);
+    });
+    var h = referenceMags.map(function(v, i) {
+        return signalMags[i] - v;
+    });
+    var frequency = linspace(0, 48e3 / 2, h.length);
+    var i_50 = closest(50, frequency);
+    var phase_signal = signal_.phase;
+    var phase_reference = reference_.phase;
+    var sphase = unwrapPhase(phase_signal.map(function(v, i) {
+        return v - phase_reference[i];
+    }));
+    var correction = Math.floor(sphase[i_50] / (2 * Math.PI) + 0.5) * (2 * Math.PI);
+    var phase = sphase.map(function(v) {
+        return v - correction;
+    });
+    function unwrapPhase(phases) {
+        var N = phases.length;
+        var out = Float32Array.from({
+            length: N
+        }, function() {
+            return 0;
+        });
+        if (N === 0) return out;
+        out[0] = phases[0];
+        var offset2 = 0;
+        var theta = Math.PI;
+        for(var i = 1; i < N; i++){
+            var delta = phases[i] - phases[i - 1];
+            if (delta > theta) {
+                offset2 -= 2 * Math.PI;
+            } else if (delta < -theta) {
+                offset2 += 2 * Math.PI;
+            }
+            out[i] = phases[i] + offset2;
+        }
+        return out;
+    }
+    return {
+        frequency: frequency,
+        magnitude: h,
+        phase: phase,
+        fftSize: fftSize
+    };
 }
+function computeFFTFromIR(ir) {
+    var f_phase_wrap = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : 1e3;
+    var fftSize = nextPow2(ir.ir.length);
+    console.log("Computing FFT from IR with size ".concat(fftSize));
+    var fft = new FFT(fftSize);
+    var out = Float32Array.from(fft.createComplexArray());
+    if (ir.ir_complex[1] === 0) {
+        console.log("IR is in real format, converting to complex");
+        var frame = Float32Array.from({
+            length: fftSize
+        }, function() {
+            return 0;
+        });
+        for(var i = 0; i < fftSize; i++){
+            frame[i] = ir.ir_complex[2 * i] || 0;
+        }
+        fft.realTransform(out, frame);
+    } else {
+        fft.transform(out, ir.ir_complex);
+    }
+    var magnitude = Float32Array.from({
+        length: fftSize / 2
+    }, function() {
+        return 0;
+    });
+    var phase = Float32Array.from({
+        length: fftSize / 2
+    }, function() {
+        return 0;
+    });
+    for(var i1 = 0; i1 < fftSize / 2; i1++){
+        var re = out[2 * i1];
+        var im = out[2 * i1 + 1];
+        magnitude[i1] = abs(re, im);
+        phase[i1] = Math.atan2(im, re);
+    }
+    var frequency = linspace(0, 48e3 / 2, magnitude.length);
+    var i_norm = closest(f_phase_wrap, frequency);
+    var unwraped_phase = unwrapPhase(phase);
+    var correction = Math.floor(unwraped_phase[i_norm] / (2 * Math.PI) + 0.5) * (2 * Math.PI);
+    var corrected_unwraped_phase = unwraped_phase.map(function(v) {
+        return v - correction;
+    });
+    function unwrapPhase(phases) {
+        var N = phases.length;
+        var out2 = Float32Array.from({
+            length: N
+        }, function() {
+            return 0;
+        });
+        if (N === 0) return out2;
+        out2[0] = phases[0];
+        var offset = 0;
+        for(var i = 1; i < N; i++){
+            var delta = phases[i] - phases[i - 1];
+            if (delta > Math.PI) {
+                offset -= 2 * Math.PI;
+            } else if (delta < -Math.PI) {
+                offset += 2 * Math.PI;
+            }
+            out2[i] = phases[i] + offset;
+        }
+        return out2;
+    }
+    return {
+        frequency: frequency,
+        magnitude: magnitude,
+        phase: corrected_unwraped_phase.map(function(v) {
+            return v / Math.PI * 180;
+        }),
+        peakAt: ir.peakAt,
+        sampleRate: ir.sampleRate,
+        fftSize: fftSize
+    };
+}
+function groupDelays(fftData) {
+    var normalizeAt = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : 1e3;
+    var frequency = fftData.frequency, phase = fftData.phase, peakAt = fftData.peakAt;
+    var N = frequency.length;
+    var groupDelay = Float32Array.from({
+        length: N
+    }, function() {
+        return 0;
+    });
+    for(var i = 1; i < N - 1; i++){
+        var dPhase = phase[i] - phase[i - 1];
+        var dFreq = frequency[i] - frequency[i - 1];
+        groupDelay[i] = -dPhase / dFreq / 360;
+    }
+    groupDelay[0] = groupDelay[1];
+    groupDelay[N - 1] = groupDelay[N - 2];
+    var normIdx = closest(normalizeAt, frequency);
+    var delayAtNorm = groupDelay[normIdx];
+    for(var i1 = 0; i1 < N; i1++){
+        groupDelay[i1] = groupDelay[i1] - delayAtNorm;
+    }
+    return groupDelay;
+}
+var A_WEIGHTING_COEFFICIENTS = [
+    Float32Array.from([
+        0.234301792299513,
+        -0.468603584599026,
+        -0.234301792299513,
+        0.937207169198054,
+        -0.234301792299515,
+        -0.468603584599025,
+        0.234301792299513
+    ]),
+    Float32Array.from([
+        1,
+        -4.113043408775871,
+        6.553121752655047,
+        -4.990849294163381,
+        1.785737302937573,
+        -0.246190595319487,
+        0.011224250033231
+    ])
+];
+var K_WEIGHTING_COEFFICIENTS_PRE = [
+    Float32Array.from([
+        1.53512485958697,
+        -2.69169618940638,
+        1.19839281085285
+    ]),
+    Float32Array.from([
+        1,
+        -1.69065929318241,
+        0.73248077421585
+    ])
+];
+var K_WEIGHTING_COEFFICIENTS_RLB = [
+    Float32Array.from([
+        1,
+        -2,
+        1
+    ]),
+    Float32Array.from([
+        1,
+        -1.99004745483398,
+        0.99007225036621
+    ])
+];
+function applyAWeightingToBuffer(buffer, zi) {
+    var b = A_WEIGHTING_COEFFICIENTS[0];
+    var a = A_WEIGHTING_COEFFICIENTS[1];
+    var output = Float32Array.from({
+        length: buffer.length
+    }, function() {
+        return 0;
+    });
+    for(var n = 0; n < buffer.length; n++){
+        output[n] = b[0] * buffer[n] + zi[0];
+        for(var i = 1; i < b.length; i++){
+            zi[i - 1] = b[i] * buffer[n] + zi[i] - a[i] * output[n];
+        }
+    }
+    return output;
+}
+function gateBuffer(buffer, sampleRate) {
+    var thresholdDb = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : -70, blockMs = arguments.length > 3 && arguments[3] !== void 0 ? arguments[3] : 400, overlap = arguments.length > 4 && arguments[4] !== void 0 ? arguments[4] : 0.75;
+    var blockSize = Math.floor(blockMs / 1e3 * sampleRate);
+    var hopSize = Math.floor(blockSize * (1 - overlap));
+    var threshold = dbToLinear(thresholdDb);
+    var gated = Float32Array.from({
+        length: buffer.length
+    }, function() {
+        return 0;
+    });
+    var i = 0;
+    while(i < buffer.length){
+        var start = i;
+        var end = Math.min(i + blockSize, buffer.length);
+        var block = buffer.slice(start, end);
+        var blockRms = rms(block);
+        if (blockRms >= threshold) {
+            for(var j = 0; j < block.length; j++){
+                gated[start + j] = block[j];
+            }
+        }
+        i += hopSize;
+    }
+    return gated;
+}
+var audio = {
+    loadAudioFile: loadAudioFile,
+    chirp: chirp,
+    computeFFT: computeFFT,
+    smoothFFT: smoothFFT,
+    fftCorrelation: fftCorrelation,
+    fftConvolve: fftConvolve,
+    twoChannelImpulseResponse: twoChannelImpulseResponse,
+    computeFFTFromIR: computeFFTFromIR,
+    twoChannelFFT: twoChannelFFT,
+    groupDelays: groupDelays,
+    applyAWeightingToBuffer: applyAWeightingToBuffer,
+    gateBuffer: gateBuffer
+};
+// src/windows.ts
+function hanningWindow(length) {
+    var window2 = new Float32Array(length);
+    for(var i = 0; i < length; i++){
+        window2[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / (length - 1)));
+    }
+    return window2;
+}
+function hammingWindow(length) {
+    var window2 = new Float32Array(length);
+    for(var i = 0; i < length; i++){
+        window2[i] = 0.54 - 0.46 * Math.cos(2 * Math.PI * i / (length - 1));
+    }
+    return window2;
+}
+function blackmanWindow(length) {
+    var window2 = new Float32Array(length);
+    for(var i = 0; i < length; i++){
+        window2[i] = 0.42 - 0.5 * Math.cos(2 * Math.PI * i / (length - 1)) + 0.08 * Math.cos(4 * Math.PI * i / (length - 1));
+    }
+    return window2;
+}
+function rectangularWindow(length) {
+    var window2 = new Float32Array(length);
+    window2.fill(1);
+    return window2;
+}
+function getSelectedWindow(windowType, length) {
+    var type = windowType;
+    var window2 = new Float32Array(length);
+    var wcf = 1;
+    if (type === "hanning") {
+        window2 = hanningWindow(length);
+        wcf = 2;
+    }
+    if (type === "hamming") {
+        window2 = hammingWindow(length);
+        wcf = 1.852;
+    }
+    if (type === "blackman") {
+        window2 = blackmanWindow(length);
+        wcf = 2.381;
+    }
+    if (type === "rectangular") {
+        window2 = rectangularWindow(length);
+        wcf = 1;
+    }
+    window2 = window2.map(function(v) {
+        return v / wcf;
+    });
+    return window2;
+}
+// src/farina.ts
 var Farina = /*#__PURE__*/ function() {
     function Farina(stimulus) {
         var f_start = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : 50, f_stop = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : 22800, fs = arguments.length > 3 && arguments[3] !== void 0 ? arguments[3] : 48e3;
         _class_call_check(this, Farina);
-        this.deconvolved = new Float32Array(0);
+        this.deconvolved = Float32Array.from([]);
         this.f_start = f_start;
         this.f_stop = f_stop;
         this.fs = fs;
@@ -1092,7 +1916,11 @@ var Farina = /*#__PURE__*/ function() {
                 var window2 = getSelectedWindow("hanning", size);
                 var sig = this.deconvolution(signal);
                 var si = sig.slice(at - size / 2, at + size / 2);
-                var w = new Float32Array(size);
+                var w = Float32Array.from({
+                    length: size
+                }, function() {
+                    return 0;
+                });
                 return si;
                 if (si.length === window2.length) {
                     for(var i = 0; i < window2.length; i++){
@@ -1100,7 +1928,11 @@ var Farina = /*#__PURE__*/ function() {
                     }
                     return w;
                 } else {
-                    return new Float32Array(window2.length);
+                    return Float32Array.from({
+                        length: window2.length
+                    }, function() {
+                        return 0;
+                    });
                 }
             }
         },
@@ -1137,11 +1969,19 @@ function FarinaImpulseResponse(y, x) {
     var peakAt = farina.instant();
     console.log("peakAt", peakAt);
     var s = farina.window(y, peakAt + farina.lag_of_harmonic(2) * 48e3, 0.1);
-    var ir = new Float32Array(s.length);
+    var ir = Float32Array.from({
+        length: s.length
+    }, function() {
+        return 0;
+    });
     for(var i = 0; i < s.length; i++){
         ir[i] = s[i];
     }
-    var ir_complex = new Float32Array(s.length * 2);
+    var ir_complex = Float32Array.from({
+        length: s.length * 2
+    }, function() {
+        return 0;
+    });
     for(var i1 = 0; i1 < s.length; i1++){
         ir_complex[2 * i1] = s[i1];
         ir_complex[2 * i1 + 1] = 0;
@@ -1155,175 +1995,6 @@ function FarinaImpulseResponse(y, x) {
         fftSize: measurementResponse.length
     };
 }
-function twoChannelImpulseResponse(y, x) {
-    var fullLen = y.length + x.length - 1;
-    var N = nextPow2(fullLen);
-    var xP = new Float32Array(N);
-    var yP = new Float32Array(N);
-    xP.set(y, 0);
-    yP.set(x, 0);
-    var fft = new FFT(N);
-    var A = fft.createComplexArray();
-    var B = fft.createComplexArray();
-    fft.realTransform(A, xP);
-    fft.realTransform(B, yP);
-    var C = fft.createComplexArray();
-    var epsilon = 1e-20;
-    for(var k = 0; k < N; k++){
-        var ar = A[2 * k], ai = A[2 * k + 1];
-        var br = B[2 * k], bi = B[2 * k + 1];
-        var denom = br * br + bi * bi + epsilon;
-        C[2 * k] = (ar * br + ai * bi) / denom;
-        C[2 * k + 1] = (ai * br - ar * bi) / denom;
-    }
-    var out = Float32Array.from(fft.createComplexArray());
-    fft.inverseTransform(out, C);
-    var ir = new Float32Array(N);
-    for(var i = 0; i < N; i++){
-        ir[i] = out[2 * ((i + N / 2) % N)];
-    }
-    var peakAt = closest(1e8, ir) + -N / 2;
-    var ir_complex = out.slice();
-    for(var i1 = 0; i1 < N; i1++){
-        ir_complex[2 * i1] = out[2 * mod(i1 + peakAt, N)];
-        ir_complex[2 * i1 + 1] = out[2 * mod(i1 + peakAt, N) + 1];
-    }
-    var mean = average(ir);
-    for(var i2 = 0; i2 < N; i2++){
-        ir[i2] = ir[i2] - mean;
-    }
-    return {
-        ir: ir,
-        ir_complex: ir_complex,
-        t: linspace((-N - 1) / 2 / 48e3, (N - 1) / 2 / 48e3, N),
-        // assuming 48kHz
-        peakAt: peakAt,
-        sampleRate: 48e3,
-        fftSize: N
-    };
-}
-function computeFFTFromIR(ir) {
-    var f_phase_wrap = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : 1e3;
-    var fftSize = nextPow2(ir.ir.length);
-    console.log("Computing FFT from IR with size ".concat(fftSize));
-    var fft = new FFT(fftSize);
-    var out = Float32Array.from(fft.createComplexArray());
-    if (ir.ir_complex[1] === 0) {
-        console.log("IR is in real format, converting to complex");
-        var frame = new Float32Array(fftSize);
-        for(var i = 0; i < fftSize; i++){
-            frame[i] = ir.ir_complex[2 * i] || 0;
-        }
-        fft.realTransform(out, frame);
-    } else {
-        fft.transform(out, ir.ir_complex);
-    }
-    var magnitude = new Float32Array(fftSize / 2);
-    var phase = new Float32Array(fftSize / 2);
-    for(var i1 = 0; i1 < fftSize / 2; i1++){
-        var re = out[2 * i1];
-        var im = out[2 * i1 + 1];
-        magnitude[i1] = abs(re, im);
-        phase[i1] = Math.atan2(im, re);
-    }
-    var frequency = linspace(0, 48e3 / 2, magnitude.length);
-    var i_norm = closest(f_phase_wrap, frequency);
-    var unwraped_phase = unwrapPhase(phase);
-    var correction = Math.floor(unwraped_phase[i_norm] / (2 * Math.PI) + 0.5) * (2 * Math.PI);
-    var corrected_unwraped_phase = unwraped_phase.map(function(v) {
-        return v - correction;
-    });
-    function unwrapPhase(phases) {
-        var N = phases.length;
-        var out2 = new Float32Array(N);
-        if (N === 0) return out2;
-        out2[0] = phases[0];
-        var offset = 0;
-        for(var i = 1; i < N; i++){
-            var delta = phases[i] - phases[i - 1];
-            if (delta > Math.PI) {
-                offset -= 2 * Math.PI;
-            } else if (delta < -Math.PI) {
-                offset += 2 * Math.PI;
-            }
-            out2[i] = phases[i] + offset;
-        }
-        return out2;
-    }
-    return {
-        frequency: frequency,
-        magnitude: magnitude,
-        phase: corrected_unwraped_phase.map(function(v) {
-            return v / Math.PI * 180;
-        }),
-        peakAt: ir.peakAt,
-        sampleRate: ir.sampleRate,
-        fftSize: fftSize
-    };
-}
-function groupDelays(fftData) {
-    var normalizeAt = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : 1e3;
-    var frequency = fftData.frequency, phase = fftData.phase, peakAt = fftData.peakAt;
-    var N = frequency.length;
-    var groupDelay = new Float32Array(N);
-    for(var i = 1; i < N - 1; i++){
-        var dPhase = phase[i] - phase[i - 1];
-        var dFreq = frequency[i] - frequency[i - 1];
-        groupDelay[i] = -dPhase / dFreq / 360;
-    }
-    groupDelay[0] = groupDelay[1];
-    groupDelay[N - 1] = groupDelay[N - 2];
-    var normIdx = closest(normalizeAt, frequency);
-    var delayAtNorm = groupDelay[normIdx];
-    for(var i1 = 0; i1 < N; i1++){
-        groupDelay[i1] = (groupDelay[i1] - delayAtNorm) * 10;
-    }
-    return groupDelay;
-}
-var A_WEIGHTING_COEFFICIENTS = [
-    new Float32Array([
-        0.234301792299513,
-        -0.468603584599026,
-        -0.234301792299513,
-        0.937207169198054,
-        -0.234301792299515,
-        -0.468603584599025,
-        0.234301792299513
-    ]),
-    new Float32Array([
-        1,
-        -4.113043408775871,
-        6.553121752655047,
-        -4.990849294163381,
-        1.785737302937573,
-        -0.246190595319487,
-        0.011224250033231
-    ])
-];
-var K_WEIGHTING_COEFFICIENTS_PRE = [
-    new Float32Array([
-        1.53512485958697,
-        -2.69169618940638,
-        1.19839281085285
-    ]),
-    new Float32Array([
-        1,
-        -1.69065929318241,
-        0.73248077421585
-    ])
-];
-var K_WEIGHTING_COEFFICIENTS_RLB = [
-    new Float32Array([
-        1,
-        -2,
-        1
-    ]),
-    new Float32Array([
-        1,
-        -1.99004745483398,
-        0.99007225036621
-    ])
-];
 // src/storage.ts
 function openIDB() {
     return new Promise(function(resolve, reject) {
@@ -1933,7 +2604,7 @@ analyzeBtn.addEventListener("click", function() {
                     ]);
                     return [
                         4,
-                        loadAudioFile(responseFile)
+                        audio.loadAudioFile(responseFile)
                     ];
                 case 2:
                     responseData = _state.sent();
@@ -1943,7 +2614,7 @@ analyzeBtn.addEventListener("click", function() {
                     ];
                     return [
                         4,
-                        loadAudioFile(referenceFile)
+                        audio.loadAudioFile(referenceFile)
                     ];
                 case 3:
                     _tmp = _state.sent();
@@ -1982,261 +2653,6 @@ analyzeBtn.addEventListener("click", function() {
         });
     })();
 });
-function loadAudioFile(file) {
-    return _async_to_generator(function() {
-        var headerBuffer, ext, mime, metadata, wavInfo, mp3Info, arrayBuffer, audioContext, audioBuffer;
-        function getExt(name) {
-            return (name.split(".").pop() || "").toLowerCase();
-        }
-        function parseWav(buf) {
-            var dv = new DataView(buf);
-            function readStr(off, len) {
-                var s = "";
-                for(var i = 0; i < len; i++)s += String.fromCharCode(dv.getUint8(off + i));
-                return s;
-            }
-            if (readStr(0, 4) !== "RIFF" || readStr(8, 4) !== "WAVE") return null;
-            var offset = 12;
-            var info = {};
-            while(offset + 8 <= dv.byteLength){
-                var id = readStr(offset, 4);
-                var size = dv.getUint32(offset + 4, true);
-                if (id === "fmt ") {
-                    info.audioFormat = dv.getUint16(offset + 8, true);
-                    info.numChannels = dv.getUint16(offset + 10, true);
-                    info.sampleRate = dv.getUint32(offset + 12, true);
-                    info.byteRate = dv.getUint32(offset + 16, true);
-                    info.blockAlign = dv.getUint16(offset + 20, true);
-                    info.bitsPerSample = dv.getUint16(offset + 22, true);
-                } else if (id === "data") {
-                    info.dataChunkSize = size;
-                }
-                offset += 8 + size + size % 2;
-            }
-            if (info.sampleRate && info.byteRate && info.dataChunkSize) {
-                info.duration = info.dataChunkSize / info.byteRate;
-            }
-            return info;
-        }
-        function parseMp3(buf) {
-            var _sampleRates_versionKey;
-            var bytes = new Uint8Array(buf);
-            var offset = 0;
-            if (bytes[0] === 73 && bytes[1] === 68 && bytes[2] === 51) {
-                var size = (bytes[6] & 127) << 21 | (bytes[7] & 127) << 14 | (bytes[8] & 127) << 7 | bytes[9] & 127;
-                offset = 10 + size;
-            }
-            var headerIndex = -1;
-            for(var i = offset; i < bytes.length - 4; i++){
-                if (bytes[i] === 255 && (bytes[i + 1] & 224) === 224) {
-                    headerIndex = i;
-                    break;
-                }
-            }
-            if (headerIndex < 0) return null;
-            var b1 = bytes[headerIndex + 1];
-            var b2 = bytes[headerIndex + 2];
-            var b3 = bytes[headerIndex + 3];
-            var versionBits = b1 >> 3 & 3;
-            var layerBits = b1 >> 1 & 3;
-            var bitrateBits = b2 >> 4 & 15;
-            var sampleRateBits = b2 >> 2 & 3;
-            var channelMode = b3 >> 6 & 3;
-            var versions = {
-                0: "MPEG Version 2.5",
-                1: "reserved",
-                2: "MPEG Version 2 (ISO/IEC 13818-3)",
-                3: "MPEG Version 1 (ISO/IEC 11172-3)"
-            };
-            var layers = {
-                0: "reserved",
-                1: "Layer III",
-                2: "Layer II",
-                3: "Layer I"
-            };
-            var sampleRates = {
-                3: [
-                    44100,
-                    48e3,
-                    32e3
-                ],
-                2: [
-                    22050,
-                    24e3,
-                    16e3
-                ],
-                0: [
-                    11025,
-                    12e3,
-                    8e3
-                ]
-            };
-            var versionKey = versionBits;
-            var layerKey = layerBits;
-            var bitrateTable = {
-                // MPEG1 Layer III
-                "3_1": [
-                    0,
-                    32,
-                    40,
-                    48,
-                    56,
-                    64,
-                    80,
-                    96,
-                    112,
-                    128,
-                    160,
-                    192,
-                    224,
-                    256,
-                    320,
-                    0
-                ],
-                // MPEG2/2.5 Layer III
-                "0_1": [
-                    0,
-                    8,
-                    16,
-                    24,
-                    32,
-                    40,
-                    48,
-                    56,
-                    64,
-                    80,
-                    96,
-                    112,
-                    128,
-                    144,
-                    160,
-                    0
-                ],
-                "2_1": [
-                    0,
-                    8,
-                    16,
-                    24,
-                    32,
-                    40,
-                    48,
-                    56,
-                    64,
-                    80,
-                    96,
-                    112,
-                    128,
-                    144,
-                    160,
-                    0
-                ],
-                // fallback generic table for other layers/versions (best-effort)
-                "3_2": [
-                    0,
-                    32,
-                    48,
-                    56,
-                    64,
-                    80,
-                    96,
-                    112,
-                    128,
-                    160,
-                    192,
-                    224,
-                    256,
-                    320,
-                    384,
-                    0
-                ],
-                "3_3": [
-                    0,
-                    32,
-                    64,
-                    96,
-                    128,
-                    160,
-                    192,
-                    224,
-                    256,
-                    320,
-                    384,
-                    448,
-                    512,
-                    576,
-                    640,
-                    0
-                ]
-            };
-            var versionStr = versions[versionKey] || "unknown";
-            var layerStr = layers[layerKey] || "unknown";
-            var sampleRate = ((_sampleRates_versionKey = sampleRates[versionKey]) === null || _sampleRates_versionKey === void 0 ? void 0 : _sampleRates_versionKey[sampleRateBits]) || null;
-            var bitrateKbps = 0;
-            var tbKey = "".concat(versionKey, "_").concat(layerKey);
-            if (bitrateTable[tbKey]) {
-                bitrateKbps = bitrateTable[tbKey][bitrateBits] || 0;
-            } else if (bitrateTable["3_1"] && versionKey === 3 && layerKey === 1) {
-                bitrateKbps = bitrateTable["3_1"][bitrateBits] || 0;
-            }
-            var channels = channelMode === 3 ? 1 : 2;
-            var duration = null;
-            if (bitrateKbps > 0) {
-                duration = bytes.length * 8 / (bitrateKbps * 1e3);
-            }
-            return {
-                version: versionStr,
-                layer: layerStr,
-                bitrateKbps: bitrateKbps || null,
-                sampleRate: sampleRate,
-                channels: channels,
-                duration: duration
-            };
-        }
-        return _ts_generator(this, function(_state) {
-            switch(_state.label){
-                case 0:
-                    return [
-                        4,
-                        file.slice(0, 256 * 1024).arrayBuffer()
-                    ];
-                case 1:
-                    headerBuffer = _state.sent();
-                    ext = getExt(file.name);
-                    mime = file.type || "unknown";
-                    metadata = {};
-                    wavInfo = parseWav(headerBuffer);
-                    if (wavInfo) {
-                        metadata.format = "wav";
-                        metadata = Object.assign(metadata, wavInfo || {});
-                    } else if (mime === "audio/mpeg" || ext === "mp3") {
-                        mp3Info = parseMp3(headerBuffer);
-                        metadata.format = "mp3";
-                        metadata = Object.assign(metadata, mp3Info || {});
-                    } else {
-                        metadata.format = mime || ext || "unknown";
-                    }
-                    console.log("Extracted file metadata:", metadata);
-                    return [
-                        4,
-                        file.arrayBuffer()
-                    ];
-                case 2:
-                    arrayBuffer = _state.sent();
-                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                    return [
-                        4,
-                        audioContext.decodeAudioData(arrayBuffer)
-                    ];
-                case 3:
-                    audioBuffer = _state.sent();
-                    return [
-                        2,
-                        Audio.fromAudioBuffer(audioBuffer, metadata)
-                    ];
-            }
-        });
-    })();
-}
 function createAnalysisTab(responseData, referenceData, filename, referenceFilename) {
     tabCounter++;
     var tabId = "analysis-".concat(tabCounter);
@@ -2278,8 +2694,9 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
     var tracesPhaseSecondary = [];
     var tracesIR = [];
     var irPeakAt = 0;
+    var referenceSamples = Float32Array.from([]);
     if (referenceData) {
-        var referenceSamples = referenceData.getChannelData(0);
+        referenceSamples = referenceData.getChannelData(0);
         var referenceFFT = computeFFT(referenceSamples);
         tracesMagnitude.push({
             x: referenceFFT.frequency,
@@ -2513,8 +2930,8 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
     storage.setItem("".concat(tabId), JSON.stringify({
         filename: filename,
         referenceFilename: referenceFilename,
-        responseData: responseData,
-        referenceData: referenceData
+        responseSamples: Array.from(responseSamples),
+        referenceSamples: referenceSamples.length > 0 ? Array.from(referenceSamples) : null
     })).catch(function(err) {
         return console.error("Failed to persist analysis:", err);
     });
@@ -2577,8 +2994,9 @@ function loadState() {
                 case 4:
                     raw = _state.sent();
                     analysisData = raw ? JSON.parse(raw) : null;
+                    console.log("Restoring analysis data for tab", tab.id, analysisData);
                     if (analysisData) {
-                        createAnalysisTab(new Audio(analysisData.responseData), new Audio(analysisData.referenceData), analysisData.filename, analysisData.referenceFilename);
+                        createAnalysisTab(Audio.fromSamples(Float32Array.from(analysisData.responseSamples)), analysisData.referenceSamples ? Audio.fromSamples(Float32Array.from(analysisData.referenceSamples)) : null, analysisData.filename, analysisData.referenceFilename);
                     }
                     _state.label = 5;
                 case 5:
