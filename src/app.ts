@@ -538,6 +538,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
 
     // If no reference data, render waveform view instead of frequency response
     if (!referenceData) {
+        tab.innerHTML = `<span class="tab-icon-waveform"></span>${shortName} <span class="tab-close">✕</span>`;
         // For waveform view, we need to replace the entire tab-inner-content structure
         const tabInnerContent = content.querySelector<HTMLElement>('.tab-inner-content');
         if (tabInnerContent) {

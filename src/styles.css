@@ -159,15 +159,15 @@ img {
     border-bottom: #ddd solid 1px;
 }
 .tab-icon-recording::before {
-    @apply text-red-500 font-bold mr-1 inline-block;
+    @apply text-red-500 font-bold mr-2 inline-block;
     content: "⏺";
 }
 .tab-icon-waveform::before {
-    @apply text-sky-500 font-bold mr-1 inline-block;
+    @apply text-sky-500 font-bold mr-2 inline-block;
     content: "∿";
 }
 .tab-icon-analysis::before {
-    @apply text-purple-500 font-bold mr-1 inline-block;
+    @apply text-purple-500 font-bold mr-2 inline-block;
     content: "⛶";
 }
 .tab {

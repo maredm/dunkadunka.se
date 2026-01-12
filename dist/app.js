@@ -3568,6 +3568,7 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
     tabContents.appendChild(content);
     switchTab(tabId);
     if (!referenceData) {
+        tab.innerHTML = '<span class="tab-icon-waveform"></span>'.concat(shortName, ' <span class="tab-close">✕</span>');
         var tabInnerContent = content.querySelector(".tab-inner-content");
         if (tabInnerContent) {
             tabInnerContent.innerHTML = '\n                <div style="position: absolute; top: 0; left: 0; right: 0; height: 40px; display: flex; gap: 8px; align-items: center; padding: 0 12px; background: white; border-bottom: 1px solid #ddd; z-index: 10;">\n                    <h5 class="text-xs italic text-gray-600" style="margin: 0; flex-grow: 1;">Waveform View - '.concat(filename, '</h5>\n                    <button id="play-').concat(tabId, '" class="button-custom button-custom-primary">Play</button>\n                    <button id="stop-').concat(tabId, '" class="button-custom button-custom-secondary" disabled>Stop</button>\n                </div>\n                <div id="waveform-').concat(tabId, '" style="position: absolute; top: 40px; left: 0; right: 0; bottom: 0;"></div>\n            ');
