@@ -2,15 +2,20 @@
  * Level Meter Module (Class Version)
  * Handles the visualization of audio levels.
  * Usage:
- *   import { LevelMeter } from './modules/level_meter.js';
+ *   import { LevelMeter } from './modules/level_meter.ts';
  *   const meter = new LevelMeter('levelMeter');
  *   meter.update(0.5);
  */
 
 export class LevelMeter {
-    constructor(canvasId = 'levelMeter') {
-        this.canvas = document.getElementById(canvasId);
-        if (!this.canvas) {
+    canvas: HTMLCanvasElement;
+    ctx: CanvasRenderingContext2D | null;
+
+    constructor(canvasId: string = 'levelMeter') {
+        const element = document.getElementById(canvasId);
+        if (element instanceof HTMLCanvasElement) {
+            this.canvas = element;
+        } else {
             this.canvas = document.createElement('canvas');
             this.canvas.id = canvasId;
             this.canvas.width = 200;
@@ -21,7 +26,7 @@ export class LevelMeter {
         this.clear();
     }
 
-    update(level) {
+    update(level: number): void {
         if (!this.ctx) return;
         const width = this.canvas.width;
         const height = this.canvas.height;
@@ -41,7 +46,7 @@ export class LevelMeter {
         this.ctx.fillRect(0, 0, meterWidth, height);
     }
 
-    clear() {
+    clear(): void {
         if (!this.ctx) return;
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     }

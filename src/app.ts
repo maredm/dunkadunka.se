@@ -132,6 +132,21 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
     content.className = 'tab-content';
     content.dataset.content = tabId;
     content.innerHTML = `
+        <nav class="menu-bar" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+                <label for="smoothing-${tabId}" style="font-weight:600;color:#24292e;">Smoothing</label>
+                <select id="smoothing-${tabId}" class="smoothing-select" aria-label="Smoothing factor">
+                    <option value="0">None</option>
+                    <option value="1/3">1/3 octave</option>
+                    <option value="1/6" selected>1/6 octave</option>
+                    <option value="1/12">1/12 octave</option>
+                    <option value="1/24">1/24 octave</option>
+                    <option value="1/48">1/48 octave</option>
+                </select>
+                <button id="apply-smoothing-${tabId}" class="btn" style="padding:6px 10px;border-radius:4px;border:1px solid #d1d5da;background:#0366d6;color:#fff;cursor:pointer;">Apply</button>
+            </div>
+            <div style="font-size:0.9rem;color:#586069;">Select smoothing factor for smoothed traces</div>
+        </nav>
         <div class="loose-container">
             <h5 class="text-xs italic text-gray-600">Frequency Response Analysis of ${filename}${referenceFilename ? ' / ' + referenceFilename : ''}</h5>
             <div id="plot-${tabId}-magnitude" class="plot-medium"></div>
