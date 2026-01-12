@@ -1,6 +1,6 @@
-import { computeFFT, computeFFTFromIR, db, FarinaImpulseResponse, rms, smoothFFT, twoChannelImpulseResponse } from "./audio";
-import { nextPow2 } from "./math";
+import { Audio, computeFFT, computeFFTFromIR, db, FarinaImpulseResponse, groupDelays, rms, smoothFFT, twoChannelImpulseResponse } from "./audio";
 import { storage } from "./storage";
+import { audio } from "./audio";
 import "./device-settings";
 
 console.debug("App module loaded");
@@ -15,13 +15,6 @@ const tabContents = document.getElementById('tab-contents') as HTMLElement;
 const responseFileInput = document.getElementById('responseFile') as HTMLInputElement;
 const referenceFileInput = document.getElementById('referenceFile') as HTMLInputElement;
 const analyzeBtn = document.getElementById('analyzeBtn') as HTMLButtonElement;
-
-interface Audio {
-    sampleRate: number;
-    data: Array<number>;
-    duration: number;
-    metadata?: {[Key: string]: string | number | null};
-}
 
 // Enable analyze button when response file is selected
 responseFileInput.addEventListener('change', () => {
@@ -86,10 +79,10 @@ analyzeBtn.addEventListener('click', async () => {
     analyzeBtn.textContent = 'Analyzing...';
 
     try {
-        const responseData = await loadAudioFile(responseFile);
-        const referenceData = referenceFile ? await loadAudioFile(referenceFile) : null;
+        const responseData = await audio.loadAudioFile(responseFile);
+        const referenceData = referenceFile ? await audio.loadAudioFile(referenceFile) : null;
 
-        createAnalysisTab(responseData, referenceData, responseFile.name, referenceFile?.name || null);
+       createAnalysisTab(responseData.applyGain(1 / 16384), referenceData ? referenceData.applyGain(1 / 16384) : null, responseFile.name, referenceFile?.name || null);
     } catch (error) {
         alert('Error analyzing files: ' + (error as Error).message);
     } finally {
@@ -98,165 +91,6 @@ analyzeBtn.addEventListener('click', async () => {
     }
 });
 
-async function loadAudioFile(file: File): Promise<Audio> {
-    const headerBuffer = await file.slice(0, 256 * 1024).arrayBuffer();
-
-    function getExt(name: string) {
-        return (name.split('.').pop() || '').toLowerCase();
-    }
-
-    function parseWav(buf: ArrayBuffer) {
-        const dv = new DataView(buf);
-        function readStr(off: number, len: number) {
-            let s = '';
-            for (let i = 0; i < len; i++) s += String.fromCharCode(dv.getUint8(off + i));
-            return s;
-        }
-
-        if (readStr(0, 4) !== 'RIFF' || readStr(8, 4) !== 'WAVE') return null;
-
-        let offset = 12;
-        const info: any = {};
-        while (offset + 8 <= dv.byteLength) {
-            const id = readStr(offset, 4);
-            const size = dv.getUint32(offset + 4, true);
-            if (id === 'fmt ') {
-                info.audioFormat = dv.getUint16(offset + 8, true);
-                info.numChannels = dv.getUint16(offset + 10, true);
-                info.sampleRate = dv.getUint32(offset + 12, true);
-                info.byteRate = dv.getUint32(offset + 16, true);
-                info.blockAlign = dv.getUint16(offset + 20, true);
-                info.bitsPerSample = dv.getUint16(offset + 22, true);
-            } else if (id === 'data') {
-                info.dataChunkSize = size;
-            }
-            offset += 8 + size + (size % 2);
-        }
-        if (info.sampleRate && info.byteRate && info.dataChunkSize) {
-            info.duration = info.dataChunkSize / info.byteRate;
-        }
-        return info;
-    }
-
-    function parseMp3(buf: ArrayBuffer) {
-        const bytes = new Uint8Array(buf);
-        let offset = 0;
-        // Skip ID3v2 tag if present
-        if (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) {
-            const size = ((bytes[6] & 0x7f) << 21) | ((bytes[7] & 0x7f) << 14) | ((bytes[8] & 0x7f) << 7) | (bytes[9] & 0x7f);
-            offset = 10 + size;
-        }
-        // find first frame header
-        let headerIndex = -1;
-        for (let i = offset; i < bytes.length - 4; i++) {
-            if (bytes[i] === 0xFF && (bytes[i + 1] & 0xE0) === 0xE0) {
-                headerIndex = i;
-                break;
-            }
-        }
-        if (headerIndex < 0) return null;
-        const b1 = bytes[headerIndex + 1];
-        const b2 = bytes[headerIndex + 2];
-        const b3 = bytes[headerIndex + 3];
-
-        const versionBits = (b1 >> 3) & 0x03;
-        const layerBits = (b1 >> 1) & 0x03;
-        const bitrateBits = (b2 >> 4) & 0x0f;
-        const sampleRateBits = (b2 >> 2) & 0x03;
-        const channelMode = (b3 >> 6) & 0x03;
-
-        const versions: any = {
-            0: 'MPEG Version 2.5',
-            1: 'reserved',
-            2: 'MPEG Version 2 (ISO/IEC 13818-3)',
-            3: 'MPEG Version 1 (ISO/IEC 11172-3)'
-        };
-        const layers: any = {
-            0: 'reserved',
-            1: 'Layer III',
-            2: 'Layer II',
-            3: 'Layer I'
-        };
-
-        const sampleRates: any = {
-            3: [44100, 48000, 32000],
-            2: [22050, 24000, 16000],
-            0: [11025, 12000, 8000]
-        };
-        const versionKey = versionBits;
-        const layerKey = layerBits;
-
-        // bitrate tables (kbps)
-        const bitrateTable: any = {
-            // MPEG1 Layer III
-            '3_1': [0,32,40,48,56,64,80,96,112,128,160,192,224,256,320,0],
-            // MPEG2/2.5 Layer III
-            '0_1': [0,8,16,24,32,40,48,56,64,80,96,112,128,144,160,0],
-            '2_1': [0,8,16,24,32,40,48,56,64,80,96,112,128,144,160,0],
-            // fallback generic table for other layers/versions (best-effort)
-            '3_2': [0,32,48,56,64,80,96,112,128,160,192,224,256,320,384,0],
-            '3_3': [0,32,64,96,128,160,192,224,256,320,384,448,512,576,640,0]
-        };
-
-        const versionStr = versions[versionKey] || 'unknown';
-        const layerStr = layers[layerKey] || 'unknown';
-        let sampleRate = sampleRates[versionKey]?.[sampleRateBits] || null;
-
-        let bitrateKbps = 0;
-        const tbKey = `${versionKey}_${layerKey}`;
-        if (bitrateTable[tbKey]) {
-            bitrateKbps = bitrateTable[tbKey][bitrateBits] || 0;
-        } else if (bitrateTable['3_1'] && versionKey === 3 && layerKey === 1) {
-            bitrateKbps = bitrateTable['3_1'][bitrateBits] || 0;
-        }
-
-        const channels = channelMode === 3 ? 1 : 2;
-        let duration = null;
-        if (bitrateKbps > 0) {
-            duration = (bytes.length * 8) / (bitrateKbps * 1000);
-        }
-
-        return {
-            version: versionStr,
-            layer: layerStr,
-            bitrateKbps: bitrateKbps || null,
-            sampleRate,
-            channels,
-            duration
-        };
-    }
-
-    const ext = getExt(file.name);
-    const mime = file.type || 'unknown';
-    let metadata: {[Key: string]: string | number | null} = {};
-
-    const wavInfo = parseWav(headerBuffer);
-    if (wavInfo) {
-        metadata.format = 'wav';
-        metadata = Object.assign(metadata, wavInfo || {});
-    } else if (mime === 'audio/mpeg' || ext === 'mp3') {
-        const mp3Info = parseMp3(headerBuffer);
-        metadata.format = 'mp3';
-        metadata = Object.assign(metadata, mp3Info || {});
-    } else {
-        // best-effort: report file.type and extension and later rely on AudioContext decode
-        metadata.format = mime || ext || 'unknown';
-    }
-
-    console.log('Extracted file metadata:', metadata);
-    const arrayBuffer = await file.arrayBuffer();
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-    
-    console.log('Metadata:', metadata);
-    console.log('Loaded audio file with RMS of', db(rms(Array.from(audioBuffer.getChannelData(0)))));
-    return {
-        sampleRate: audioBuffer.sampleRate,
-        data: Array.from(audioBuffer.getChannelData(0)).map(x => x / 16384), // normalize 16-bit PCM
-        duration: audioBuffer.duration,
-        metadata
-    };
-}
 
 /**
  * Creates a new analysis tab in the UI and renders magnitude, phase and impulse-response plots for the provided audio.
@@ -316,9 +150,11 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
 
     // Compute and plot FFTs
     console.log('Analyzing response file:', filename);
-    const data = new Float32Array(responseData.data);
+    console.log('Response audio data:', responseData);
+    const responseSamples = responseData.getChannelData(0);
     
-    const responseFFT = computeFFT(data);
+    console.log(responseData.getChannelData(0));
+    const responseFFT = computeFFT(responseSamples);
     const tracesMagnitude: any[] = [{
         x: responseFFT.frequency,
         y: db(responseFFT.magnitude),
@@ -328,12 +164,14 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
         line: { color: '#0366d6', width: 2 }
     }];
     const tracesPhase: any[] = [];
+    const tracesPhaseSecondary: any[] = [];
     const tracesIR: any[] = [];
 
     let irPeakAt = 0;
 
     if (referenceData) {
-        const referenceFFT = computeFFT(referenceData.data);
+        const referenceSamples = referenceData.getChannelData(0);
+        const referenceFFT = computeFFT(referenceSamples);
         tracesMagnitude.push({
             x: referenceFFT.frequency,
             y: db(referenceFFT.magnitude),
@@ -342,8 +180,8 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             name: 'Reference signal',
             line: { color: '#0366d6', width: 2 }
         });
-        const ir = twoChannelImpulseResponse(responseData.data, Array.from(referenceData ? referenceData.data : new Float32Array(responseData.data.length)));
-        const farina_ir = FarinaImpulseResponse(responseData.data, Array.from(referenceData ? referenceData.data : new Float32Array(responseData.data.length)));
+        const ir = twoChannelImpulseResponse(responseSamples, referenceSamples);
+        const farina_ir = FarinaImpulseResponse(responseSamples, referenceSamples);
 
         console.log('Impulse response peak at', ir.peakAt);
         irPeakAt = ir.peakAt;
@@ -364,13 +202,13 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             name: 'Farina Impulse Response',
             line: { color: '#d73a49', width: 1 }
         }); */
-        const transferFunction = computeFFTFromIR(ir, 100);
-        const transferFunctionFarina = computeFFTFromIR(farina_ir, 100);
-        // const dreferenceFFT = twoChannelFFT(responseData.data, referenceData.data, nextPow2(referenceData.data.length), -5627);
+        const transferFunction = computeFFTFromIR(ir);
+        const transferFunctionFarina = computeFFTFromIR(farina_ir);
+        // const dreferenceFFT = twoChannelFFT(responseData.data, referenceSamples, nextPow2(referenceSamples.length), -5627);
         const smoothedFreqResponse = smoothFFT(transferFunction, 1/6, 1/48);
         const smoothedFreqResponseFarina = smoothFFT(transferFunctionFarina, 1/6, 1/48);
         
-        const rmsValue = 1;  // rms(referenceData.data);
+        const rmsValue = 1;  // rms(referenceSamples);
         console.log('Reference RMS:', db(rmsValue));
 
         tracesMagnitude.push({
@@ -389,8 +227,8 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             name: 'Dual-FFT Transfer Function (Smoothed)',
             line: { color: '#d73a49', width: 2 }
         });
-        /* tracesMagnitude.push({
-            x: transferFunctionFarina.frequency,
+        tracesMagnitude.push({
+            x: transferFunctionFarina.frequency.map(v => v / 2),
             y: db(transferFunctionFarina.magnitude.map(v => v * rmsValue)),
             type: 'scatter',
             mode: 'lines',
@@ -398,13 +236,13 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             line: { color: '#341fad33', width: 1 }
         });
         tracesMagnitude.push({
-            x: smoothedFreqResponseFarina.frequency,
+            x: smoothedFreqResponseFarina.frequency.map(v => v / 2),
             y: smoothedFreqResponseFarina.magnitude.map(v => v + db(rmsValue)),
             type: 'scatter',
             mode: 'lines',
             name: 'Farina Transfer Function (Smoothed)',
             line: { color: '#341fadff', width: 2 }
-        }); */
+        });
 
 
         tracesPhase.push({
@@ -422,6 +260,16 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             mode: 'lines',
             name: 'Dual-FFT Transfer Function (Smoothed)',
             line: { color: '#d73a49', width: 2 }
+        });
+        const gd = groupDelays(transferFunction, 1000);
+        tracesPhase.push({
+            x: transferFunction.frequency,
+            y: gd,
+            type: 'scatter',
+            mode: 'lines',
+            name: 'Group Delay (Calculated on a reduced set of points)',
+            line: { color: '#d73a49', width: 2, dash: 'dot' },
+            yaxis: 'y2'
         });
     }
 
@@ -441,27 +289,6 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
         },
     };
 
-    const layoutMagnitude = {
-        title: 'Magnitude Analysis',    
-        xaxis: { 
-            title: 'Frequency (Hz)', 
-            type: 'log',
-            gridcolor: '#e1e4e8',
-            range: [Math.log10(20), Math.log10(20000)],
-            tickformat: '.0f',
-
-        },
-        yaxis: { 
-            title: 'Magnitude (dB)',
-            gridcolor: '#e1e4e8',
-            rangemode: 'tozero',
-            range: [-90, 0],
-        },
-        ...plotSettings
-    };
-
-    (window as any).Plotly.newPlot(`plot-${tabId}-magnitude`, tracesMagnitude, layoutMagnitude, { responsive: true });
-
     const layoutPhase = {
         title: 'Phase Analysis',
         xaxis: { 
@@ -477,11 +304,43 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             automargin: true,
             range: [-720, 720],
         },
+        yaxis2: { 
+            title: 'Group Delay (ms)',
+            gridcolor: '#e1e4e8',
+            automargin: true,
+            anchor: 'x', 
+            overlaying: 'y', 
+            side: 'right',
+            range: [-20, 20],
+        },
         ...plotSettings
     };
 
     (window as any).Plotly.newPlot(`plot-${tabId}-phase`, tracesPhase, layoutPhase, { responsive: true });
 
+
+    const layoutMagnitude = {
+        title: 'Magnitude Analysis',    
+        xaxis: { 
+            title: 'Frequency (Hz)', 
+            type: 'log',
+            gridcolor: '#e1e4e8',
+            range: [Math.log10(20), Math.log10(20000)],
+            tickformat: '.0f',
+
+        },
+        yaxis: { 
+            title: 'Magnitude (dB)',
+            gridcolor: '#e1e4e8',
+            rangemode: 'tozero',
+            range: [-85, 5],
+        },
+        ...plotSettings
+    };
+
+    (window as any).Plotly.newPlot(`plot-${tabId}-magnitude`, tracesMagnitude, layoutMagnitude, { responsive: true });
+
+    
     const layoutIR = {
         title: 'Impulse response',
         xaxis: { 
@@ -532,7 +391,7 @@ async function loadState(): Promise<void> {
             const raw = await storage.getItem(`${tab.id}`);
             const analysisData = raw ? JSON.parse(raw) : null;
             if (analysisData) {
-                createAnalysisTab(analysisData.responseData, analysisData.referenceData, analysisData.filename, analysisData.referenceFilename);
+                createAnalysisTab(new Audio(analysisData.responseData), new Audio(analysisData.referenceData), analysisData.filename, analysisData.referenceFilename);
             }
         }
         // Tabs will be recreated when user analyzes files again

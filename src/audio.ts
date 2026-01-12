@@ -7,7 +7,7 @@ console.debug("Audio module loaded");
 
 (window as any).FFT = FFT; // Make FFT globally available
 
-export function sum(buffer: number[] | Float32Array): number {
+export function sum(buffer: Float32Array): number {
     let sum = 0;
     for (let i = 0; i < buffer.length; i++) {
         sum += buffer[i] * buffer[i];
@@ -15,35 +15,32 @@ export function sum(buffer: number[] | Float32Array): number {
     return sum
 }
 
-export function rms(buffer: number[] | Float32Array): number {
+export function rms(buffer: Float32Array): number {
+    // Assuming mono channel for simplicity; extend as needed for multi-channel
     return Math.sqrt(sum(buffer) / buffer.length);
 }
 
-
-
-export function normalize(input: number[] | Float32Array, peak: boolean = false): Float32Array {
-    const signal = Float32Array.from(input);
-
+export function normalize(input: Float32Array, peak: boolean = false): Float32Array {
     const rms_value = rms(input);
-    if (rms_value === 0) return Float32Array.from(input); // avoid division by zero, return original (silence)
+    if (rms_value === 0) return input; // avoid division by zero, return original (silence)
 
     const factor = (1 / rms_value) * (peak ? 1 : Math.SQRT2);
 
-    return signal.map(v => v * factor);
+    return input.map(v => v * factor);
 }
 
-export function exponentialMovingAverage(old: number, value: number, alpha: number): number {
-    return alpha * value + (1 - alpha) * old;
-}
-
-export function db(value: Array<number>): Array<number>;
+export function db(value: Float32Array): Float32Array;
 export function db(value: number): number;
-export function db(value: Array<number> | number): Array<number> | number {
-    if (Array.isArray(value)) {
+export function db(value: Float32Array | number): Float32Array | number {
+    if (value instanceof Float32Array) {
         return value.map(v => 20 * Math.log10(v + 1e-50));
     } else {
         return 20 * Math.log10(value + 1e-50);
     }
+}
+
+export function exponentialMovingAverage(old: number, value: number, alpha: number): number {
+    return alpha * value + (1 - alpha) * old;
 }
 
 export const smoothingFactor = (timeConstant: number, sampleRate: number): number => {
@@ -58,20 +55,217 @@ export function getExponentialSmoothingFactor(timeConstant: number, sampleRate: 
     return 1 - Math.exp(-1 / (timeConstant * sampleRate));
 }
 
-export function linearToDb(linear: number): number {
-    return linear > 0 ? 20 * Math.log10(linear) : -Infinity;
+export interface FFTResult {
+    frequency: Float32Array;
+    magnitude: Float32Array;
+    phase: Float32Array;
+    fftSize: number;
+    peakAt?: number;
+    sampleRate?: number;
 }
 
-/**
- * Generate a logarithmic chirp (sweep) similar to the provided Python version.
- * @param f_start - start frequency (Hz)
- * @param f_stop - stop frequency (Hz)
- * @param duration - total duration in seconds (if null, computed from rate)
- * @param rate - seconds per decade (if null, computed from duration)
- * @param fade - fade fraction (used to compute fade-in/out lengths)
- * @param fs - sample rate in Hz
- * @returns [sweepWindowed, timeVector, envelope]
- */
+async function loadAudioFile(file: File): Promise<Audio> {
+    const headerBuffer = await file.slice(0, 256 * 1024).arrayBuffer();
+
+    function getExt(name: string) {
+        return (name.split('.').pop() || '').toLowerCase();
+    }
+
+    function parseWav(buf: ArrayBuffer) {
+        const dv = new DataView(buf);
+        function readStr(off: number, len: number) {
+            let s = '';
+            for (let i = 0; i < len; i++) s += String.fromCharCode(dv.getUint8(off + i));
+            return s;
+        }
+
+        if (readStr(0, 4) !== 'RIFF' || readStr(8, 4) !== 'WAVE') return null;
+
+        let offset = 12;
+        const info: any = {};
+        while (offset + 8 <= dv.byteLength) {
+            const id = readStr(offset, 4);
+            const size = dv.getUint32(offset + 4, true);
+            if (id === 'fmt ') {
+                info.audioFormat = dv.getUint16(offset + 8, true);
+                info.numChannels = dv.getUint16(offset + 10, true);
+                info.sampleRate = dv.getUint32(offset + 12, true);
+                info.byteRate = dv.getUint32(offset + 16, true);
+                info.blockAlign = dv.getUint16(offset + 20, true);
+                info.bitsPerSample = dv.getUint16(offset + 22, true);
+            } else if (id === 'data') {
+                info.dataChunkSize = size;
+            }
+            offset += 8 + size + (size % 2);
+        }
+        if (info.sampleRate && info.byteRate && info.dataChunkSize) {
+            info.duration = info.dataChunkSize / info.byteRate;
+        }
+        return info;
+    }
+
+    function parseMp3(buf: ArrayBuffer) {
+        const bytes = new Uint8Array(buf);
+        let offset = 0;
+        // Skip ID3v2 tag if present
+        if (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) {
+            const size = ((bytes[6] & 0x7f) << 21) | ((bytes[7] & 0x7f) << 14) | ((bytes[8] & 0x7f) << 7) | (bytes[9] & 0x7f);
+            offset = 10 + size;
+        }
+        // find first frame header
+        let headerIndex = -1;
+        for (let i = offset; i < bytes.length - 4; i++) {
+            if (bytes[i] === 0xFF && (bytes[i + 1] & 0xE0) === 0xE0) {
+                headerIndex = i;
+                break;
+            }
+        }
+        if (headerIndex < 0) return null;
+        const b1 = bytes[headerIndex + 1];
+        const b2 = bytes[headerIndex + 2];
+        const b3 = bytes[headerIndex + 3];
+
+        const versionBits = (b1 >> 3) & 0x03;
+        const layerBits = (b1 >> 1) & 0x03;
+        const bitrateBits = (b2 >> 4) & 0x0f;
+        const sampleRateBits = (b2 >> 2) & 0x03;
+        const channelMode = (b3 >> 6) & 0x03;
+
+        const versions: any = {
+            0: 'MPEG Version 2.5',
+            1: 'reserved',
+            2: 'MPEG Version 2 (ISO/IEC 13818-3)',
+            3: 'MPEG Version 1 (ISO/IEC 11172-3)'
+        };
+        const layers: any = {
+            0: 'reserved',
+            1: 'Layer III',
+            2: 'Layer II',
+            3: 'Layer I'
+        };
+
+        const sampleRates: any = {
+            3: [44100, 48000, 32000],
+            2: [22050, 24000, 16000],
+            0: [11025, 12000, 8000]
+        };
+        const versionKey = versionBits;
+        const layerKey = layerBits;
+
+        // bitrate tables (kbps)
+        const bitrateTable: any = {
+            // MPEG1 Layer III
+            '3_1': [0,32,40,48,56,64,80,96,112,128,160,192,224,256,320,0],
+            // MPEG2/2.5 Layer III
+            '0_1': [0,8,16,24,32,40,48,56,64,80,96,112,128,144,160,0],
+            '2_1': [0,8,16,24,32,40,48,56,64,80,96,112,128,144,160,0],
+            // fallback generic table for other layers/versions (best-effort)
+            '3_2': [0,32,48,56,64,80,96,112,128,160,192,224,256,320,384,0],
+            '3_3': [0,32,64,96,128,160,192,224,256,320,384,448,512,576,640,0]
+        };
+
+        const versionStr = versions[versionKey] || 'unknown';
+        const layerStr = layers[layerKey] || 'unknown';
+        let sampleRate = sampleRates[versionKey]?.[sampleRateBits] || null;
+
+        let bitrateKbps = 0;
+        const tbKey = `${versionKey}_${layerKey}`;
+        if (bitrateTable[tbKey]) {
+            bitrateKbps = bitrateTable[tbKey][bitrateBits] || 0;
+        } else if (bitrateTable['3_1'] && versionKey === 3 && layerKey === 1) {
+            bitrateKbps = bitrateTable['3_1'][bitrateBits] || 0;
+        }
+
+        const channels = channelMode === 3 ? 1 : 2;
+        let duration = null;
+        if (bitrateKbps > 0) {
+            duration = (bytes.length * 8) / (bitrateKbps * 1000);
+        }
+
+        return {
+            version: versionStr,
+            layer: layerStr,
+            bitrateKbps: bitrateKbps || null,
+            sampleRate,
+            channels,
+            duration
+        };
+    }
+
+    const ext = getExt(file.name);
+    const mime = file.type || 'unknown';
+    let metadata: {[Key: string]: string | number | null} = {};
+
+    const wavInfo = parseWav(headerBuffer);
+    if (wavInfo) {
+        metadata.format = 'wav';
+        metadata = Object.assign(metadata, wavInfo || {});
+    } else if (mime === 'audio/mpeg' || ext === 'mp3') {
+        const mp3Info = parseMp3(headerBuffer);
+        metadata.format = 'mp3';
+        metadata = Object.assign(metadata, mp3Info || {});
+    } else {
+        // best-effort: report file.type and extension and later rely on AudioContext decode
+        metadata.format = mime || ext || 'unknown';
+    }
+
+    console.log('Extracted file metadata:', metadata);
+    const arrayBuffer = await file.arrayBuffer();
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+    return Audio.fromAudioBuffer(audioBuffer, metadata);
+}
+
+export class Audio extends AudioBuffer {
+    metadata?: {[Key: string]: string | number | null};
+
+    static fromAudioBuffer(buffer: AudioBuffer, metadata?: {[Key: string]: string | number | null}): Audio {
+        const audio = new Audio({
+            length: buffer.length,
+            numberOfChannels: buffer.numberOfChannels,
+            sampleRate: buffer.sampleRate
+        });
+        for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+            audio.copyToChannel(buffer.getChannelData(ch), ch);
+        }
+        audio.metadata = metadata;
+        return audio;
+    }
+
+    applyGain(gain: number): Audio {
+        const numChannels = this.numberOfChannels;
+        for (let ch = 0; ch < numChannels; ch++) {
+            const data = this.getChannelData(ch).map(v => v * gain);
+            this.copyToChannel(data, ch, 0);
+        }
+        return this;
+    }
+
+    getChannel(channel: number): Audio {
+        if (channel < 0 || channel >= this.numberOfChannels) {
+            throw new Error("Invalid channel number");
+        }
+        const channelData = this.getChannelData(channel);
+        const newBuffer = new AudioBuffer({
+            length: channelData.length,
+            numberOfChannels: 1,
+            sampleRate: this.sampleRate
+        });
+        // copy channel samples into the mono buffer
+        newBuffer.copyToChannel(channelData, 0, 0);
+        return new Audio(newBuffer);
+    }
+
+    rms(channel: number = 0): number {
+        if (channel < 0 || channel >= this.numberOfChannels) {
+            throw new Error("Invalid channel number");
+        }
+        const data = this.getChannelData(channel);
+        return rms(data);
+    }
+}
+
 export function chirp(f_start: number, f_stop: number, duration: number | null = null, rate: number | null = null, fade: number = 0.01, fs: number = 48000): [Float32Array, Float32Array, Float32Array] {
     const c = Math.log(f_stop / f_start);
 
@@ -104,7 +298,7 @@ export function chirp(f_start: number, f_stop: number, duration: number | null =
     // compact phi: pre-fade (fade_in samples), main sweep, post-fade (fade_out samples)
     const pre = Math.max(0, fade_in);
     const post = Math.max(0, fade_out);
-    const phi = new Float32Array(pre + samples_count + post);
+    const phi = Float32Array.from({ length: pre + samples_count + post }, () => 0);
 
     // offset matches original phi_fade_in last value: f_start * ((fade_in+1)/fs)
     const offset = f_start * ((fade_in + 1) / fs);
@@ -126,27 +320,29 @@ export function chirp(f_start: number, f_stop: number, duration: number | null =
     }
 
     // sweep = sin(2 * PI * phi)
-    const sweep = new Float32Array(phi.length);
+    const sweep = Float32Array.from({ length: phi.length }, () => 0);
     for (let i = 0; i < phi.length; i++) sweep[i] = Math.sin(2 * Math.PI * phi[i]);
 
     // compute time vector t for sweep length
-    const t = new Float32Array(sweep.length);
+    const t = Float32Array.from({ length: sweep.length }, () => 0);
     for (let i = 0; i < sweep.length; i++) t[i] = i / fs;
 
     // envelope main: (exp(-t/L) / L) * f_stop * duration^2
-    const envMain = new Float32Array(t.length);
+    const envMain = Float32Array.from({ length: t.length }, () => 0);
     const factor = f_stop * (duration as number) * (duration as number);
     for (let i = 0; i < t.length; i++) envMain[i] = (Math.exp(-t[i] / L) / L) * factor;
 
     // prepend and append small zero pads (approx. 10ms and 1ms at given fs)
     const startZeros = Math.floor(0.01 * fs); // ~480 samples at 48k
     const endZeros = Math.floor(0.001 * fs);  // ~48 samples at 48k
-    const envelope = new Float32Array(startZeros + envMain.length + endZeros);
-    // zeros already, copy envMain into middle
-    envelope.set(envMain, startZeros);
+    const envelope = Float32Array.from({ length: startZeros + envMain.length + endZeros }, () => 0);
+    // copy envMain into middle
+    for (let i = 0; i < envMain.length; i++) {
+        envelope[startZeros + i] = envMain[i];
+    }
 
     // window: simple linear fade in/out over fade_in / fade_out samples
-    const window = new Float32Array(sweep.length);
+    const window = Float32Array.from({ length: sweep.length }, () => 0);
     for (let i = 0; i < sweep.length; i++) {
         let w = 1.0;
         if (fade_in > 0 && i < fade_in) {
@@ -160,29 +356,15 @@ export function chirp(f_start: number, f_stop: number, duration: number | null =
     }
 
     // apply window to sweep
-    const sweepWindowed = new Float32Array(sweep.length);
+    const sweepWindowed = Float32Array.from({ length: sweep.length }, () => 0);
     for (let i = 0; i < sweep.length; i++) sweepWindowed[i] = sweep[i] * window[i];
 
     return [sweepWindowed, t, envelope];
 }
 
-export interface Audio {
-    sampleRate: number;
-    channels: number;
-    data: Float32Array[];
-}
-
-export interface FFTResult {
-    frequency: number[];
-    magnitude: number[];
-    phase: number[];
-    fftSize: number;
-}
-
-
 export function smoothFFT(fftData: FFTResult, fraction: number, resolution: number): FFTResult {
     const { frequency, magnitude, phase, fftSize } = fftData;
-    const smoothedMagnitude = new Float32Array(magnitude.length);
+    const smoothedMagnitude = Float32Array.from({ length: magnitude.length }, () => 0);
 
     // Get fractional octave frequencies
     const fractionalFrequencies = getFractionalOctaveFrequencies(resolution, 20, 24000, fftSize);
@@ -193,28 +375,28 @@ export function smoothFFT(fftData: FFTResult, fraction: number, resolution: numb
 
     return {
         frequency: fractionalFrequencies,
-        magnitude: Array.from(smoothed),
-        phase: Array.from(smoothedPhase),
+        magnitude: smoothed,
+        phase: smoothedPhase,
         fftSize
     };
 }
 
-export function computeFFT(data: Array<number> | Float32Array, fftSize: number | null = null): FFTResult {
+export function computeFFT(data: Float32Array | Float32Array, fftSize: number | null = null): FFTResult {
     fftSize ??= 2 ** Math.ceil(Math.log2(data.length));
     console.log(`Computing FFT with ${fftSize} bins for data length ${data.length}`);
     const fft = new FFT(fftSize);
     const out = fft.createComplexArray();
 
     // Fix data length by zero-padding or truncating.
-    const frame = new Float32Array(fftSize);
+    const frame = Float32Array.from({ length: fftSize }, () => 0);
     for (let i = 0; i < fftSize; i++) {
         frame[i] = (data[i] || 0) * 1;
     }
     fft.realTransform(out, frame);
     
-    const frequency: number[] = [];
-    const magnitude: number[] = [];
-    const phase: number[] = [];
+    const frequency = Float32Array.from({ length: fftSize / 2 }, () => 0);
+    const magnitude = Float32Array.from({ length: fftSize / 2 }, () => 0);
+    const phase = Float32Array.from({ length: fftSize / 2 }, () => 0);
 
     for (let i = 0; i < fftSize / 2; i++) {
             const re = out[2 * i];
@@ -245,7 +427,7 @@ export interface CorrelationResult {
     nfft: number;
 }
 
-export function fftCorrelation(x: number[] | Float32Array, y: number[] | Float32Array): CorrelationResult {
+export function fftCorrelation(x: Float32Array | Float32Array, y: Float32Array | Float32Array): CorrelationResult {
     // cross-correlate x with y using FFT (fft.js). Returns normalized cross-correlation,
     // lags (samples), estimated lag (samples) and peak correlation value.
     const lenX = x.length;
@@ -261,8 +443,8 @@ export function fftCorrelation(x: number[] | Float32Array, y: number[] | Float32
     const n = nextPow2(fullLen);
 
     // zero-pad inputs to length n
-    const xP = new Float32Array(n);
-    const yP = new Float32Array(n);
+    const xP = Float32Array.from({ length: n }, () => 0);
+    const yP = Float32Array.from({ length: n }, () => 0);
     xP.set(x, 0);
     yP.set(y, 0);
 
@@ -294,7 +476,7 @@ export function fftCorrelation(x: number[] | Float32Array, y: number[] | Float32
     fft.inverseTransform(out, C);
 
     // real part / n gives linear cross-correlation (no circular wrap because padded)
-    const corr = new Float64Array(fullLen);
+    const corr = Float64Array.from({ length: fullLen }, () => 0);
     for (let i = 0; i < fullLen; i++) {
         corr[i] = out[2 * i] / n;
     }
@@ -305,7 +487,7 @@ export function fftCorrelation(x: number[] | Float32Array, y: number[] | Float32
     for (let i = 0; i < lenY; i++) sumY2 += y[i] * y[i];
     const denom = Math.sqrt(sumX2 * sumY2);
 
-    const normalized = new Float64Array(fullLen);
+    const normalized = Float64Array.from({ length: fullLen }, () => 0);
     if (denom > 0) {
         for (let i = 0; i < fullLen; i++) normalized[i] = corr[i] / denom;
     } else {
@@ -340,7 +522,7 @@ export function fftCorrelation(x: number[] | Float32Array, y: number[] | Float32
 }
 
 
-export function fftConvolve(x: number[] | Float32Array, y: number[] | Float32Array, mode: 'same' | 'full' = 'same'): Array<number> {
+export function fftConvolve(x: Float32Array | Float32Array, y: Float32Array | Float32Array, mode: 'same' | 'full' = 'same'): Float32Array {
     const lenX = x.length;
     const lenY = y.length;
     const fullLen = lenX + lenY - 1;
@@ -349,8 +531,8 @@ export function fftConvolve(x: number[] | Float32Array, y: number[] | Float32Arr
     const n = nextPow2(fullLen);
 
     // zero-pad inputs to length n
-    const xP = new Float32Array(n);
-    const yP = new Float32Array(n);
+    const xP = Float32Array.from({ length: n }, () => 0);
+    const yP = Float32Array.from({ length: n }, () => 0);
     xP.set(x, 0);
     yP.set(y, 0);
 
@@ -381,7 +563,7 @@ export function fftConvolve(x: number[] | Float32Array, y: number[] | Float32Arr
     fft.inverseTransform(out, C);
 
     // extract real part and normalize by n
-    const result = new Float64Array(fullLen);
+    const result = Float32Array.from({ length: fullLen }, () => 0);
     for (let i = 0; i < fullLen; i++) {
         result[i] = out[2 * i];
     }
@@ -389,23 +571,23 @@ export function fftConvolve(x: number[] | Float32Array, y: number[] | Float32Arr
     // return 'same' mode (centered, matching first input length)
     if (mode === 'same') {
         const start = Math.floor((fullLen - lenX) / 2);
-        return Array.from(result).slice(start, start + lenX);
+        return result.slice(start, start + lenX);
     }
 
-    return Array.from(result);
+    return result;
 }
 
 export interface ImpulseResponseResult {
-    ir: Array<number>;
-    ir_complex: Array<number>;
-    t: Array<number>;
+    ir: Float32Array;
+    ir_complex: Float32Array;
+    t: Float32Array;
     peakAt: number;
     sampleRate: number;
     fftSize: number;
 }
 
 
-function max(arr: Array<number>): number {
+function max(arr: Float32Array): number {
     let maxVal = -Infinity;
     for (let i = 0; i < arr.length; i++) {
         if (arr[i] > maxVal) {
@@ -417,18 +599,20 @@ function max(arr: Array<number>): number {
 
 class Farina {
     /* Farina deconvolution implementation according to the Python implementation. */
-    constructor(stimulus: Array<number>, f_start: number = 50, f_stop: number = 22800, fs: number = 48000) {
+    constructor(stimulus: Float32Array, f_start: number = 50, f_stop: number = 22800, fs: number = 48000) {
         this.f_start = f_start;
         this.f_stop = f_stop;
         this.fs = fs;
         this.stimulus = stimulus;
+        this.duration = this.stimulus.length / this.fs;
     }
 
     f_start: number;
     f_stop: number;
     fs: number;
-    stimulus: Array<number>;
-    deconvolved: Array<number> = [];
+    stimulus: Float32Array;
+    deconvolved: Float32Array = Float32Array.from([]);
+    duration: number;
 
     lag_of_harmonic(n: number) {
         return this.ell() * Math.log(n);
@@ -438,26 +622,22 @@ class Farina {
         return this.ell() * Math.log(n + 1) - this.ell() * Math.log(n);
     }
 
-    max_safe_harmonic(window_size: number): number | null {
+    max_safe_harmonic(window_size: number): number {
         const t: number[] = [];
         for (let n = 1; n < 1000; n++) {
             if (this.margin_of_harmonic(n) > window_size) {
                 t.push(this.margin_of_harmonic(n));
             }
         }
-        return t.length < 999 ? t.length : null;
+        return t.length < 999 ? t.length : 0;
     }
 
     ell(): number {
-        return 255788 / Math.log(this.f_stop / this.f_start) / this.fs;
+        return this.duration / Math.log(this.f_stop / this.f_start);
     }
 
     rate(length: number): number {
         return 1 / this.f_start * Math.PI * Math.round(length * this.f_start / Math.log2(this.f_stop / this.f_start));
-    }
-
-    duration(): number {
-        return this.stimulus.filter(v => v !== 0).length / this.fs;
     }
 
     instant(): number {
@@ -465,12 +645,12 @@ class Farina {
         return closest(100000000, this.deconvolved);
     }
 
-    window(signal: Array<number>, at: number, length: number): Array<number> {
+    window(signal: Float32Array, at: number, length: number): Float32Array {
         const size = Math.floor(length * this.fs);
-        const window: Array<number> = getSelectedWindow('hanning', size);
+        const window: Float32Array = getSelectedWindow('hanning', size);
         const sig = this.deconvolution(signal);
         const si = sig.slice(at - size / 2, at + size / 2);
-        const w = new Array<number>(size);
+        const w = Float32Array.from({ length: size }, () => 0);
         return si;
         if (si.length === window.length) {
             for (let i = 0; i < window.length; i++) {
@@ -478,17 +658,17 @@ class Farina {
             }
             return w;
         } else {
-            return new Array<number>(window.length); // zeros
+            return Float32Array.from({ length: window.length }, () => 0); // zeros
         }        
     }
 
-    deconvolution(signal: Array<number>): Array<number> {
-        const n: number[] = linspace(0, this.stimulus.length - 1, this.stimulus.length);
-        const k: number[] = n.map(v => Math.exp(v / this.ell() / this.fs)); // simplified for first element
+    deconvolution(signal: Float32Array, customLength: number = 5.5): Float32Array {
+        const n: Float32Array = linspace(0, this.stimulus.length - 1, this.stimulus.length);
+        const k: Float32Array = n.map(v => Math.exp(v / this.ell() / this.fs)); // simplified for first element
 
         const inv_stimulus = this.stimulus.slice().reverse().map ((v, i) => v / k[i]);
 
-        const deconvolved: number[] = fftConvolve(signal, inv_stimulus, 'same').slice().reverse();
+        const deconvolved: Float32Array = fftConvolve(signal, inv_stimulus, 'same').slice().reverse();
         const norm = max(fftConvolve(this.stimulus, inv_stimulus, 'same').map(v => Math.abs(v)));
 
         this.deconvolved = deconvolved;
@@ -498,23 +678,23 @@ class Farina {
     
 }
 
-export function FarinaImpulseResponse(y: Array<number>, x: Array<number>): ImpulseResponseResult {
-    const farina = new Farina(x, 50, 22800, 48000);
+export function FarinaImpulseResponse(y: Float32Array, x: Float32Array, customLength: number = 5.5): ImpulseResponseResult {
+    const farina = new Farina(x, 2, 20000, 48000);
 
-    const measurementResponse = farina.deconvolution(y);
+    const measurementResponse = farina.deconvolution(y, customLength);
     console.log(farina.max_safe_harmonic(0.1));
     
     const peakAt = farina.instant();
     console.log('peakAt', peakAt);
     
-    const s: number[] = farina.window(y, peakAt + farina.lag_of_harmonic(1) * 48000, 0.1); // 250 ms windowed IR
+    const s: Float32Array = farina.window(y, peakAt + farina.lag_of_harmonic(2) * 48000, 0.1); // 250 ms windowed IR
 
-    const ir = Array.from(new Float32Array(s.length));
+    const ir = Float32Array.from({ length: s.length }, () => 0);
     for (let i = 0; i < s.length; i++) {
         ir[i] = s[i];
     }
 
-    const ir_complex = Array.from(new Float32Array(s.length * 2));
+    const ir_complex = Float32Array.from({ length: s.length * 2 }, () => 0);
     for (let i = 0; i < s.length; i++) {
             ir_complex[2 * i] = s[i];
             ir_complex[2 * i + 1] = 0;
@@ -523,7 +703,7 @@ export function FarinaImpulseResponse(y: Array<number>, x: Array<number>): Impul
     return {
         ir,
         ir_complex,
-        t: Array.from(linspace((-measurementResponse.length - 1) / 2 / 48000, (measurementResponse.length - 1) / 2 / 48000, measurementResponse.length)),
+        t: linspace((-measurementResponse.length - 1) / 2 / 48000, (measurementResponse.length - 1) / 2 / 48000, measurementResponse.length),
         peakAt,
         sampleRate: 48000,
         fftSize: measurementResponse.length,
@@ -531,15 +711,15 @@ export function FarinaImpulseResponse(y: Array<number>, x: Array<number>): Impul
 }
 
 
-export function twoChannelImpulseResponse(y: number[] | Float32Array, x: number[] | Float32Array): ImpulseResponseResult {
+export function twoChannelImpulseResponse(y: Float32Array, x: Float32Array): ImpulseResponseResult {
     // Calculate the impulse response by taking the IFFT of the division of the FFTs of output and input signals.
     const fullLen = y.length + x.length - 1;
     
     const N = nextPow2(fullLen);
 
     // zero-pad inputs to length n
-    const xP = new Float32Array(N);
-    const yP = new Float32Array(N);
+    const xP = Float32Array.from({ length: N }, () => 0);
+    const yP = Float32Array.from({ length: N }, () => 0);
     xP.set(y, 0);
     yP.set(x, 0);
 
@@ -563,11 +743,11 @@ export function twoChannelImpulseResponse(y: number[] | Float32Array, x: number[
     }
 
     // inverse FFT of cross-spectrum
-    const out = fft.createComplexArray();
+    const out = Float32Array.from(fft.createComplexArray());
     fft.inverseTransform(out, C);
 
     // Real part / N gives impulse response. This is shifted by N/2.
-    const ir = Array.from(new Float32Array(N));
+    const ir = Float32Array.from({ length: N }, () => 0);
     for (let i = 0; i < N; i++) {
         ir[i] = out[2 * (( i + N/2) % N)]; // normalize by input length
     }
@@ -588,23 +768,40 @@ export function twoChannelImpulseResponse(y: number[] | Float32Array, x: number[
     return {
         ir,
         ir_complex,
-        t: Array.from(linspace((-N - 1) / 2 / 48000, (N - 1) / 2 / 48000, N)), // assuming 48kHz
+        t: linspace((-N - 1) / 2 / 48000, (N - 1) / 2 / 48000, N), // assuming 48kHz
         peakAt,
         sampleRate: 48000,
         fftSize: N,
     };
 }
 
-export function twoChannelFFT(dataArray: number[] | Float32Array, reference: number[] | Float32Array, fftSize: number, offset: number): FFTResult {
-    const dataPadded = new Float32Array(fftSize);
-    const referencePadded = new Float32Array(fftSize);
+export function twoChannelFFT(dataArray: Float32Array | Float32Array, reference: Float32Array | Float32Array, fftSize: number, offset: number): FFTResult {
+    const dataPadded = Float32Array.from({ length: fftSize }, () => 0);
+    const referencePadded = Float32Array.from({ length: fftSize }, () => 0);
 
     if (offset >= 0) {
-        referencePadded.set(reference.slice(0, Math.min(reference.length, fftSize) - offset), offset);
-        dataPadded.set(dataArray.slice(0, Math.min(dataArray.length, fftSize)), 0);
+        // copy reference into referencePadded starting at 'offset'
+        const refLen = Math.min(reference.length, Math.max(0, fftSize - offset));
+        for (let i = 0; i < refLen; i++) {
+            referencePadded[offset + i] = reference[i];
+        }
+        // copy dataArray into dataPadded starting at 0
+        const dataLen = Math.min((dataArray as Float32Array).length, fftSize);
+        for (let i = 0; i < dataLen; i++) {
+            dataPadded[i] = (dataArray as Float32Array)[i];
+        }
     } else {
-        referencePadded.set(reference.slice(0, Math.min(reference.length, fftSize)), 0);
-        dataPadded.set(dataArray.slice(-offset, Math.min(dataArray.length, fftSize) + offset), -offset);
+        // offset < 0: copy reference starting at 0
+        const refLen = Math.min(reference.length, fftSize);
+        for (let i = 0; i < refLen; i++) {
+            referencePadded[i] = reference[i];
+        }
+        // place dataArray into dataPadded starting at -offset
+        const start = -offset;
+        const dataLen = Math.min((dataArray as Float32Array).length, Math.max(0, fftSize - start));
+        for (let i = 0; i < dataLen; i++) {
+            dataPadded[start + i] = (dataArray as Float32Array)[i];
+        }
     }
 
     //const rmss = rms(referencePadded);
@@ -628,9 +825,9 @@ export function twoChannelFFT(dataArray: number[] | Float32Array, reference: num
     const phase = sphase.map(v => (v - correction)); // relative to 50 Hz
 
     // simple phase unwrapping (returns Float32Array)
-    function unwrapPhase(phases: number[]): Array<number> {
+    function unwrapPhase(phases: Float32Array): Float32Array {
         const N = phases.length;
-        const out = Array.from(new Float32Array(N));
+        const out = Float32Array.from({ length: N }, () => 0);
         if (N === 0) return out;
         out[0] = phases[0];
         let offset = 0;
@@ -655,29 +852,28 @@ export function twoChannelFFT(dataArray: number[] | Float32Array, reference: num
     };
 }
 
-export function computeFFTFromIR(ir: ImpulseResponseResult, f_phase_wrap: number = 50): FFTResult {
-    const magnitude: number[] = [];
-    const phase: number[] = [];
-
-    const N = nextPow2(ir.ir.length);
-    console.log(`Computing FFT from IR with size ${N}`);
+export function computeFFTFromIR(ir: ImpulseResponseResult, f_phase_wrap: number = 1000): FFTResult {
+    const fftSize = nextPow2(ir.ir.length);
+    console.log(`Computing FFT from IR with size ${fftSize}`);
     
-    const fft = new FFT(N);
-    const out = fft.createComplexArray();
-
+    const fft = new FFT(fftSize);
+    const out = Float32Array.from(fft.createComplexArray());
     if (ir.ir_complex[1] === 0) {
         console.log("IR is in real format, converting to complex");
         // real IR, convert to complex
-        const frame = new Array<number>(N);
-        for (let i = 0; i < N; i++) {
+        const frame = Float32Array.from({ length: fftSize }, () => 0);
+        for (let i = 0; i < fftSize; i++) {
             frame[i] = (ir.ir_complex[2 * i] || 0);
         }
         fft.realTransform(out, frame);
     } else {
         fft.transform(out, ir.ir_complex);
     }
+
+    const magnitude = Float32Array.from({ length: fftSize / 2 }, () => 0);
+    const phase = Float32Array.from({ length: fftSize / 2 }, () => 0);
     
-    for (let i = 0; i < N / 2; i++) {
+    for (let i = 0; i < fftSize / 2; i++) {
         const re = out[2 * i];
         const im = out[2 * i + 1];
         magnitude[i] = abs(re, im);
@@ -692,9 +888,9 @@ export function computeFFTFromIR(ir: ImpulseResponseResult, f_phase_wrap: number
     const corrected_unwraped_phase = unwraped_phase.map(v => (v - correction)); // relative to 50 Hz
 
     // simple phase unwrapping (returns Float32Array)
-    function unwrapPhase(phases: number[]): Array<number> {
+    function unwrapPhase(phases: Float32Array): Float32Array {
         const N = phases.length;
-        const out = Array.from(new Float32Array(N));
+        const out = Float32Array.from({ length: N }, () => 0);
         if (N === 0) return out;
         out[0] = phases[0];
         let offset = 0;
@@ -714,31 +910,58 @@ export function computeFFTFromIR(ir: ImpulseResponseResult, f_phase_wrap: number
         frequency,
         magnitude,
         phase: corrected_unwraped_phase.map(v => v / Math.PI * 180),
-        fftSize: N,
+        peakAt: ir.peakAt,
+        sampleRate: ir.sampleRate,
+        fftSize: fftSize,
     };
 }
 
-export const A_WEIGHTING_COEFFICIENTS: [number[], number[]] = [
-    [0.234301792299513, -0.468603584599026, -0.234301792299513, 0.937207169198054, -0.234301792299515, -0.468603584599025, 0.234301792299513],
-    [1.000000000000000, -4.113043408775871, 6.553121752655047, -4.990849294163381, 1.785737302937573, -0.246190595319487, 0.011224250033231],
+export function groupDelays(fftData: FFTResult, normalizeAt: number = 1000): Float32Array {
+    const { frequency, phase, peakAt } = fftData;
+    const N = frequency.length;
+    const groupDelay = Float32Array.from({ length: N }, () => 0);
+
+    // Numerical differentiation of unwrapped phase
+    for (let i = 1; i < N - 1; i++) {
+        const dPhase = (phase[i] - phase[i - 1]);
+        const dFreq = (frequency[i] - frequency[i - 1]);
+        groupDelay[i] = -dPhase / dFreq / 360; // in seconds
+    }
+    // Edge cases
+    groupDelay[0] = groupDelay[1];
+    groupDelay[N - 1] = groupDelay[N - 2];
+
+    // Normalize group delay at specified frequency and add delay to make it zero there.
+    const normIdx = closest(normalizeAt, frequency);
+    const delayAtNorm = groupDelay[normIdx];
+    for (let i = 0; i < N; i++) {
+        groupDelay[i] = (groupDelay[i] - delayAtNorm) * 10; // assuming 48kHz sample rate, s => ms.
+    }
+
+    return groupDelay;
+}
+
+export const A_WEIGHTING_COEFFICIENTS: [Float32Array, Float32Array] = [
+    Float32Array.from([0.234301792299513, -0.468603584599026, -0.234301792299513, 0.937207169198054, -0.234301792299515, -0.468603584599025, 0.234301792299513]),
+    Float32Array.from([1.000000000000000, -4.113043408775871, 6.553121752655047, -4.990849294163381, 1.785737302937573, -0.246190595319487, 0.011224250033231]),
 ];
 // Coefficients for K-weighting filter (pre-emphasis and high-frequency shelving)
 // From ITU-R BS.1770-4, Table 1
 // https://www.itu.int/dms_pubrec/itu-r/rec/bs/r-rec-bs.1770-2-201103-s!!pdf-e.pdf
-export const K_WEIGHTING_COEFFICIENTS_PRE: [number[], number[]] = [
-    [1.53512485958697, -2.69169618940638, 1.19839281085285],
-    [1, -1.69065929318241, 0.73248077421585]
+export const K_WEIGHTING_COEFFICIENTS_PRE: [Float32Array, Float32Array] = [
+    Float32Array.from([1.53512485958697, -2.69169618940638, 1.19839281085285]),
+    Float32Array.from([1, -1.69065929318241, 0.73248077421585])
 ];
 
-export const K_WEIGHTING_COEFFICIENTS_RLB: [number[], number[]] = [
-    [1.0, -2.0, 1.0],
-    [1, -1.99004745483398, 0.99007225036621]
+export const K_WEIGHTING_COEFFICIENTS_RLB: [Float32Array, Float32Array] = [
+    Float32Array.from([1.0, -2.0, 1.0]),
+    Float32Array.from([1, -1.99004745483398, 0.99007225036621])
 ];
 
-export function applyAWeightingToBuffer(buffer: Float32Array, zi: number[]): Float32Array {
+export function applyAWeightingToBuffer(buffer: Float32Array, zi: Float32Array): Float32Array {
     const b = A_WEIGHTING_COEFFICIENTS[0];
     const a = A_WEIGHTING_COEFFICIENTS[1];
-    const output = new Float32Array(buffer.length);
+    const output = Float32Array.from({ length: buffer.length }, () => 0);
     for (let n = 0; n < buffer.length; n++) {
         output[n] = b[0] * buffer[n] + zi[0];
         for (let i = 1; i < b.length; i++) {
@@ -753,17 +976,20 @@ export function gateBuffer(buffer: Float32Array, sampleRate: number, thresholdDb
     const hopSize = Math.floor(blockSize * (1 - overlap));
     const threshold = dbToLinear(thresholdDb);
 
-    const gated = new Float32Array(buffer.length);
+    const gated = Float32Array.from({ length: buffer.length }, () => 0);
     let i = 0;
 
     while (i < buffer.length) {
         const start = i;
         const end = Math.min(i + blockSize, buffer.length);
-        const block = buffer.subarray(start, end);
+        const block = buffer.slice(start, end);
         const blockRms = rms(block);
 
         if (blockRms >= threshold) {
-            gated.set(block, start);
+            // copy block into gated at position 'start'
+            for (let j = 0; j < block.length; j++) {
+                gated[start + j] = block[j];
+            }
         }
         // else: leave zeros (gate closed)
 
@@ -773,81 +999,20 @@ export function gateBuffer(buffer: Float32Array, sampleRate: number, thresholdDb
     return gated;
 }
 
-/**
- * Calculate ITU-R BS.1770-4 loudness (LKFS/LUFS) for a mono or stereo buffer.
- * https://www.itu.int/dms_pubrec/itu-r/rec/bs/R-REC-BS.1770-5-202311-I!!PDF-E.pdf
- * @param input - Mono buffer or array of channel buffers.
- * @param sampleRate - Sample rate in Hz.
- * @returns Integrated loudness in LUFS.
- */
-export function bs1770Loudness(input: Float32Array | Float32Array[], sampleRate: number): number {
-    // K-weighting filter coefficients (biquad, 2nd order)
-    // From ITU-R BS.1770-4, Table 1
-    const b = [1.53512485958697, -2.69169618940638, 1.19839281085285];
-    const a = [1, -1.69065929318241, 0.73248077421585];
+export const audio = {
+    loadAudioFile,
+    chirp,
+    computeFFT,
+    smoothFFT,
+    fftCorrelation,
+    fftConvolve,
+    FarinaImpulseResponse,
+    twoChannelImpulseResponse,
+    computeFFTFromIR,
+    twoChannelFFT,
+    groupDelays,
+    applyAWeightingToBuffer,
+    gateBuffer,
+};
 
-    // Helper: apply biquad filter to a buffer
-    function biquadFilter(buffer: Float32Array, b: number[], a: number[]): Float32Array {
-        const out = new Float32Array(buffer.length);
-        let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
-        for (let n = 0; n < buffer.length; n++) {
-            const x0 = buffer[n];
-            const y0 = b[0] * x0 + b[1] * x1 + b[2] * x2 - a[1] * y1 - a[2] * y2;
-            out[n] = y0;
-            x2 = x1; x1 = x0;
-            y2 = y1; y1 = y0;
-        }
-        return out;
-    }
-
-    // Accept mono or stereo
-    let channels: Float32Array[];
-    if (Array.isArray(input)) {
-        channels = input;
-    } else {
-        channels = [input];
-    }
-
-    // Apply K-weighting filter to each channel
-    const filtered = channels.map(ch => biquadFilter(ch, b, a));
-
-    // Gating parameters
-    const windowMs = 400;
-    const windowSize = Math.floor(windowMs * sampleRate / 1000);
-    const overlapRatio = 0.75;
-    const hopSize = Math.floor(windowSize * (1 - overlapRatio));
-    const absoluteGate = dbToLinear(-70);
-    const relativeGateOffset = -10; // dB
-
-    // Calculate channel weights (ITU: [1, 1] for stereo)
-    const weights = channels.length === 2 ? [1, 1] : [1];
-
-    // Calculate block energies
-    let energies: number[] = [];
-    for (let i = 0; i + windowSize <= filtered[0].length; i += hopSize) {
-        let sum = 0;
-        for (let ch = 0; ch < filtered.length; ch++) {
-            const block = filtered[ch].subarray(i, i + windowSize);
-            const blockSum = block.reduce((acc, v) => acc + v * v, 0);
-            sum += weights[ch] * blockSum;
-        }
-        const energy = sum / (windowSize * weights.reduce((a, b) => a + b, 0));
-        energies.push(energy);
-    }
-
-    // Absolute gating
-    const gatedEnergies = energies.filter(e => e >= absoluteGate);
-
-    if (gatedEnergies.length === 0) return -Infinity;
-
-    // Relative gating
-    const meanEnergy = gatedEnergies.reduce((a, b) => a + b, 0) / gatedEnergies.length;
-    const relativeGate = meanEnergy * dbToLinear(relativeGateOffset);
-    const finalEnergies = gatedEnergies.filter(e => e >= relativeGate);
-
-    if (finalEnergies.length === 0) return -Infinity;
-
-    // Integrated loudness (LUFS)
-    const integrated = finalEnergies.reduce((a, b) => a + b, 0) / finalEnergies.length;
-    return linearToDb(Math.sqrt(integrated));
-}
+export default audio;

@@ -2,7 +2,7 @@ import { average, closest, logspace, linspace } from './math';
 
 console.debug("Fractional Octave Smoothing module loaded");
 
-export function getFractionalOctaveFrequencies(fraction: number, f_low: number = 20, f_high: number = 24000, fftSize: number): number[] {
+export function getFractionalOctaveFrequencies(fraction: number, f_low: number = 20, f_high: number = 24000, fftSize: number): Float32Array {
     if (fraction <= 0) {
         throw new Error("Fraction must be greater than 0");
     }
@@ -21,12 +21,12 @@ export function getFractionalOctaveFrequencies(fraction: number, f_low: number =
     for (let i = 0; i < frequencies.length; i++) {
         frequencies[i] = Math.round(frequencies[i] / frequency_resolution) * frequency_resolution;
     }
-    frequencies = Array.from(new Set(frequencies)); // Remove duplicates
+    frequencies = Float32Array.from(new Set(frequencies)); // Remove duplicates
 
     return frequencies;
 }
 
-export function fractionalOctaveSmoothing(frequencyData: number[], fraction: number, frequencies: number[]): Float32Array {
+export function fractionalOctaveSmoothing(frequencyData: Float32Array, fraction: number, frequencies: Float32Array): Float32Array {
     const frequenciesAll = linspace(0, 48000 / 2, frequencyData.length);
     const frequency_resolution = 48000 / frequencyData.length;
     const smoothedData = new Float32Array(frequencies.length);

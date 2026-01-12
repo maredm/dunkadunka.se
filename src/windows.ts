@@ -59,28 +59,13 @@ function equirippleWindow(length: number, attenuation: number = 60): Float32Arra
     return window;
 }
 
-function gammaFilter(length: number, alpha: number = 2, gamma: number = 0.5): Float32Array {
-    const window = new Float32Array(length);
-    for (let i = 0; i < length; i++) {
-        // Generalized gamma window: w[n] = ((n/(N-1))^alpha) * (1 - n/(N-1))^gamma
-        const x = i / (length - 1);
-        window[i] = Math.pow(x, alpha) * Math.pow(1 - x, gamma);
-    }
-    // Optionally normalize so max is 1
-    const max = Math.max(...window);
-    if (max > 0) {
-        for (let i = 0; i < length; i++) window[i] /= max;
-    }
-    return window;
-}
-
 function rectangularWindow(length: number): Float32Array {
     const window = new Float32Array(length);
     window.fill(1);
     return window;
 }
 
-export function getSelectedWindow(windowType: WindowType, length: number): Array<number> {
+export function getSelectedWindow(windowType: WindowType, length: number): Float32Array {
     const type = windowType;
     let window = new Float32Array(length);
     let wcf = 1; // Window correction factor
@@ -88,10 +73,9 @@ export function getSelectedWindow(windowType: WindowType, length: number): Array
     if (type === 'hamming') { window = hammingWindow(length); wcf = 1.852; }
     if (type === 'blackman') { window = blackmanWindow(length); wcf = 2.381; }
     if (type === 'rectangular') { window = rectangularWindow(length); wcf = 1.000; }
-    if (type === 'gamma') { window = gammaFilter(length); wcf = 1.878; }
     window = window.map(v => v / wcf); // Scale to max 2 for better visualization
 
-    return Array.from(window);
+    return window;
 }
 
 export function tukeyWindow(length: number, alpha: number = 0.5): Float32Array {
