@@ -2,6 +2,7 @@ import { Audio, computeFFT, computeFFTFromIR, db, FFTResult, groupDelays, Impuls
 import { FarinaImpulseResponse } from "./farina";
 import { storage } from "./storage";
 import { audio } from "./audio";
+import { createWaveformEditor, WaveformEditor } from "./waveform_editor";
 import "./device-settings";
 
 console.debug("App module loaded");
@@ -20,6 +21,378 @@ const analyzeBtn = document.getElementById('analyzeBtn') as HTMLButtonElement;
 // Enable analyze button when response file is selected
 responseFileInput.addEventListener('change', () => {
     analyzeBtn.disabled = !responseFileInput.files?.length;
+});
+
+// ============================================================================
+// Acquisition Tab Functionality
+// ============================================================================
+
+interface AcquisitionState {
+    audioContext: AudioContext | null;
+    mediaRecorder: MediaRecorder | null;
+    recordedChunks: Blob[];
+    oscillatorNode: OscillatorNode | null;
+    playbackSource: AudioBufferSourceNode | null;
+    isRecording: boolean;
+}
+
+const acquisitionState: AcquisitionState = {
+    audioContext: null,
+    mediaRecorder: null,
+    recordedChunks: [],
+    oscillatorNode: null,
+    playbackSource: null,
+    isRecording: false
+};
+
+const startBtn = document.getElementById('startBtn') as HTMLButtonElement;
+const stopBtn = document.getElementById('stopBtn') as HTMLButtonElement;
+const playBtn = document.getElementById('playBtn') as HTMLButtonElement;
+const stopPlayBtn = document.getElementById('stopPlayBtn') as HTMLButtonElement;
+const sweepStartFreqInput = document.getElementById('sweepStartFreq') as HTMLInputElement;
+const sweepEndFreqInput = document.getElementById('sweepEndFreq') as HTMLInputElement;
+const sweepDurationInput = document.getElementById('sweepDuration') as HTMLInputElement;
+const recordingStatusEl = document.getElementById('recordingStatus') as HTMLElement;
+const recordingMeterEl = document.getElementById('recordingMeter') as HTMLElement;
+const recordingVisualizationEl = document.getElementById('recordingVisualization') as HTMLElement;
+const recordedAudioContainer = document.getElementById('recordedAudioContainer') as HTMLElement;
+const recordedAudioEl = document.getElementById('recordedAudio') as HTMLAudioElement;
+const analyzeRecordingBtn = document.getElementById('analyzeRecordingBtn') as HTMLButtonElement;
+const viewWaveformBtn = document.getElementById('viewWaveformBtn') as HTMLButtonElement;
+const channelSelectionContainer = document.getElementById('channelSelectionContainer') as HTMLElement;
+const channelSelect = document.getElementById('channelSelect') as HTMLSelectElement;
+
+async function initializeAudioContext(): Promise<AudioContext> {
+    if (!acquisitionState.audioContext) {
+        acquisitionState.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    if (acquisitionState.audioContext.state === 'suspended') {
+        await acquisitionState.audioContext.resume();
+    }
+    return acquisitionState.audioContext;
+}
+
+async function detectAndSetupChannels(): Promise<void> {
+    try {
+        // Request audio input to check channel count
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+            audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } 
+        });
+        
+        const audioContext = await initializeAudioContext();
+        const analyser = audioContext.createAnalyser();
+        const source = audioContext.createMediaStreamSource(stream);
+        source.connect(analyser);
+
+        // Get channel count from the stream
+        const channelCount = source.mediaStream.getAudioTracks()[0].getSettings()?.channelCount || 1;
+        
+        // Stop the stream as we only need it for channel detection
+        stream.getTracks().forEach(track => track.stop());
+
+        // Populate channel selection
+        channelSelect.innerHTML = '';
+        for (let i = 0; i < channelCount; i++) {
+            const option = document.createElement('option');
+            option.value = i.toString();
+            const channelNames = ['Left', 'Right', 'Center', 'LFE', 'Back Left', 'Back Right'];
+            option.textContent = `Channel ${i + 1}${channelNames[i] ? ` (${channelNames[i]})` : ''}`;
+            channelSelect.appendChild(option);
+        }
+
+        // Show channel selection only if more than 1 channel
+        if (channelCount > 1) {
+            channelSelectionContainer.style.display = 'flex';
+        } else {
+            channelSelectionContainer.style.display = 'none';
+        }
+    } catch (error) {
+        console.error('Error detecting channels:', error);
+        channelSelectionContainer.style.display = 'none';
+    }
+}
+
+// Detect channels when the acquisition tab is opened
+tabsContainer.addEventListener('click', (e: MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.classList.contains('tab') && target.dataset.tab === 'acquisition') {
+        detectAndSetupChannels();
+    }
+});
+
+async function startRecordingAndPlayback(): Promise<void> {
+    try {
+        // Initialize audio context and get microphone stream
+        const audioContext = await initializeAudioContext();
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+            audio: { 
+                echoCancellation: false, 
+                noiseSuppression: false, 
+                autoGainControl: false 
+            } 
+        });
+        
+        // Create media recorder
+        acquisitionState.recordedChunks = [];
+        acquisitionState.mediaRecorder = new MediaRecorder(stream);
+        acquisitionState.isRecording = true;
+
+        acquisitionState.mediaRecorder.ondataavailable = (e: BlobEvent) => {
+            acquisitionState.recordedChunks.push(e.data);
+        };
+
+        acquisitionState.mediaRecorder.onstop = async () => {
+            const recordedBlob = new Blob(acquisitionState.recordedChunks, { type: 'audio/wav' });
+            const url = URL.createObjectURL(recordedBlob);
+            recordedAudioEl.src = url;
+            recordedAudioContainer.style.display = 'block';
+            recordingVisualizationEl.style.display = 'none';
+        };
+
+        // Generate and play sweep
+        const startFreq = parseFloat(sweepStartFreqInput.value);
+        const endFreq = parseFloat(sweepEndFreqInput.value);
+        const duration = parseFloat(sweepDurationInput.value);
+        
+        // Pre and post recording buffers (in seconds)
+        const preRecordTime = 0.5;  // Start recording 0.5s before playback
+        const postRecordTime = 1.0; // Continue recording 1s after playback ends
+        const totalRecordTime = preRecordTime + duration + postRecordTime;
+
+        const [sweepSignal, , ] = audio.chirp(startFreq, endFreq, duration);
+
+        // Create audio buffer from sweep signal
+        const audioBuffer = audioContext.createBuffer(1, sweepSignal.length, audioContext.sampleRate);
+        const channelData = audioBuffer.getChannelData(0);
+        channelData.set(sweepSignal);
+
+        // Create gain nodes for monitoring
+        const sourceGain = audioContext.createGain();
+        sourceGain.gain.value = 0.5;
+
+        // Start recording
+        recordingStatusEl.textContent = `Recording for ${totalRecordTime.toFixed(1)}s...`;
+        recordingVisualizationEl.style.display = 'block';
+        acquisitionState.mediaRecorder.start();
+
+        // Update UI
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        playBtn.disabled = true;
+        sweepStartFreqInput.disabled = true;
+        sweepEndFreqInput.disabled = true;
+        sweepDurationInput.disabled = true;
+
+        // Start playback after pre-record time
+        setTimeout(() => {
+            acquisitionState.playbackSource = audioContext.createBufferSource();
+            acquisitionState.playbackSource.buffer = audioBuffer;
+            acquisitionState.playbackSource.connect(sourceGain);
+            sourceGain.connect(audioContext.destination);
+            acquisitionState.playbackSource.start();
+        }, preRecordTime * 1000);
+
+        // Stop recording after total time (pre + sweep + post)
+        setTimeout(() => {
+            stopRecording();
+        }, totalRecordTime * 1000);
+
+    } catch (error) {
+        console.error('Error starting recording:', error);
+        recordingStatusEl.textContent = `Error: ${(error as Error).message}`;
+        recordingStatusEl.style.color = '#d73a49';
+    }
+}
+
+async function playbackOnly(): Promise<void> {
+    try {
+        const audioContext = await initializeAudioContext();
+        
+        const startFreq = parseFloat(sweepStartFreqInput.value);
+        const endFreq = parseFloat(sweepEndFreqInput.value);
+        const duration = parseFloat(sweepDurationInput.value);
+
+        const [sweepSignal] = audio.chirp(startFreq, endFreq, duration);
+
+        // Create audio buffer from sweep signal
+        const audioBuffer = audioContext.createBuffer(1, sweepSignal.length, audioContext.sampleRate);
+        const channelData = audioBuffer.getChannelData(0);
+        channelData.set(sweepSignal);
+
+        // Create gain node
+        const sourceGain = audioContext.createGain();
+        sourceGain.gain.value = 0.5;
+
+        // Connect and start playback
+        acquisitionState.playbackSource = audioContext.createBufferSource();
+        acquisitionState.playbackSource.buffer = audioBuffer;
+        acquisitionState.playbackSource.connect(sourceGain);
+        sourceGain.connect(audioContext.destination);
+        acquisitionState.playbackSource.start();
+
+        recordingStatusEl.textContent = `Playing sweep...`;
+        recordingStatusEl.style.color = '#0366d6';
+
+        playBtn.disabled = true;
+        stopPlayBtn.disabled = false;
+
+        setTimeout(() => {
+            stopPlayback();
+        }, (duration + 0.5) * 1000);
+
+    } catch (error) {
+        console.error('Error during playback:', error);
+        recordingStatusEl.textContent = `Error: ${(error as Error).message}`;
+        recordingStatusEl.style.color = '#d73a49';
+    }
+}
+
+function stopRecording(): void {
+    if (acquisitionState.mediaRecorder && acquisitionState.isRecording) {
+        acquisitionState.mediaRecorder.stop();
+        acquisitionState.isRecording = false;
+
+        // Stop microphone stream
+        acquisitionState.mediaRecorder.stream.getTracks().forEach(track => track.stop());
+
+        recordingStatusEl.textContent = 'Recording complete. Ready to analyze.';
+        recordingStatusEl.style.color = '#28a745';
+    }
+
+    if (acquisitionState.playbackSource) {
+        acquisitionState.playbackSource.stop();
+    }
+
+    // Update UI
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    playBtn.disabled = false;
+    sweepStartFreqInput.disabled = false;
+    sweepEndFreqInput.disabled = false;
+    sweepDurationInput.disabled = false;
+}
+
+function stopPlayback(): void {
+    if (acquisitionState.playbackSource) {
+        try {
+            acquisitionState.playbackSource.stop();
+        } catch (e) {
+            // Already stopped
+        }
+    }
+
+    recordingStatusEl.textContent = 'Playback stopped.';
+    playBtn.disabled = false;
+    stopPlayBtn.disabled = true;
+}
+
+// Event listeners for acquisition controls
+startBtn.addEventListener('click', startRecordingAndPlayback);
+stopBtn.addEventListener('click', stopRecording);
+playBtn.addEventListener('click', playbackOnly);
+stopPlayBtn.addEventListener('click', stopPlayback);
+
+analyzeRecordingBtn.addEventListener('click', async () => {
+    if (!recordedAudioEl.src) return;
+
+    try {
+        const audioContext = await initializeAudioContext();
+        const response = await fetch(recordedAudioEl.src);
+        const arrayBuffer = await response.arrayBuffer();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        
+        // Extract the selected channel
+        const selectedChannel = parseInt(channelSelect.value, 10);
+        let recordedAudio: Audio;
+        
+        if (audioBuffer.numberOfChannels > 1 && selectedChannel < audioBuffer.numberOfChannels) {
+            // Multi-channel recording: extract selected channel
+            const channelData = audioBuffer.getChannelData(selectedChannel);
+            recordedAudio = Audio.fromSamples(channelData, audioBuffer.sampleRate);
+        } else {
+            // Single channel or default to first channel
+            recordedAudio = Audio.fromAudioBuffer(audioBuffer);
+        }
+
+        // Generate the chirp sweep as reference data
+        const startFreq = parseFloat(sweepStartFreqInput.value);
+        const endFreq = parseFloat(sweepEndFreqInput.value);
+        const duration = parseFloat(sweepDurationInput.value);
+
+        const [sweepSignal] = audio.chirp(startFreq, endFreq, duration);
+        const referenceAudio = Audio.fromSamples(sweepSignal, audioContext.sampleRate);
+
+        // Add timestamp to recording name
+        const now = new Date();
+        const dateTime = now.toLocaleString('sv-SE', { 
+            year: '2-digit', 
+            month: '2-digit', 
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+        }).replace(',', '');
+        const recordingName = `${dateTime}`;
+
+        createAnalysisTab(
+            recordedAudio.applyGain(1 / 16384),
+            referenceAudio.applyGain(1 / 16384),
+            recordingName,
+            `${startFreq}-${endFreq}Hz`
+        );
+    } catch (error) {
+        console.error('Error analyzing recording:', error);
+        alert('Error analyzing recording: ' + (error as Error).message);
+    }
+});
+
+viewWaveformBtn.addEventListener('click', async () => {
+    if (!recordedAudioEl.src) return;
+
+    try {
+        const audioContext = await initializeAudioContext();
+        const response = await fetch(recordedAudioEl.src);
+        const arrayBuffer = await response.arrayBuffer();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        
+        // Extract the selected channel
+        const selectedChannel = parseInt(channelSelect.value, 10);
+        let recordedAudio: Audio;
+        
+        if (audioBuffer.numberOfChannels > 1 && selectedChannel < audioBuffer.numberOfChannels) {
+            // Multi-channel recording: extract selected channel
+            const channelData = audioBuffer.getChannelData(selectedChannel);
+            recordedAudio = Audio.fromSamples(channelData, audioBuffer.sampleRate);
+        } else {
+            // Single channel or default to first channel
+            recordedAudio = Audio.fromAudioBuffer(audioBuffer);
+        }
+
+        // Add timestamp to tab name
+        const now = new Date();
+        const dateTime = now.toLocaleString('sv-SE', { 
+            year: '2-digit', 
+            month: '2-digit', 
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+        }).replace(',', '');
+        const recordingName = `${dateTime}`;
+
+        // Create analysis tab with only the recorded audio (no reference)
+        createAnalysisTab(
+            recordedAudio.applyGain(1 / 16384),
+            null,
+            recordingName,
+            'Waveform View'
+        );
+    } catch (error) {
+        console.error('Error viewing waveform:', error);
+        alert('Error viewing waveform: ' + (error as Error).message);
+    }
 });
 
 // Save state when the user attempts to close or reload the window
@@ -126,15 +499,15 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
     tab.dataset.tab = tabId;
     tab.innerHTML = `<span class="tab-icon-analysis"></span>${shortName} <span class="tab-close">✕</span>`;
     tabsContainer.appendChild(tab);
-
+    
     // Create tab content
     const content = document.createElement('div');
     content.className = 'tab-content';
     content.dataset.content = tabId;
     content.innerHTML = `
-        <nav class="menu-bar" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-            <div style="display:flex;align-items:center;gap:8px;">
-                <label for="smoothing-${tabId}" style="font-weight:600;color:#24292e;">Smoothing</label>
+        <!-- nav class="tab-menu-bar">
+            <div>
+                <label for="smoothing-${tabId}">Smoothing</label>
                 <select id="smoothing-${tabId}" class="smoothing-select" aria-label="Smoothing factor">
                     <option value="0">None</option>
                     <option value="1/3">1/3 octave</option>
@@ -143,18 +516,18 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
                     <option value="1/24">1/24 octave</option>
                     <option value="1/48">1/48 octave</option>
                 </select>
-                <button id="apply-smoothing-${tabId}" class="btn" style="padding:6px 10px;border-radius:4px;border:1px solid #d1d5da;background:#0366d6;color:#fff;cursor:pointer;">Apply</button>
             </div>
-            <div style="font-size:0.9rem;color:#586069;">Select smoothing factor for smoothed traces</div>
-        </nav>
-        <div class="loose-container">
-            <h5 class="text-xs italic text-gray-600">Frequency Response Analysis of ${filename}${referenceFilename ? ' / ' + referenceFilename : ''}</h5>
-            <div id="plot-${tabId}-magnitude" class="plot-medium"></div>
-            <div id="plot-${tabId}-phase" class="plot-medium"></div>
-            <div id="plot-${tabId}-ir" class="plot-medium"></div>
-            <div class="analysis-description" style="margin-bottom:12px; font-size:0.95rem; color:#24292e;">
-                <p><strong>Analysis:</strong> Magnitude, phase and impulse‑response computed from the uploaded response (and optional reference) via FFT and a two‑channel impulse response.</p>
-                <p><strong>Smoothing:</strong> Fractional‑octave smoothing applied to the reference response (1/6 octave).</p>
+        </nav -->
+        <div class="tab-inner-content">
+            <div class="loose-container">
+                <h5 class="text-xs italic text-gray-600">Frequency Response Analysis of ${filename}${referenceFilename ? ' / ' + referenceFilename : ''}</h5>
+                <div id="plot-${tabId}-magnitude" class="plot-medium"></div>
+                <div id="plot-${tabId}-phase" class="plot-medium"></div>
+                <div id="plot-${tabId}-ir" class="plot-medium"></div>
+                <div class="analysis-description" style="margin-bottom:12px; font-size:0.95rem; color:#24292e;">
+                    <p><strong>Analysis:</strong> Magnitude, phase and impulse‑response computed from the uploaded response (and optional reference) via FFT and a two‑channel impulse response.</p>
+                    <p><strong>Smoothing:</strong> Fractional‑octave smoothing applied to the reference response (1/6 octave).</p>
+               </div> 
             </div>
         </div>
     `;
@@ -163,6 +536,56 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
     // Switch to new tab
     switchTab(tabId);
 
+    // If no reference data, render waveform view instead of frequency response
+    if (!referenceData) {
+        // For waveform view, we need to replace the entire tab-inner-content structure
+        const tabInnerContent = content.querySelector<HTMLElement>('.tab-inner-content');
+        if (tabInnerContent) {
+            tabInnerContent.innerHTML = `
+                <div style="position: absolute; top: 0; left: 0; right: 0; height: 40px; display: flex; gap: 8px; align-items: center; padding: 0 12px; background: white; border-bottom: 1px solid #ddd; z-index: 10;">
+                    <h5 class="text-xs italic text-gray-600" style="margin: 0; flex-grow: 1;">Waveform View - ${filename}</h5>
+                    <button id="play-${tabId}" class="button-custom button-custom-primary">Play</button>
+                    <button id="stop-${tabId}" class="button-custom button-custom-secondary" disabled>Stop</button>
+                </div>
+                <div id="waveform-${tabId}" style="position: absolute; top: 40px; left: 0; right: 0; bottom: 0;"></div>
+            `;
+            
+            // Set tab-inner-content to position: relative for positioning context
+            tabInnerContent.style.position = 'relative';
+            tabInnerContent.style.top = '0';
+            tabInnerContent.style.left = '0';
+            tabInnerContent.style.right = '0';
+            tabInnerContent.style.bottom = '0';
+            tabInnerContent.style.padding = '0';
+            tabInnerContent.style.overflow = 'hidden';
+            tabInnerContent.style.width = '100%';
+            tabInnerContent.style.height = '100%';
+
+            // Create waveform editor
+            const waveformEl = content.querySelector<HTMLElement>(`#waveform-${tabId}`);
+            const playBtn = content.querySelector<HTMLButtonElement>(`#play-${tabId}`);
+            const stopBtn = content.querySelector<HTMLButtonElement>(`#stop-${tabId}`);
+
+            if (waveformEl && playBtn && stopBtn) {
+                const editor = createWaveformEditor(waveformEl, responseData);
+
+                playBtn.addEventListener('click', () => {
+                    editor.play();
+                    playBtn.disabled = true;
+                    stopBtn.disabled = false;
+                });
+
+                stopBtn.addEventListener('click', () => {
+                    editor.stop();
+                    playBtn.disabled = false;
+                    stopBtn.disabled = true;
+                });
+            }
+        }
+        
+        saveState();
+        return;
+    }
 
     // Compute and plot FFTs
     console.log('Analyzing response file:', filename);

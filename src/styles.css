@@ -206,8 +206,178 @@ img {
 }
 .tab-content {
     display: none;
+}
+.tab-inner-content {
     padding: 20px;
 }
 .tab-content.active {
     display: block;
+}
+.tab-menu-bar {
+    @apply flex items-center space-x-2 p-2 border-b;
+    display: flex;
+    /*border-bottom: 4px solid #ddd;*/
+    overflow-x: auto;
+    margin: 0px auto;
+    @apply flex-nowrap;
+    border: none;
+    width: fit-content;
+    overflow-y: visible;
+    height: 0;
+}
+.tab-menu-bar > div {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.tab-menu-bar label {
+    @apply text-sm;
+    color: #24292e;
+}
+
+/* Acquisition tab styles */
+.param-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.param-row label {
+    display: block;
+    width: 180px;
+    color: #24292e;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.param-input {
+    flex: 1;
+    max-width: 150px;
+    padding: 8px 10px;
+    border: 2px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    transition: border-color 0.2s;
+}
+
+.param-input:focus {
+    outline: none;
+    border-color: #0366d6;
+    background-color: #f6f8fa;
+}
+
+#channelSelect {
+    flex: 1;
+    max-width: 200px;
+    padding: 8px 10px;
+    border: 2px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    background-color: white;
+    cursor: pointer;
+    transition: border-color 0.2s;
+}
+
+#channelSelect:focus {
+    outline: none;
+    border-color: #0366d6;
+    background-color: #f6f8fa;
+}
+
+.controls-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.controls-group .button-custom {
+    display: inline-block;
+}
+
+.button-custom-secondary {
+    @apply border-2 border-solid border-gray-300 bg-white text-gray-700 rounded-md;
+}
+
+.button-custom-secondary:hover {
+    @apply bg-gray-100;
+}
+
+.button-custom-secondary:disabled {
+    @apply opacity-50 cursor-not-allowed;
+}
+
+.button-custom-secondary:disabled:hover {
+    @apply bg-white;
+}
+
+.recording-meter {
+    width: 100%;
+    height: 30px;
+    background: #f6f8fa;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    position: relative;
+    overflow: hidden;
+}
+
+.recording-meter::after {
+    content: '';
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, #28a745, #ffc107, #dc3545);
+    width: 0%;
+    transition: width 0.1s linear;
+}
+
+#recordedAudio {
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 8px;
+}
+
+/* Tab layout - ensure full height for waveform view */
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    display: flex;
+    flex-direction: column;
+}
+
+.navbar {
+    flex-shrink: 0;
+}
+
+.tabs {
+    flex-shrink: 0;
+}
+
+#tab-contents {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+    position: relative;
+}
+
+.tab-content {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+}
+
+.tab-inner-content {
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+}
+
+/* Override for regular content tabs */
+.tab-content:not(.active) {
+    display: none;
 }

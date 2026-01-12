@@ -1,4 +1,12 @@
 "use strict";
+function _array_like_to_array(arr, len) {
+    if (len == null || len > arr.length) len = arr.length;
+    for(var i = 0, arr2 = new Array(len); i < len; i++)arr2[i] = arr[i];
+    return arr2;
+}
+function _array_with_holes(arr) {
+    if (Array.isArray(arr)) return arr;
+}
 function _assert_this_initialized(self) {
     if (self === void 0) {
         throw new ReferenceError("this hasn't been initialised - super() hasn't been called");
@@ -116,6 +124,33 @@ function _instanceof(left, right) {
 function _is_native_function(fn) {
     return Function.toString.call(fn).indexOf("[native code]") !== -1;
 }
+function _iterable_to_array_limit(arr, i) {
+    var _i = arr == null ? null : typeof Symbol !== "undefined" && arr[Symbol.iterator] || arr["@@iterator"];
+    if (_i == null) return;
+    var _arr = [];
+    var _n = true;
+    var _d = false;
+    var _s, _e;
+    try {
+        for(_i = _i.call(arr); !(_n = (_s = _i.next()).done); _n = true){
+            _arr.push(_s.value);
+            if (i && _arr.length === i) break;
+        }
+    } catch (err) {
+        _d = true;
+        _e = err;
+    } finally{
+        try {
+            if (!_n && _i["return"] != null) _i["return"]();
+        } finally{
+            if (_d) throw _e;
+        }
+    }
+    return _arr;
+}
+function _non_iterable_rest() {
+    throw new TypeError("Invalid attempt to destructure non-iterable instance.\\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method.");
+}
 function _object_spread(target) {
     for(var i = 1; i < arguments.length; i++){
         var source = arguments[i] != null ? arguments[i] : {};
@@ -144,9 +179,20 @@ function _set_prototype_of(o, p) {
     };
     return _set_prototype_of(o, p);
 }
+function _sliced_to_array(arr, i) {
+    return _array_with_holes(arr) || _iterable_to_array_limit(arr, i) || _unsupported_iterable_to_array(arr, i) || _non_iterable_rest();
+}
 function _type_of(obj) {
     "@swc/helpers - typeof";
     return obj && typeof Symbol !== "undefined" && obj.constructor === Symbol ? "symbol" : typeof obj;
+}
+function _unsupported_iterable_to_array(o, minLen) {
+    if (!o) return;
+    if (typeof o === "string") return _array_like_to_array(o, minLen);
+    var n = Object.prototype.toString.call(o).slice(8, -1);
+    if (n === "Object" && o.constructor) n = o.constructor.name;
+    if (n === "Map" || n === "Set") return Array.from(n);
+    if (n === "Arguments" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n)) return _array_like_to_array(o, minLen);
 }
 function _wrap_native_super(Class) {
     var _cache = typeof Map === "function" ? new Map() : undefined;
@@ -2302,6 +2348,356 @@ var storage = {
     clearStorage: clearStorage,
     dumpStorage: dumpStorage
 };
+// src/waveform_editor.ts
+var AGGREGATED_DATA_MULTIPLIER = 256;
+var AGGREGATED_WAVEFORM_THRESHOLD = 60 * 48e3;
+var WaveformEditor = /*#__PURE__*/ function() {
+    function WaveformEditor(containerElement) {
+        _class_call_check(this, WaveformEditor);
+        this.audioData = null;
+        this.svgContainer = null;
+        this.containerEl = null;
+        this.audioContext = null;
+        this.playbackSource = null;
+        this.zoomState = {
+            start: 0,
+            end: 0,
+            inited: false
+        };
+        this.viewState = {
+            start: 0,
+            end: 0,
+            zoom: 1,
+            amplitude_scaling: 1,
+            followPlayhead: true
+        };
+        this.playheadPosition = null;
+        this.isPlaying = false;
+        this.animationFrameId = null;
+        this.aggregatedData = [];
+        this.containerEl = containerElement;
+        this.setupAudioContext();
+        this.setupSVG();
+    }
+    _create_class(WaveformEditor, [
+        {
+            key: "setupAudioContext",
+            value: function setupAudioContext() {
+                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        },
+        {
+            key: "setupSVG",
+            value: function setupSVG() {
+                var _this = this;
+                if (!this.containerEl) return;
+                this.containerEl.innerHTML = "";
+                this.svgContainer = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+                this.svgContainer.style.width = "100%";
+                this.svgContainer.style.height = "100%";
+                this.svgContainer.style.display = "block";
+                this.svgContainer.style.background = "#fff";
+                this.containerEl.appendChild(this.svgContainer);
+                this.svgContainer.addEventListener("wheel", function(e) {
+                    return _this.handleWheel(e);
+                }, {
+                    passive: false
+                });
+                this.svgContainer.addEventListener("click", function(e) {
+                    return _this.handleClick(e);
+                });
+            }
+        },
+        {
+            key: "handleWheel",
+            value: function handleWheel(e) {
+                e.preventDefault();
+                var rect = this.svgContainer.getBoundingClientRect();
+                var mouseX = e.clientX - rect.left;
+                var normX = mouseX / rect.width;
+                var visible = this.zoomState.end - this.zoomState.start;
+                var factor = Math.pow(1.003, e.deltaY);
+                var minWindow = 20;
+                var maxWindow = this.getDuration();
+                var newWindow = Math.round(visible * factor);
+                newWindow = Math.min(Math.max(newWindow, minWindow), maxWindow);
+                var focalSample = this.zoomState.start + Math.round(normX * visible);
+                var newStart = Math.round(focalSample - normX * newWindow);
+                var PAN_SENSITIVITY = 0.5;
+                if (Math.abs(e.deltaX) > 0) {
+                    var panFraction = e.deltaX * PAN_SENSITIVITY / rect.width;
+                    var panSamples = Math.round(panFraction * visible);
+                    newStart += panSamples;
+                }
+                newStart = Math.min(Math.max(0, newStart), this.getDuration() - newWindow);
+                var newEnd = newStart + newWindow;
+                this.zoomState.start = newStart;
+                this.zoomState.end = newEnd;
+                this.viewState.start = newStart;
+                this.viewState.end = newEnd;
+                this.render();
+            }
+        },
+        {
+            key: "handleClick",
+            value: function handleClick(e) {
+                var rect = this.svgContainer.getBoundingClientRect();
+                var x = e.clientX - rect.left;
+                var ratio = x / rect.width;
+                var duration = this.getDuration();
+                var samplePosition = this.zoomState.start + ratio * (this.zoomState.end - this.zoomState.start);
+                this.seek(Math.max(0, Math.min(samplePosition, duration)));
+            }
+        },
+        {
+            key: "loadAudio",
+            value: function loadAudio(audio2) {
+                this.audioData = audio2;
+                var duration = audio2.length;
+                this.zoomState = {
+                    start: 0,
+                    end: duration,
+                    inited: false
+                };
+                this.viewState.start = 0;
+                this.viewState.end = duration;
+                this.viewState.amplitude_scaling = 1;
+                this.processWaveformData();
+                this.render();
+            }
+        },
+        {
+            key: "processWaveformData",
+            value: function processWaveformData() {
+                if (!this.audioData) return;
+                this.aggregatedData = [];
+                for(var ch = 0; ch < this.audioData.numberOfChannels; ch++){
+                    var samples = this.audioData.getChannelData(ch);
+                    var aggregatedLength = Math.ceil(samples.length / AGGREGATED_DATA_MULTIPLIER);
+                    var _this_computeWaveformEnvelope = this.computeWaveformEnvelope(aggregatedLength, samples), max2 = _this_computeWaveformEnvelope.max, min = _this_computeWaveformEnvelope.min;
+                    this.aggregatedData[ch] = {
+                        max: max2,
+                        min: min
+                    };
+                }
+            }
+        },
+        {
+            key: "computeWaveformEnvelope",
+            value: function computeWaveformEnvelope(bins, samples) {
+                var step = Math.max(1, samples.length / bins);
+                var max2 = new Float32Array(bins).fill(-Infinity);
+                var min = new Float32Array(bins).fill(Infinity);
+                for(var i = 0; i < samples.length; i++){
+                    var idx = Math.floor(i / step);
+                    if (idx >= bins) break;
+                    max2[idx] = Math.max(max2[idx], samples[i]);
+                    min[idx] = Math.min(min[idx], samples[i]);
+                }
+                return {
+                    max: max2,
+                    min: min
+                };
+            }
+        },
+        {
+            key: "render",
+            value: function render() {
+                if (!this.svgContainer || !this.audioData) return;
+                var rect = this.containerEl.getBoundingClientRect();
+                var displayWidth = Math.max(1, Math.floor(rect.width));
+                var displayHeight = Math.max(1, Math.floor(rect.height));
+                this.svgContainer.setAttribute("viewBox", "0 0 ".concat(displayWidth, " ").concat(displayHeight));
+                this.svgContainer.innerHTML = "";
+                var centerY = displayHeight / 2;
+                var maxAmplitude = 0.9 * centerY;
+                var bg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                bg.setAttribute("width", displayWidth.toString());
+                bg.setAttribute("height", displayHeight.toString());
+                bg.setAttribute("fill", "#fff");
+                this.svgContainer.appendChild(bg);
+                this.drawGrid(displayWidth, displayHeight);
+                var centerLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                centerLine.setAttribute("x1", "0");
+                centerLine.setAttribute("y1", centerY.toString());
+                centerLine.setAttribute("x2", displayWidth.toString());
+                centerLine.setAttribute("y2", centerY.toString());
+                centerLine.setAttribute("stroke", "rgba(0,0,0,0.1)");
+                centerLine.setAttribute("stroke-width", "1");
+                this.svgContainer.appendChild(centerLine);
+                var channel = 0;
+                this.drawWaveform(channel, displayWidth, displayHeight, centerY, maxAmplitude);
+                if (this.playheadPosition !== null) {
+                    this.drawPlayhead(displayWidth, displayHeight);
+                }
+            }
+        },
+        {
+            key: "drawGrid",
+            value: function drawGrid(width, height) {
+                var lineCount = 5;
+                for(var i = 1; i < lineCount; i++){
+                    var y = height / lineCount * i;
+                    var line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                    line.setAttribute("x1", "0");
+                    line.setAttribute("y1", y.toString());
+                    line.setAttribute("x2", width.toString());
+                    line.setAttribute("y2", y.toString());
+                    line.setAttribute("stroke", "#e1e4e8");
+                    line.setAttribute("stroke-width", "1");
+                    this.svgContainer.appendChild(line);
+                }
+            }
+        },
+        {
+            key: "drawWaveform",
+            value: function drawWaveform(channel, width, height, centerY, maxAmplitude) {
+                if (!this.audioData || !this.aggregatedData[channel]) return;
+                var _this_aggregatedData_channel = this.aggregatedData[channel], max2 = _this_aggregatedData_channel.max, min = _this_aggregatedData_channel.min;
+                var visibleSamples = this.zoomState.end - this.zoomState.start;
+                var pathTop = "M 0 ".concat(centerY);
+                var pathBottom = "M 0 ".concat(centerY);
+                for(var x = 0; x < width; x++){
+                    var sampleIdx = this.zoomState.start + x / width * visibleSamples;
+                    var binIdx = Math.floor(sampleIdx / AGGREGATED_DATA_MULTIPLIER);
+                    if (binIdx >= max2.length) break;
+                    var maxVal = Math.max(max2[binIdx], 0) * maxAmplitude;
+                    var minVal = Math.min(min[binIdx], 0) * maxAmplitude;
+                    var yTop = centerY - maxVal;
+                    var yBottom = centerY - minVal;
+                    pathTop += " L ".concat(x, " ").concat(yTop);
+                    pathBottom += " L ".concat(x, " ").concat(yBottom);
+                }
+                pathBottom += " L ".concat(width, " ").concat(centerY, " Z");
+                var fill = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                fill.setAttribute("d", pathTop + " L ".concat(width, " ").concat(centerY) + pathBottom.slice(pathBottom.indexOf("L")));
+                fill.setAttribute("fill", "rgba(3, 102, 214, 0.15)");
+                fill.setAttribute("stroke", "none");
+                this.svgContainer.appendChild(fill);
+                var topLine = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                topLine.setAttribute("d", pathTop);
+                topLine.setAttribute("stroke", "#0366d6");
+                topLine.setAttribute("stroke-width", "1");
+                topLine.setAttribute("fill", "none");
+                this.svgContainer.appendChild(topLine);
+                var bottomLine = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                bottomLine.setAttribute("d", pathBottom.split("Z")[0]);
+                bottomLine.setAttribute("stroke", "#0366d6");
+                bottomLine.setAttribute("stroke-width", "1");
+                bottomLine.setAttribute("fill", "none");
+                this.svgContainer.appendChild(bottomLine);
+            }
+        },
+        {
+            key: "drawPlayhead",
+            value: function drawPlayhead(width, height) {
+                if (this.playheadPosition === null) return;
+                var visibleSamples = this.zoomState.end - this.zoomState.start;
+                var position = this.playheadPosition - this.zoomState.start;
+                var x = position / visibleSamples * width;
+                var line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                line.setAttribute("x1", x.toString());
+                line.setAttribute("y1", "0");
+                line.setAttribute("x2", x.toString());
+                line.setAttribute("y2", height.toString());
+                line.setAttribute("stroke", "#d73a49");
+                line.setAttribute("stroke-width", "2");
+                this.svgContainer.appendChild(line);
+            }
+        },
+        {
+            key: "play",
+            value: function play() {
+                if (!this.audioContext || !this.audioData) return;
+                this.stop();
+                var sourceBuffer = this.audioContext.createBuffer(this.audioData.numberOfChannels, this.audioData.length, this.audioContext.sampleRate);
+                for(var ch = 0; ch < this.audioData.numberOfChannels; ch++){
+                    sourceBuffer.getChannelData(ch).set(this.audioData.getChannelData(ch));
+                }
+                this.playbackSource = this.audioContext.createBufferSource();
+                this.playbackSource.buffer = sourceBuffer;
+                this.playbackSource.connect(this.audioContext.destination);
+                var startPosition = (this.playheadPosition || 0) / this.audioContext.sampleRate;
+                this.playbackSource.start(0, startPosition);
+                this.isPlaying = true;
+                this.animatePlayhead();
+            }
+        },
+        {
+            key: "stop",
+            value: function stop() {
+                if (this.playbackSource) {
+                    try {
+                        this.playbackSource.stop();
+                    } catch (e) {}
+                }
+                this.isPlaying = false;
+                if (this.animationFrameId !== null) {
+                    cancelAnimationFrame(this.animationFrameId);
+                    this.animationFrameId = null;
+                }
+            }
+        },
+        {
+            key: "seek",
+            value: function seek(samplePosition) {
+                this.stop();
+                this.playheadPosition = Math.max(0, Math.min(samplePosition, this.getDuration()));
+                this.render();
+            }
+        },
+        {
+            key: "animatePlayhead",
+            value: function animatePlayhead() {
+                var _this = this;
+                if (!this.audioContext || !this.isPlaying) return;
+                var startTime = this.audioContext.currentTime;
+                var startPosition = this.playheadPosition || 0;
+                var animate = function() {
+                    if (!_this.isPlaying) return;
+                    var elapsed = (_this.audioContext.currentTime - startTime) * _this.audioContext.sampleRate;
+                    var newPosition = startPosition + elapsed;
+                    if (newPosition >= _this.getDuration()) {
+                        _this.stop();
+                        _this.render();
+                        return;
+                    }
+                    _this.playheadPosition = newPosition;
+                    _this.render();
+                    _this.animationFrameId = requestAnimationFrame(animate);
+                };
+                this.animationFrameId = requestAnimationFrame(animate);
+            }
+        },
+        {
+            key: "getDuration",
+            value: function getDuration() {
+                return this.audioData ? this.audioData.length : 0;
+            }
+        },
+        {
+            key: "destroy",
+            value: function destroy() {
+                var _this = this;
+                this.stop();
+                if (this.svgContainer) {
+                    this.svgContainer.removeEventListener("wheel", function(e) {
+                        return _this.handleWheel(e);
+                    });
+                    this.svgContainer.removeEventListener("click", function(e) {
+                        return _this.handleClick(e);
+                    });
+                }
+            }
+        }
+    ]);
+    return WaveformEditor;
+}();
+function createWaveformEditor(containerElement, audio2) {
+    var editor = new WaveformEditor(containerElement);
+    editor.loadAudio(audio2);
+    return editor;
+}
 // src/device-settings.ts
 var INPUT_KEY = "preferredAudioInputId";
 var OUTPUT_KEY = "preferredAudioOutputId";
@@ -2538,6 +2934,505 @@ responseFileInput.addEventListener("change", function() {
     var _responseFileInput_files;
     analyzeBtn.disabled = !((_responseFileInput_files = responseFileInput.files) === null || _responseFileInput_files === void 0 ? void 0 : _responseFileInput_files.length);
 });
+var acquisitionState = {
+    audioContext: null,
+    mediaRecorder: null,
+    recordedChunks: [],
+    oscillatorNode: null,
+    playbackSource: null,
+    isRecording: false
+};
+var startBtn = document.getElementById("startBtn");
+var stopBtn = document.getElementById("stopBtn");
+var playBtn = document.getElementById("playBtn");
+var stopPlayBtn = document.getElementById("stopPlayBtn");
+var sweepStartFreqInput = document.getElementById("sweepStartFreq");
+var sweepEndFreqInput = document.getElementById("sweepEndFreq");
+var sweepDurationInput = document.getElementById("sweepDuration");
+var recordingStatusEl = document.getElementById("recordingStatus");
+var recordingMeterEl = document.getElementById("recordingMeter");
+var recordingVisualizationEl = document.getElementById("recordingVisualization");
+var recordedAudioContainer = document.getElementById("recordedAudioContainer");
+var recordedAudioEl = document.getElementById("recordedAudio");
+var analyzeRecordingBtn = document.getElementById("analyzeRecordingBtn");
+var viewWaveformBtn = document.getElementById("viewWaveformBtn");
+var channelSelectionContainer = document.getElementById("channelSelectionContainer");
+var channelSelect = document.getElementById("channelSelect");
+function initializeAudioContext() {
+    return _async_to_generator(function() {
+        return _ts_generator(this, function(_state) {
+            switch(_state.label){
+                case 0:
+                    if (!acquisitionState.audioContext) {
+                        acquisitionState.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    }
+                    if (!(acquisitionState.audioContext.state === "suspended")) return [
+                        3,
+                        2
+                    ];
+                    return [
+                        4,
+                        acquisitionState.audioContext.resume()
+                    ];
+                case 1:
+                    _state.sent();
+                    _state.label = 2;
+                case 2:
+                    return [
+                        2,
+                        acquisitionState.audioContext
+                    ];
+            }
+        });
+    })();
+}
+function detectAndSetupChannels() {
+    return _async_to_generator(function() {
+        var _source_mediaStream_getAudioTracks__getSettings, stream, audioContext, analyser, source, channelCount, i, option, channelNames, error;
+        return _ts_generator(this, function(_state) {
+            switch(_state.label){
+                case 0:
+                    _state.trys.push([
+                        0,
+                        3,
+                        ,
+                        4
+                    ]);
+                    return [
+                        4,
+                        navigator.mediaDevices.getUserMedia({
+                            audio: {
+                                echoCancellation: false,
+                                noiseSuppression: false,
+                                autoGainControl: false
+                            }
+                        })
+                    ];
+                case 1:
+                    stream = _state.sent();
+                    return [
+                        4,
+                        initializeAudioContext()
+                    ];
+                case 2:
+                    audioContext = _state.sent();
+                    analyser = audioContext.createAnalyser();
+                    source = audioContext.createMediaStreamSource(stream);
+                    source.connect(analyser);
+                    channelCount = ((_source_mediaStream_getAudioTracks__getSettings = source.mediaStream.getAudioTracks()[0].getSettings()) === null || _source_mediaStream_getAudioTracks__getSettings === void 0 ? void 0 : _source_mediaStream_getAudioTracks__getSettings.channelCount) || 1;
+                    stream.getTracks().forEach(function(track) {
+                        return track.stop();
+                    });
+                    channelSelect.innerHTML = "";
+                    for(i = 0; i < channelCount; i++){
+                        option = document.createElement("option");
+                        option.value = i.toString();
+                        channelNames = [
+                            "Left",
+                            "Right",
+                            "Center",
+                            "LFE",
+                            "Back Left",
+                            "Back Right"
+                        ];
+                        option.textContent = "Channel ".concat(i + 1).concat(channelNames[i] ? " (".concat(channelNames[i], ")") : "");
+                        channelSelect.appendChild(option);
+                    }
+                    if (channelCount > 1) {
+                        channelSelectionContainer.style.display = "flex";
+                    } else {
+                        channelSelectionContainer.style.display = "none";
+                    }
+                    return [
+                        3,
+                        4
+                    ];
+                case 3:
+                    error = _state.sent();
+                    console.error("Error detecting channels:", error);
+                    channelSelectionContainer.style.display = "none";
+                    return [
+                        3,
+                        4
+                    ];
+                case 4:
+                    return [
+                        2
+                    ];
+            }
+        });
+    })();
+}
+tabsContainer.addEventListener("click", function(e) {
+    var target = e.target;
+    if (target.classList.contains("tab") && target.dataset.tab === "acquisition") {
+        detectAndSetupChannels();
+    }
+});
+function startRecordingAndPlayback() {
+    return _async_to_generator(function() {
+        var audioContext, stream, startFreq, endFreq, duration, preRecordTime, postRecordTime, totalRecordTime, _audio_chirp, sweepSignal, audioBuffer, channelData, sourceGain, error;
+        return _ts_generator(this, function(_state) {
+            switch(_state.label){
+                case 0:
+                    _state.trys.push([
+                        0,
+                        3,
+                        ,
+                        4
+                    ]);
+                    return [
+                        4,
+                        initializeAudioContext()
+                    ];
+                case 1:
+                    audioContext = _state.sent();
+                    return [
+                        4,
+                        navigator.mediaDevices.getUserMedia({
+                            audio: {
+                                echoCancellation: false,
+                                noiseSuppression: false,
+                                autoGainControl: false
+                            }
+                        })
+                    ];
+                case 2:
+                    stream = _state.sent();
+                    acquisitionState.recordedChunks = [];
+                    acquisitionState.mediaRecorder = new MediaRecorder(stream);
+                    acquisitionState.isRecording = true;
+                    acquisitionState.mediaRecorder.ondataavailable = function(e) {
+                        acquisitionState.recordedChunks.push(e.data);
+                    };
+                    acquisitionState.mediaRecorder.onstop = function() {
+                        return _async_to_generator(function() {
+                            var recordedBlob, url;
+                            return _ts_generator(this, function(_state) {
+                                recordedBlob = new Blob(acquisitionState.recordedChunks, {
+                                    type: "audio/wav"
+                                });
+                                url = URL.createObjectURL(recordedBlob);
+                                recordedAudioEl.src = url;
+                                recordedAudioContainer.style.display = "block";
+                                recordingVisualizationEl.style.display = "none";
+                                return [
+                                    2
+                                ];
+                            });
+                        })();
+                    };
+                    startFreq = parseFloat(sweepStartFreqInput.value);
+                    endFreq = parseFloat(sweepEndFreqInput.value);
+                    duration = parseFloat(sweepDurationInput.value);
+                    preRecordTime = 0.5;
+                    postRecordTime = 1;
+                    totalRecordTime = preRecordTime + duration + postRecordTime;
+                    _audio_chirp = _sliced_to_array(audio.chirp(startFreq, endFreq, duration), 2), sweepSignal = _audio_chirp[0];
+                    audioBuffer = audioContext.createBuffer(1, sweepSignal.length, audioContext.sampleRate);
+                    channelData = audioBuffer.getChannelData(0);
+                    channelData.set(sweepSignal);
+                    sourceGain = audioContext.createGain();
+                    sourceGain.gain.value = 0.5;
+                    recordingStatusEl.textContent = "Recording for ".concat(totalRecordTime.toFixed(1), "s...");
+                    recordingVisualizationEl.style.display = "block";
+                    acquisitionState.mediaRecorder.start();
+                    startBtn.disabled = true;
+                    stopBtn.disabled = false;
+                    playBtn.disabled = true;
+                    sweepStartFreqInput.disabled = true;
+                    sweepEndFreqInput.disabled = true;
+                    sweepDurationInput.disabled = true;
+                    setTimeout(function() {
+                        acquisitionState.playbackSource = audioContext.createBufferSource();
+                        acquisitionState.playbackSource.buffer = audioBuffer;
+                        acquisitionState.playbackSource.connect(sourceGain);
+                        sourceGain.connect(audioContext.destination);
+                        acquisitionState.playbackSource.start();
+                    }, preRecordTime * 1e3);
+                    setTimeout(function() {
+                        stopRecording();
+                    }, totalRecordTime * 1e3);
+                    return [
+                        3,
+                        4
+                    ];
+                case 3:
+                    error = _state.sent();
+                    console.error("Error starting recording:", error);
+                    recordingStatusEl.textContent = "Error: ".concat(error.message);
+                    recordingStatusEl.style.color = "#d73a49";
+                    return [
+                        3,
+                        4
+                    ];
+                case 4:
+                    return [
+                        2
+                    ];
+            }
+        });
+    })();
+}
+function playbackOnly() {
+    return _async_to_generator(function() {
+        var audioContext, startFreq, endFreq, duration, _audio_chirp, sweepSignal, audioBuffer, channelData, sourceGain, error;
+        return _ts_generator(this, function(_state) {
+            switch(_state.label){
+                case 0:
+                    _state.trys.push([
+                        0,
+                        2,
+                        ,
+                        3
+                    ]);
+                    return [
+                        4,
+                        initializeAudioContext()
+                    ];
+                case 1:
+                    audioContext = _state.sent();
+                    startFreq = parseFloat(sweepStartFreqInput.value);
+                    endFreq = parseFloat(sweepEndFreqInput.value);
+                    duration = parseFloat(sweepDurationInput.value);
+                    _audio_chirp = _sliced_to_array(audio.chirp(startFreq, endFreq, duration), 1), sweepSignal = _audio_chirp[0];
+                    audioBuffer = audioContext.createBuffer(1, sweepSignal.length, audioContext.sampleRate);
+                    channelData = audioBuffer.getChannelData(0);
+                    channelData.set(sweepSignal);
+                    sourceGain = audioContext.createGain();
+                    sourceGain.gain.value = 0.5;
+                    acquisitionState.playbackSource = audioContext.createBufferSource();
+                    acquisitionState.playbackSource.buffer = audioBuffer;
+                    acquisitionState.playbackSource.connect(sourceGain);
+                    sourceGain.connect(audioContext.destination);
+                    acquisitionState.playbackSource.start();
+                    recordingStatusEl.textContent = "Playing sweep...";
+                    recordingStatusEl.style.color = "#0366d6";
+                    playBtn.disabled = true;
+                    stopPlayBtn.disabled = false;
+                    setTimeout(function() {
+                        stopPlayback();
+                    }, (duration + 0.5) * 1e3);
+                    return [
+                        3,
+                        3
+                    ];
+                case 2:
+                    error = _state.sent();
+                    console.error("Error during playback:", error);
+                    recordingStatusEl.textContent = "Error: ".concat(error.message);
+                    recordingStatusEl.style.color = "#d73a49";
+                    return [
+                        3,
+                        3
+                    ];
+                case 3:
+                    return [
+                        2
+                    ];
+            }
+        });
+    })();
+}
+function stopRecording() {
+    if (acquisitionState.mediaRecorder && acquisitionState.isRecording) {
+        acquisitionState.mediaRecorder.stop();
+        acquisitionState.isRecording = false;
+        acquisitionState.mediaRecorder.stream.getTracks().forEach(function(track) {
+            return track.stop();
+        });
+        recordingStatusEl.textContent = "Recording complete. Ready to analyze.";
+        recordingStatusEl.style.color = "#28a745";
+    }
+    if (acquisitionState.playbackSource) {
+        acquisitionState.playbackSource.stop();
+    }
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    playBtn.disabled = false;
+    sweepStartFreqInput.disabled = false;
+    sweepEndFreqInput.disabled = false;
+    sweepDurationInput.disabled = false;
+}
+function stopPlayback() {
+    if (acquisitionState.playbackSource) {
+        try {
+            acquisitionState.playbackSource.stop();
+        } catch (e) {}
+    }
+    recordingStatusEl.textContent = "Playback stopped.";
+    playBtn.disabled = false;
+    stopPlayBtn.disabled = true;
+}
+startBtn.addEventListener("click", startRecordingAndPlayback);
+stopBtn.addEventListener("click", stopRecording);
+playBtn.addEventListener("click", playbackOnly);
+stopPlayBtn.addEventListener("click", stopPlayback);
+analyzeRecordingBtn.addEventListener("click", function() {
+    return _async_to_generator(function() {
+        var audioContext, response, arrayBuffer, audioBuffer, selectedChannel, recordedAudio, channelData, startFreq, endFreq, duration, _audio_chirp, sweepSignal, referenceAudio, now, dateTime, recordingName, error;
+        return _ts_generator(this, function(_state) {
+            switch(_state.label){
+                case 0:
+                    if (!recordedAudioEl.src) return [
+                        2
+                    ];
+                    _state.label = 1;
+                case 1:
+                    _state.trys.push([
+                        1,
+                        6,
+                        ,
+                        7
+                    ]);
+                    return [
+                        4,
+                        initializeAudioContext()
+                    ];
+                case 2:
+                    audioContext = _state.sent();
+                    return [
+                        4,
+                        fetch(recordedAudioEl.src)
+                    ];
+                case 3:
+                    response = _state.sent();
+                    return [
+                        4,
+                        response.arrayBuffer()
+                    ];
+                case 4:
+                    arrayBuffer = _state.sent();
+                    return [
+                        4,
+                        audioContext.decodeAudioData(arrayBuffer)
+                    ];
+                case 5:
+                    audioBuffer = _state.sent();
+                    selectedChannel = parseInt(channelSelect.value, 10);
+                    if (audioBuffer.numberOfChannels > 1 && selectedChannel < audioBuffer.numberOfChannels) {
+                        channelData = audioBuffer.getChannelData(selectedChannel);
+                        recordedAudio = Audio.fromSamples(channelData, audioBuffer.sampleRate);
+                    } else {
+                        recordedAudio = Audio.fromAudioBuffer(audioBuffer);
+                    }
+                    startFreq = parseFloat(sweepStartFreqInput.value);
+                    endFreq = parseFloat(sweepEndFreqInput.value);
+                    duration = parseFloat(sweepDurationInput.value);
+                    _audio_chirp = _sliced_to_array(audio.chirp(startFreq, endFreq, duration), 1), sweepSignal = _audio_chirp[0];
+                    referenceAudio = Audio.fromSamples(sweepSignal, audioContext.sampleRate);
+                    now = /* @__PURE__ */ new Date();
+                    dateTime = now.toLocaleString("sv-SE", {
+                        year: "2-digit",
+                        month: "2-digit",
+                        day: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        second: "2-digit",
+                        hour12: false
+                    }).replace(",", "");
+                    recordingName = "".concat(dateTime);
+                    createAnalysisTab(recordedAudio.applyGain(1 / 16384), referenceAudio.applyGain(1 / 16384), recordingName, "".concat(startFreq, "-").concat(endFreq, "Hz"));
+                    return [
+                        3,
+                        7
+                    ];
+                case 6:
+                    error = _state.sent();
+                    console.error("Error analyzing recording:", error);
+                    alert("Error analyzing recording: " + error.message);
+                    return [
+                        3,
+                        7
+                    ];
+                case 7:
+                    return [
+                        2
+                    ];
+            }
+        });
+    })();
+});
+viewWaveformBtn.addEventListener("click", function() {
+    return _async_to_generator(function() {
+        var audioContext, response, arrayBuffer, audioBuffer, selectedChannel, recordedAudio, channelData, now, dateTime, recordingName, error;
+        return _ts_generator(this, function(_state) {
+            switch(_state.label){
+                case 0:
+                    if (!recordedAudioEl.src) return [
+                        2
+                    ];
+                    _state.label = 1;
+                case 1:
+                    _state.trys.push([
+                        1,
+                        6,
+                        ,
+                        7
+                    ]);
+                    return [
+                        4,
+                        initializeAudioContext()
+                    ];
+                case 2:
+                    audioContext = _state.sent();
+                    return [
+                        4,
+                        fetch(recordedAudioEl.src)
+                    ];
+                case 3:
+                    response = _state.sent();
+                    return [
+                        4,
+                        response.arrayBuffer()
+                    ];
+                case 4:
+                    arrayBuffer = _state.sent();
+                    return [
+                        4,
+                        audioContext.decodeAudioData(arrayBuffer)
+                    ];
+                case 5:
+                    audioBuffer = _state.sent();
+                    selectedChannel = parseInt(channelSelect.value, 10);
+                    if (audioBuffer.numberOfChannels > 1 && selectedChannel < audioBuffer.numberOfChannels) {
+                        channelData = audioBuffer.getChannelData(selectedChannel);
+                        recordedAudio = Audio.fromSamples(channelData, audioBuffer.sampleRate);
+                    } else {
+                        recordedAudio = Audio.fromAudioBuffer(audioBuffer);
+                    }
+                    now = /* @__PURE__ */ new Date();
+                    dateTime = now.toLocaleString("sv-SE", {
+                        year: "2-digit",
+                        month: "2-digit",
+                        day: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        second: "2-digit",
+                        hour12: false
+                    }).replace(",", "");
+                    recordingName = "".concat(dateTime);
+                    createAnalysisTab(recordedAudio.applyGain(1 / 16384), null, recordingName, "Waveform View");
+                    return [
+                        3,
+                        7
+                    ];
+                case 6:
+                    error = _state.sent();
+                    console.error("Error viewing waveform:", error);
+                    alert("Error viewing waveform: " + error.message);
+                    return [
+                        3,
+                        7
+                    ];
+                case 7:
+                    return [
+                        2
+                    ];
+            }
+        });
+    })();
+});
 window.addEventListener("beforeunload", function(e) {
     try {
         saveState();
@@ -2669,9 +3564,42 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
     var content = document.createElement("div");
     content.className = "tab-content";
     content.dataset.content = tabId;
-    content.innerHTML = '\n        <nav class="menu-bar" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">\n            <div style="display:flex;align-items:center;gap:8px;">\n                <label for="smoothing-'.concat(tabId, '" style="font-weight:600;color:#24292e;">Smoothing</label>\n                <select id="smoothing-').concat(tabId, '" class="smoothing-select" aria-label="Smoothing factor">\n                    <option value="0">None</option>\n                    <option value="1/3">1/3 octave</option>\n                    <option value="1/6" selected>1/6 octave</option>\n                    <option value="1/12">1/12 octave</option>\n                    <option value="1/24">1/24 octave</option>\n                    <option value="1/48">1/48 octave</option>\n                </select>\n                <button id="apply-smoothing-').concat(tabId, '" class="btn" style="padding:6px 10px;border-radius:4px;border:1px solid #d1d5da;background:#0366d6;color:#fff;cursor:pointer;">Apply</button>\n            </div>\n            <div style="font-size:0.9rem;color:#586069;">Select smoothing factor for smoothed traces</div>\n        </nav>\n        <div class="loose-container">\n            <h5 class="text-xs italic text-gray-600">Frequency Response Analysis of ').concat(filename).concat(referenceFilename ? " / " + referenceFilename : "", '</h5>\n            <div id="plot-').concat(tabId, '-magnitude" class="plot-medium"></div>\n            <div id="plot-').concat(tabId, '-phase" class="plot-medium"></div>\n            <div id="plot-').concat(tabId, '-ir" class="plot-medium"></div>\n            <div class="analysis-description" style="margin-bottom:12px; font-size:0.95rem; color:#24292e;">\n                <p><strong>Analysis:</strong> Magnitude, phase and impulse‑response computed from the uploaded response (and optional reference) via FFT and a two‑channel impulse response.</p>\n                <p><strong>Smoothing:</strong> Fractional‑octave smoothing applied to the reference response (1/6 octave).</p>\n            </div>\n        </div>\n    ');
+    content.innerHTML = '\n        <!-- nav class="tab-menu-bar">\n            <div>\n                <label for="smoothing-'.concat(tabId, '">Smoothing</label>\n                <select id="smoothing-').concat(tabId, '" class="smoothing-select" aria-label="Smoothing factor">\n                    <option value="0">None</option>\n                    <option value="1/3">1/3 octave</option>\n                    <option value="1/6" selected>1/6 octave</option>\n                    <option value="1/12">1/12 octave</option>\n                    <option value="1/24">1/24 octave</option>\n                    <option value="1/48">1/48 octave</option>\n                </select>\n            </div>\n        </nav -->\n        <div class="tab-inner-content">\n            <div class="loose-container">\n                <h5 class="text-xs italic text-gray-600">Frequency Response Analysis of ').concat(filename).concat(referenceFilename ? " / " + referenceFilename : "", '</h5>\n                <div id="plot-').concat(tabId, '-magnitude" class="plot-medium"></div>\n                <div id="plot-').concat(tabId, '-phase" class="plot-medium"></div>\n                <div id="plot-').concat(tabId, '-ir" class="plot-medium"></div>\n                <div class="analysis-description" style="margin-bottom:12px; font-size:0.95rem; color:#24292e;">\n                    <p><strong>Analysis:</strong> Magnitude, phase and impulse‑response computed from the uploaded response (and optional reference) via FFT and a two‑channel impulse response.</p>\n                    <p><strong>Smoothing:</strong> Fractional‑octave smoothing applied to the reference response (1/6 octave).</p>\n               </div> \n            </div>\n        </div>\n    ');
     tabContents.appendChild(content);
     switchTab(tabId);
+    if (!referenceData) {
+        var tabInnerContent = content.querySelector(".tab-inner-content");
+        if (tabInnerContent) {
+            tabInnerContent.innerHTML = '\n                <div style="position: absolute; top: 0; left: 0; right: 0; height: 40px; display: flex; gap: 8px; align-items: center; padding: 0 12px; background: white; border-bottom: 1px solid #ddd; z-index: 10;">\n                    <h5 class="text-xs italic text-gray-600" style="margin: 0; flex-grow: 1;">Waveform View - '.concat(filename, '</h5>\n                    <button id="play-').concat(tabId, '" class="button-custom button-custom-primary">Play</button>\n                    <button id="stop-').concat(tabId, '" class="button-custom button-custom-secondary" disabled>Stop</button>\n                </div>\n                <div id="waveform-').concat(tabId, '" style="position: absolute; top: 40px; left: 0; right: 0; bottom: 0;"></div>\n            ');
+            tabInnerContent.style.position = "relative";
+            tabInnerContent.style.top = "0";
+            tabInnerContent.style.left = "0";
+            tabInnerContent.style.right = "0";
+            tabInnerContent.style.bottom = "0";
+            tabInnerContent.style.padding = "0";
+            tabInnerContent.style.overflow = "hidden";
+            tabInnerContent.style.width = "100%";
+            tabInnerContent.style.height = "100%";
+            var waveformEl = content.querySelector("#waveform-".concat(tabId));
+            var playBtn2 = content.querySelector("#play-".concat(tabId));
+            var stopBtn2 = content.querySelector("#stop-".concat(tabId));
+            if (waveformEl && playBtn2 && stopBtn2) {
+                var editor = createWaveformEditor(waveformEl, responseData);
+                playBtn2.addEventListener("click", function() {
+                    editor.play();
+                    playBtn2.disabled = true;
+                    stopBtn2.disabled = false;
+                });
+                stopBtn2.addEventListener("click", function() {
+                    editor.stop();
+                    playBtn2.disabled = false;
+                    stopBtn2.disabled = true;
+                });
+            }
+        }
+        saveState();
+        return;
+    }
     console.log("Analyzing response file:", filename);
     console.log("Response audio data:", responseData);
     var responseSamples = responseData.getChannelData(0);

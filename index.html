@@ -54,30 +54,89 @@
         <button class="tab active" data-tab="upload">
             Upload
         </button>
-        <!--button class="tab active" data-tab="acquisition">
+        <button class="tab" data-tab="acquisition">
             <span class="tab-icon-recording"></span>Acquisition
-        </button-->
+        </button>
     </div>
 
     <div id="tab-contents">
         <div class="tab-content active" data-content="upload">
-            <div class="loose-container">
-                <h2>Waveform Frequency Response Analyzer</h2>
-                <p class="info">Upload an audio file to analyze its frequency content and optionally compare it to a reference/stimulus file.</p>
-                
-                <div class="upload-section">
-                    <h3>Response Waveform *</h3>
-                    <input type="file" id="responseFile" accept="audio/*,.wav,.mp3,.flac,.ogg">
-                    <p class="info">Required: The waveform to analyze</p>
-                </div>
+            <div class="tab-inner-content">
+                <div class="loose-container">
+                    <h2>Waveform Frequency Response Analyzer</h2>
+                    <p class="info">Upload an audio file to analyze its frequency content and optionally compare it to a reference/stimulus file.</p>
+                    
+                    <div class="upload-section">
+                        <h3>Response Waveform *</h3>
+                        <input type="file" id="responseFile" accept="audio/*,.wav,.mp3,.flac,.ogg">
+                        <p class="info">Required: The waveform to analyze</p>
+                    </div>
 
-                <div class="upload-section">
-                    <h3>Reference/Stimulus File</h3>
-                    <input type="file" id="referenceFile" accept="audio/*,.wav,.mp3,.flac,.ogg">
-                    <p class="info">Optional: Reference signal for frequency response calculation</p>
-                </div>
+                    <div class="upload-section">
+                        <h3>Reference/Stimulus File</h3>
+                        <input type="file" id="referenceFile" accept="audio/*,.wav,.mp3,.flac,.ogg">
+                        <p class="info">Optional: Reference signal for frequency response calculation</p>
+                    </div>
 
-                <button id="analyzeBtn" class="button-custom button-custom-primary" disabled>Analyze Frequency Response</button>
+                    <button id="analyzeBtn" class="button-custom button-custom-primary" disabled>Analyze Frequency Response</button>
+                </div>
+            </div>
+        </div>
+        <div class="tab-content" data-content="acquisition">
+            <div class="tab-inner-content">
+                <div class="loose-container">
+                    <h2>Audio Acquisition</h2>
+                    <p class="info">Record your microphone while a frequency sweep is played back. Use this to capture your system's frequency response.</p>
+                    
+                    <div class="upload-section">
+                        <h3>Sweep Parameters</h3>
+                        <div class="param-row">
+                            <label for="sweepStartFreq">Start Frequency (Hz):</label>
+                            <input type="number" id="sweepStartFreq" min="10" max="20000" value="20" class="param-input">
+                        </div>
+                        <div class="param-row">
+                            <label for="sweepEndFreq">End Frequency (Hz):</label>
+                            <input type="number" id="sweepEndFreq" min="10" max="20000" value="20000" class="param-input">
+                        </div>
+                        <div class="param-row">
+                            <label for="sweepDuration">Duration (seconds):</label>
+                            <input type="number" id="sweepDuration" min="0.1" max="120" step="0.1" value="6" class="param-input">
+                        </div>
+                        <div class="param-row" id="channelSelectionContainer" style="display: none;">
+                            <label for="channelSelect">Channel:</label>
+                            <select id="channelSelect" class="param-input">
+                                <option value="0">Channel 1 (Left)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="upload-section">
+                        <h3>Recording Controls</h3>
+                        <div class="controls-group">
+                            <button id="startBtn" class="button-custom button-custom-primary">Start Recording & Playback</button>
+                            <button id="stopBtn" class="button-custom button-custom-secondary" disabled>Stop Recording</button>
+                            <button id="playBtn" class="button-custom button-custom-secondary" disabled>Play Sweep Only</button>
+                            <button id="stopPlayBtn" class="button-custom button-custom-secondary" disabled>Stop Playback</button>
+                        </div>
+                        <p class="info" id="recordingStatus" style="margin-top: 12px; font-weight: bold; color: #0366d6;"></p>
+                    </div>
+
+                    <div class="upload-section">
+                        <h3>Recorded Audio</h3>
+                        <div id="recordingVisualization" style="margin-bottom: 12px; display: none;">
+                            <p class="info">Recording in progress...</p>
+                            <div id="recordingMeter" class="recording-meter"></div>
+                        </div>
+                        <div id="recordedAudioContainer" style="display: none;">
+                            <p class="info">Recorded audio:</p>
+                            <audio id="recordedAudio" controls style="width: 100%; margin-bottom: 12px;"></audio>
+                            <div class="controls-group">
+                                <button id="analyzeRecordingBtn" class="button-custom button-custom-primary">Analyze Recording</button>
+                                <button id="viewWaveformBtn" class="button-custom button-custom-secondary">View Waveform</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
