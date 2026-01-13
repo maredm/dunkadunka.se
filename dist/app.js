@@ -2014,7 +2014,7 @@ function FarinaImpulseResponse(y, x) {
     console.log(farina.max_safe_harmonic(0.1));
     var peakAt = farina.instant();
     console.log("peakAt", peakAt);
-    var s = farina.window(y, peakAt + farina.lag_of_harmonic(2) * 48e3, 0.1);
+    var s = farina.window(y, peakAt + farina.lag_of_harmonic(1) * 48e3, 0.1);
     var ir = Float32Array.from({
         length: s.length
     }, function() {

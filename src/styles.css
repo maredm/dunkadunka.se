@@ -139,7 +139,7 @@ label.button-custom:active {
     font-family: 'Newsreader', Georgia, 'Times New Roman', Times, serif;
     margin: 0 auto;
     padding: 30px;
-    border: 1px solid #ddd; /* Tailwind's gray-300 */
+    border: 1px solid #cacfca; /* Tailwind's gray-300 */
     width: 210mm;
     @apply bg-white rounded-md;
 }
@@ -153,14 +153,14 @@ img {
 .tabs {
     display: flex;
     background: #f7f8f9;
-    /*border-bottom: 4px solid #ddd;*/
     overflow-x: auto;
     @apply flex-nowrap;
-    border-bottom: #ddd solid 1px;
+    border-top: #cacfca solid 1px;
+    border-bottom: #cacfca solid 1px;
 }
 .tab-icon-recording::before {
     @apply text-red-500 font-bold mr-2 inline-block;
-    content: "⏺";
+    content: "⬤";
 }
 .tab-icon-waveform::before {
     @apply text-sky-500 font-bold mr-2 inline-block;
@@ -175,18 +175,22 @@ img {
     cursor: pointer;
     background: none;
     font-size: 14px;
-    border-top: 1px solid transparent;
+    border: 1px solid transparent;
     white-space: nowrap;
+}
+.tab.active:not(.tab-closable) {
+    background: #fff;
+    border: 1px solid #cacfca;
 }
 .tab-closable {
     padding-right: 16px;
     position: relative;
-    border-left: 1px solid #ddd;
+    border-left: 1px solid #cacfca;
     border-top: 1px solid transparent;
     @apply rounded-none py-2 m-0;
 }
 .tab-closable:last-child {
-    border-right: 1px solid #ddd;
+    border-right: 1px solid #cacfca;
 }
 .tab-closable.tab.active {
     background: #fff;
@@ -216,7 +220,7 @@ img {
 .tab-menu-bar {
     @apply flex items-center space-x-2 p-2 border-b;
     display: flex;
-    /*border-bottom: 4px solid #ddd;*/
+    /*border-bottom: 4px solid #cacfca;*/
     overflow-x: auto;
     margin: 0px auto;
     @apply flex-nowrap;
@@ -255,7 +259,7 @@ img {
     flex: 1;
     max-width: 150px;
     padding: 8px 10px;
-    border: 2px solid #ddd;
+    border: 2px solid #cacfca;
     border-radius: 4px;
     font-size: 14px;
     transition: border-color 0.2s;
@@ -271,7 +275,7 @@ img {
     flex: 1;
     max-width: 200px;
     padding: 8px 10px;
-    border: 2px solid #ddd;
+    border: 2px solid #cacfca;
     border-radius: 4px;
     font-size: 14px;
     background-color: white;
@@ -316,7 +320,7 @@ img {
     width: 100%;
     height: 30px;
     background: #f6f8fa;
-    border: 1px solid #ddd;
+    border: 1px solid #cacfca;
     border-radius: 4px;
     position: relative;
     overflow: hidden;
@@ -332,7 +336,7 @@ img {
 }
 
 #recordedAudio {
-    border: 1px solid #ddd;
+    border: 1px solid #cacfca;
     border-radius: 4px;
     padding: 8px;
 }

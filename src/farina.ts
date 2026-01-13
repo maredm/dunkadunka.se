@@ -93,7 +93,7 @@ export function FarinaImpulseResponse(y: Float32Array, x: Float32Array, customLe
     const peakAt = farina.instant();
     console.log('peakAt', peakAt);
     
-    const s: Float32Array = farina.window(y, peakAt + farina.lag_of_harmonic(2) * 48000, 0.1); // 250 ms windowed IR
+    const s: Float32Array = farina.window(y, peakAt + farina.lag_of_harmonic(1) * 48000, 0.1); // 250 ms windowed IR
 
     const ir = Float32Array.from({ length: s.length }, () => 0);
     for (let i = 0; i < s.length; i++) {
