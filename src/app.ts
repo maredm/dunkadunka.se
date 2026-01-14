@@ -520,14 +520,15 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             </nav> <h5 class="text-xs italic text-gray-600">Frequency Response Analysis of ${filename}${referenceFilename ? ' / ' + referenceFilename : ''}</h5 -->
             
         <div class="flex h-full">
-            <div class="flex-none w-64 border-r border-[#ddd] p-2 relative" style="transition:50ms linear;">
+            <div class="flex-none w-64 border-r border-[#ddd] p-2 relative sidecar" style="transition:50ms linear;">
+                <span class
                 <div class="analysis-description" style="margin-bottom:12px; font-size:0.95rem; color:#24292e;">
                     <p><strong>Analysis:</strong> Magnitude, phase and impulse‑response computed from the uploaded response (and optional reference) via FFT and a two‑channel impulse response.</p>
                     <p><strong>Smoothing:</strong> Fractional‑octave smoothing applied to the reference response (1/6 octave).</p>
                 </div>
                 <div id="resize-handle" class="resize-handle"></div>
             </div>
-            <div class="flex-1 h-full overflow-scroll-y">
+            <div class="flex-1 h-full overflow-scroll-y main-content">
                 <div class="grid grid-cols-6 gap-[1px] bg-[#ddd] border-b border-[#ddd]">
                     <div class="plot-box">
                         <div id="plot-${tabId}-magnitude" class="plot-medium"></div>

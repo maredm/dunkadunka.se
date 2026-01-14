@@ -1,15 +1,5 @@
 /* ./your-css-folder/styles.css */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-@tailwind colgroup;
-@tailwind table;
-@tailwind scrollbar;
-@tailwind forms;
-@tailwind aspect-ratio;
-@tailwind line-clamp;
-@tailwind typography;
-
+@import "tailwindcss";
 
 /* latin-ext */
 @font-face {
@@ -84,10 +74,17 @@
     --border: #ddd; /* Tailwind's gray-300 */
   }
 }
+@theme {
+  --container-3xl: 1300px;
+  --container-4xl: 2200px;
+}
 
+.main-content {
+    @apply @container/plots;
+}
 .plot-box {
-    @apply col-span-6 min-[1300px]:col-span-3 min-[2100px]:col-span-2;
-    aspect-ratio:9/6;
+    @apply col-span-6 @min-3xl/plots:col-span-3 @min-4xl/plots:col-span-2;
+    aspect-ratio:16/9;
 }
 .plot-medium {
     width: 100%;
@@ -106,6 +103,9 @@
 .resize-handle:hover, .resize-handle:active {
     transition-delay: 0.3s;
     background-color: var(--color);
+}
+.sidecar {
+    @apply bg-gray-50;
 }
 
 * {
