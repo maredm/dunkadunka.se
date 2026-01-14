@@ -912,7 +912,7 @@ video {
 }
 
 .resize-handle:hover, .resize-handle:active {
-  transition-delay: 1s;
+  transition-delay: 0.3s;
   background-color: var(--color);
 }
 
