@@ -521,7 +521,9 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             
         <div class="flex h-full">
             <div class="flex-none w-64 border-r border-[#ddd] p-2 relative sidecar" style="transition:50ms linear;">
-                <span class
+                <div>
+                <div class="analysis-title">Plots</div>
+                </div>
                 <div class="analysis-description" style="margin-bottom:12px; font-size:0.95rem; color:#24292e;">
                     <p><strong>Analysis:</strong> Magnitude, phase and impulse‑response computed from the uploaded response (and optional reference) via FFT and a two‑channel impulse response.</p>
                     <p><strong>Smoothing:</strong> Fractional‑octave smoothing applied to the reference response (1/6 octave).</p>

@@ -481,11 +481,26 @@
   grid-column: span 1 / span 1;
   grid-column: span 2 / span 2;
   grid-column: span 3 / span 3;
+  padding: calc(var(--spacing) * 2);
+  font-size: var(--text-xs);
+  line-height: var(--tw-leading, var(--text-xs--line-height));
+  text-transform: uppercase;
 }
 @layer base {
   :root {
     --border: #ddd;
   }
+}
+.analysis-title {
+  margin: calc(var(--spacing) * 1);
+  border-bottom-style: var(--tw-border-style);
+  border-bottom-width: 1px;
+  border-color: #ddd;
+  padding-inline: calc(var(--spacing) * 2);
+  padding-block: calc(var(--spacing) * 1);
+  font-size: var(--text-xs);
+  line-height: var(--tw-leading, var(--text-xs--line-height));
+  text-transform: uppercase;
 }
 .main-content {
   container-type: inline-size;
