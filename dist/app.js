@@ -2014,7 +2014,7 @@ function FarinaImpulseResponse(y, x) {
     console.log(farina.max_safe_harmonic(0.1));
     var peakAt = farina.instant();
     console.log("peakAt", peakAt);
-    var s = farina.window(y, peakAt + farina.lag_of_harmonic(1) * 48e3, 0.1);
+    var s = farina.window(y, (measurementResponse.length - 1) / 2, 0.1);
     var ir = Float32Array.from({
         length: s.length
     }, function() {
@@ -3549,6 +3549,7 @@ analyzeBtn.addEventListener("click", function() {
     })();
 });
 function createAnalysisTab(responseData, referenceData, filename, referenceFilename) {
+    var _document_getElementById;
     tabCounter++;
     var tabId = "analysis-".concat(tabCounter);
     var shortName = filename.length > 20 ? filename.substring(0, 17) + "..." : filename;
@@ -3564,7 +3565,7 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
     var content = document.createElement("div");
     content.className = "tab-content";
     content.dataset.content = tabId;
-    content.innerHTML = '\n        <!-- nav class="tab-menu-bar">\n            <div>\n                <label for="smoothing-'.concat(tabId, '">Smoothing</label>\n                <select id="smoothing-').concat(tabId, '" class="smoothing-select" aria-label="Smoothing factor">\n                    <option value="0">None</option>\n                    <option value="1/3">1/3 octave</option>\n                    <option value="1/6" selected>1/6 octave</option>\n                    <option value="1/12">1/12 octave</option>\n                    <option value="1/24">1/24 octave</option>\n                    <option value="1/48">1/48 octave</option>\n                </select>\n            </div>\n        </nav -->\n        <div class="tab-inner-content">\n            <div class="loose-container">\n                <h5 class="text-xs italic text-gray-600">Frequency Response Analysis of ').concat(filename).concat(referenceFilename ? " / " + referenceFilename : "", '</h5>\n                <div id="plot-').concat(tabId, '-magnitude" class="plot-medium"></div>\n                <div id="plot-').concat(tabId, '-phase" class="plot-medium"></div>\n                <div id="plot-').concat(tabId, '-ir" class="plot-medium"></div>\n                <div class="analysis-description" style="margin-bottom:12px; font-size:0.95rem; color:#24292e;">\n                    <p><strong>Analysis:</strong> Magnitude, phase and impulse‑response computed from the uploaded response (and optional reference) via FFT and a two‑channel impulse response.</p>\n                    <p><strong>Smoothing:</strong> Fractional‑octave smoothing applied to the reference response (1/6 octave).</p>\n               </div> \n            </div>\n        </div>\n    ');
+    content.innerHTML = '\n    <!-- nav class="tab-menu-bar">\n                <div>\n                    <label for="smoothing-'.concat(tabId, '">Smoothing</label>\n                    <select id="smoothing-').concat(tabId, '" class="smoothing-select" aria-label="Smoothing factor">\n                        <option value="0">None</option>\n                        <option value="1/3">1/3 octave</option>\n                        <option value="1/6" selected>1/6 octave</option>\n                        <option value="1/12">1/12 octave</option>\n                        <option value="1/24">1/24 octave</option>\n                        <option value="1/48">1/48 octave</option>\n                    </select>\n                </div>\n            </nav> <h5 class="text-xs italic text-gray-600">Frequency Response Analysis of ').concat(filename).concat(referenceFilename ? " / " + referenceFilename : "", '</h5 -->\n            \n        <div class="flex h-full">\n            <div class="flex-none w-64 border-r border-[#ddd] p-2 relative" style="transition:50ms linear;">\n                <div class="analysis-description" style="margin-bottom:12px; font-size:0.95rem; color:#24292e;">\n                    <p><strong>Analysis:</strong> Magnitude, phase and impulse‑response computed from the uploaded response (and optional reference) via FFT and a two‑channel impulse response.</p>\n                    <p><strong>Smoothing:</strong> Fractional‑octave smoothing applied to the reference response (1/6 octave).</p>\n                </div>\n                <div id="resize-handle" class="resize-handle"></div>\n            </div>\n            <div class="flex-1 h-full overflow-scroll-y">\n                <div class="grid grid-cols-6 gap-[1px] bg-[#ddd] border-b border-[#ddd]">\n                    <div class="plot-box">\n                        <div id="plot-').concat(tabId, '-magnitude" class="plot-medium"></div>\n                    </div>\n                    <div class="plot-box">\n                        <div id="plot-').concat(tabId, '-phase" class="plot-medium"></div>\n                    </div>\n                    <div class="plot-box">\n                        <div id="plot-').concat(tabId, '-ir" class="plot-medium"></div>\n                    </div>\n                    <div class="plot-box bg-white">\n                        <div class="plot-medium"></div>\n                    </div>\n                </div>\n            </div>\n        </div>\n        \n    ');
     tabContents.appendChild(content);
     switchTab(tabId);
     if (!referenceData) {
@@ -3687,7 +3688,7 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
         });
         tracesMagnitude.push({
             x: transferFunctionFarina.frequency.map(function(v) {
-                return v / 2;
+                return v;
             }),
             y: db(transferFunctionFarina.magnitude.map(function(v) {
                 return v * rmsValue;
@@ -3702,7 +3703,7 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
         });
         tracesMagnitude.push({
             x: smoothedFreqResponseFarina.frequency.map(function(v) {
-                return v / 2;
+                return v;
             }),
             y: smoothedFreqResponseFarina.magnitude.map(function(v) {
                 return v + db(rmsValue);
@@ -3756,10 +3757,9 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
         plotGlPixelRatio: 2,
         // For better clarity on high-DPI screens
         legend: {
-            x: 0.98,
-            y: 0.02,
-            xanchor: "right",
-            yanchor: "bottom"
+            "orientation": "h",
+            "y": -0.2,
+            "yanchor": "top"
         },
         plot_bgcolor: "#fafbfc",
         paper_bgcolor: "#fff",
@@ -3772,6 +3772,12 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
         tightenLats: true,
         font: {
             family: "'Newsreader', Georgia, 'Times New Roman', Times, serif"
+        },
+        margin: {
+            t: 80,
+            r: 65,
+            b: 70,
+            l: 65
         }
     };
     var layoutPhase = _object_spread({
@@ -3864,6 +3870,30 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
     })).catch(function(err) {
         return console.error("Failed to persist analysis:", err);
     });
+    function initResize(e) {
+        e.preventDefault();
+        window.addEventListener("mousemove", resize, false);
+        window.addEventListener("mouseup", stopResize, false);
+        console.log("Init resize");
+        document.body.style.cursor = "col-resize";
+    }
+    function resize(e) {
+        var _document_getElementById;
+        var container = content.querySelector(".flex");
+        var handle = (_document_getElementById = document.getElementById("resize-handle")) === null || _document_getElementById === void 0 ? void 0 : _document_getElementById.parentElement;
+        var rect = container.getBoundingClientRect();
+        var newWidth = e.clientX - rect.left;
+        if (newWidth > 150 && newWidth < rect.width - 150) {
+            handle.style.width = "".concat(newWidth, "px");
+        }
+    }
+    function stopResize() {
+        window.removeEventListener("mousemove", resize, false);
+        window.removeEventListener("mouseup", stopResize, false);
+        window.dispatchEvent(new Event("resize"));
+        document.body.style.cursor = "default";
+    }
+    (_document_getElementById = document.getElementById("resize-handle")) === null || _document_getElementById === void 0 ? void 0 : _document_getElementById.addEventListener("mousedown", initResize, false);
 }
 function saveState() {
     var tabs = Array.from(document.querySelectorAll(".tab[data-tab]")).map(function(tab) {

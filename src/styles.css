@@ -74,6 +74,40 @@
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
+.hej {
+    @apply grid grid-cols-2 gap-4;
+    @apply col-span-1 col-span-2 col-span-3;
+}
+
+@layer base {
+  :root {
+    --border: #ddd; /* Tailwind's gray-300 */
+  }
+}
+
+.plot-box {
+    @apply col-span-6 min-[1300px]:col-span-3 min-[2100px]:col-span-2;
+    aspect-ratio:9/6;
+}
+.plot-medium {
+    width: 100%;
+    height: 100%;
+}
+.resize-handle {
+    position: absolute;
+    top: 0;
+    right: -3px;
+    width: 4px;
+    height: 100%;
+    cursor: col-resize;
+    user-select: none;
+    z-index: 10;
+}
+.resize-handle:hover, .resize-handle:active {
+    transition-delay: 1s;
+    background-color: var(--color);
+}
+
 * {
   text-shadow: 1px 1px 1px rgba(0,0,0,0.004);
   text-rendering: optimizeLegibility !important;
@@ -139,13 +173,9 @@ label.button-custom:active {
     font-family: 'Newsreader', Georgia, 'Times New Roman', Times, serif;
     margin: 0 auto;
     padding: 30px;
-    border: 1px solid #cacfca; /* Tailwind's gray-300 */
+    border: 1px solid var(--border); /* Tailwind's gray-300 */
     width: 210mm;
     @apply bg-white rounded-md;
-}
-.plot-medium {
-    width: 100%;
-    height: 500px;
 }
 img {
     @apply rounded-sm m-2 block;
@@ -155,8 +185,8 @@ img {
     background: #f7f8f9;
     overflow-x: auto;
     @apply flex-nowrap;
-    border-top: #cacfca solid 1px;
-    border-bottom: #cacfca solid 1px;
+    border-top: var(--border) solid 1px;
+    border-bottom: var(--border) solid 1px;
 }
 .tab-icon-recording::before {
     @apply text-red-500 font-bold mr-2 inline-block;
@@ -180,17 +210,17 @@ img {
 }
 .tab.active:not(.tab-closable) {
     background: #fff;
-    border: 1px solid #cacfca;
+    border: 1px solid var(--border);
 }
 .tab-closable {
     padding-right: 16px;
     position: relative;
-    border-left: 1px solid #cacfca;
+    border-left: 1px solid var(--border);
     border-top: 1px solid transparent;
     @apply rounded-none py-2 m-0;
 }
 .tab-closable:last-child {
-    border-right: 1px solid #cacfca;
+    border-right: 1px solid var(--border);
 }
 .tab-closable.tab.active {
     background: #fff;
@@ -220,7 +250,7 @@ img {
 .tab-menu-bar {
     @apply flex items-center space-x-2 p-2 border-b;
     display: flex;
-    /*border-bottom: 4px solid #cacfca;*/
+    /*border-bottom: 4px solid var(--border);*/
     overflow-x: auto;
     margin: 0px auto;
     @apply flex-nowrap;
@@ -259,7 +289,7 @@ img {
     flex: 1;
     max-width: 150px;
     padding: 8px 10px;
-    border: 2px solid #cacfca;
+    border: 2px solid var(--border);
     border-radius: 4px;
     font-size: 14px;
     transition: border-color 0.2s;
@@ -275,7 +305,7 @@ img {
     flex: 1;
     max-width: 200px;
     padding: 8px 10px;
-    border: 2px solid #cacfca;
+    border: 2px solid var(--border);
     border-radius: 4px;
     font-size: 14px;
     background-color: white;
@@ -320,7 +350,7 @@ img {
     width: 100%;
     height: 30px;
     background: #f6f8fa;
-    border: 1px solid #cacfca;
+    border: 1px solid var(--border);
     border-radius: 4px;
     position: relative;
     overflow: hidden;
@@ -336,7 +366,7 @@ img {
 }
 
 #recordedAudio {
-    border: 1px solid #cacfca;
+    border: 1px solid var(--border);
     border-radius: 4px;
     padding: 8px;
 }

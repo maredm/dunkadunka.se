@@ -505,31 +505,46 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
     content.className = 'tab-content';
     content.dataset.content = tabId;
     content.innerHTML = `
-        <!-- nav class="tab-menu-bar">
-            <div>
-                <label for="smoothing-${tabId}">Smoothing</label>
-                <select id="smoothing-${tabId}" class="smoothing-select" aria-label="Smoothing factor">
-                    <option value="0">None</option>
-                    <option value="1/3">1/3 octave</option>
-                    <option value="1/6" selected>1/6 octave</option>
-                    <option value="1/12">1/12 octave</option>
-                    <option value="1/24">1/24 octave</option>
-                    <option value="1/48">1/48 octave</option>
-                </select>
-            </div>
-        </nav -->
-        <div class="tab-inner-content">
-            <div class="loose-container">
-                <h5 class="text-xs italic text-gray-600">Frequency Response Analysis of ${filename}${referenceFilename ? ' / ' + referenceFilename : ''}</h5>
-                <div id="plot-${tabId}-magnitude" class="plot-medium"></div>
-                <div id="plot-${tabId}-phase" class="plot-medium"></div>
-                <div id="plot-${tabId}-ir" class="plot-medium"></div>
+    <!-- nav class="tab-menu-bar">
+                <div>
+                    <label for="smoothing-${tabId}">Smoothing</label>
+                    <select id="smoothing-${tabId}" class="smoothing-select" aria-label="Smoothing factor">
+                        <option value="0">None</option>
+                        <option value="1/3">1/3 octave</option>
+                        <option value="1/6" selected>1/6 octave</option>
+                        <option value="1/12">1/12 octave</option>
+                        <option value="1/24">1/24 octave</option>
+                        <option value="1/48">1/48 octave</option>
+                    </select>
+                </div>
+            </nav> <h5 class="text-xs italic text-gray-600">Frequency Response Analysis of ${filename}${referenceFilename ? ' / ' + referenceFilename : ''}</h5 -->
+            
+        <div class="flex h-full">
+            <div class="flex-none w-64 border-r border-[#ddd] p-2 relative" style="transition:50ms linear;">
                 <div class="analysis-description" style="margin-bottom:12px; font-size:0.95rem; color:#24292e;">
                     <p><strong>Analysis:</strong> Magnitude, phase and impulse‑response computed from the uploaded response (and optional reference) via FFT and a two‑channel impulse response.</p>
                     <p><strong>Smoothing:</strong> Fractional‑octave smoothing applied to the reference response (1/6 octave).</p>
-               </div> 
+                </div>
+                <div id="resize-handle" class="resize-handle"></div>
+            </div>
+            <div class="flex-1 h-full overflow-scroll-y">
+                <div class="grid grid-cols-6 gap-[1px] bg-[#ddd] border-b border-[#ddd]">
+                    <div class="plot-box">
+                        <div id="plot-${tabId}-magnitude" class="plot-medium"></div>
+                    </div>
+                    <div class="plot-box">
+                        <div id="plot-${tabId}-phase" class="plot-medium"></div>
+                    </div>
+                    <div class="plot-box">
+                        <div id="plot-${tabId}-ir" class="plot-medium"></div>
+                    </div>
+                    <div class="plot-box bg-white">
+                        <div class="plot-medium"></div>
+                    </div>
+                </div>
             </div>
         </div>
+        
     `;
     tabContents.appendChild(content);
 
@@ -670,7 +685,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             line: { color: '#d73a49', width: 2 }
         });
         tracesMagnitude.push({
-            x: transferFunctionFarina.frequency.map(v => v / 2),
+            x: transferFunctionFarina.frequency.map(v => v),
             y: db(transferFunctionFarina.magnitude.map(v => v * rmsValue)),
             type: 'scatter',
             mode: 'lines',
@@ -678,7 +693,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             line: { color: '#341fad33', width: 1 }
         });
         tracesMagnitude.push({
-            x: smoothedFreqResponseFarina.frequency.map(v => v / 2),
+            x: smoothedFreqResponseFarina.frequency.map(v => v),
             y: smoothedFreqResponseFarina.magnitude.map(v => v + db(rmsValue)),
             type: 'scatter',
             mode: 'lines',
@@ -717,7 +732,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
 
     const plotSettings: {[key: string]: any} = {
         plotGlPixelRatio: 2, // For better clarity on high-DPI screens
-        legend: { x: 0.98, y: 0.02, xanchor: 'right', yanchor: 'bottom' },
+        legend: {"orientation": "h", "y": -0.2, "yanchor": "top"},
         plot_bgcolor: '#fafbfc',
         paper_bgcolor: '#fff',
         staticPlot: false, // Enable interactivity
@@ -729,6 +744,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
         font: {
             family: "'Newsreader', Georgia, 'Times New Roman', Times, serif",
         },
+        margin: { t: 80, r: 65, b: 70, l: 65 }
     };
 
     const layoutPhase = {
@@ -808,6 +824,33 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
         responseSamples: Array.from(responseSamples),
         referenceSamples: referenceSamples.length > 0 ? Array.from(referenceSamples) : null,
     })).catch(err => console.error('Failed to persist analysis:', err));
+
+function initResize(e: MouseEvent): void {
+    e.preventDefault();
+    window.addEventListener('mousemove', resize, false);
+    window.addEventListener('mouseup', stopResize, false);
+    console.log('Init resize');
+    document.body.style.cursor = 'col-resize';
+}
+
+function resize(e: MouseEvent): void {
+    const container = content.querySelector<HTMLElement>('.flex')!;
+    const handle = document.getElementById('resize-handle')?.parentElement!;
+    const rect = container.getBoundingClientRect();
+    const newWidth = e.clientX - rect.left;
+    if (newWidth > 150 && newWidth < rect.width - 150) {
+        handle.style.width = `${newWidth}px`;
+    }
+}
+
+function stopResize(): void {
+    window.removeEventListener('mousemove', resize, false);
+    window.removeEventListener('mouseup', stopResize, false);
+    window.dispatchEvent(new Event('resize'));
+    document.body.style.cursor = 'default';
+}       
+
+    document.getElementById('resize-handle')?.addEventListener('mousedown', initResize, false);
 }
 
 // Save and load state from sessionStorage
