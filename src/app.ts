@@ -666,15 +666,15 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
 
     plot(
         [
-            {x: responseFFT.frequency, y: db(responseFFT.magnitude), name: 'Measurement signal', line: { color: '#0366d666', width: 1 }},
-            {x: smoothedResponseFFT.frequency, y: smoothedResponseFFT.magnitude, name: 'Measurement signal (Smoothed)', line: { color: '#0366d6', width: 2 }}
+            {x: responseFFT.frequency, y: db(responseFFT.magnitude), name: 'Recorded signal', line: { color: '#0366d666', width: 1 }},
+            {x: smoothedResponseFFT.frequency, y: smoothedResponseFFT.magnitude, name: 'Recorded signal (Smoothed)', line: { color: '#0366d6', width: 2 }}
         ], 
         tabId, 
         'Recorded Spectrogram', 
         'Frequency', 
         'Amplitude (dBFS)',
         {type: 'log', range: [Math.log10(20), Math.log10(20000)]}, 
-        {}, 
+        {range: [-85, 5]},
         {}, 
         true
     );
@@ -706,13 +706,13 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             'Frequency', 
             'Amplitude (dBFS)',
             {type: 'log', range: [Math.log10(20), Math.log10(20000)]}, 
-            {}, 
+            {range: [-85, 5]},
             {}, 
             true
         );
         plot(
             [
-                {x: linspace(0, referenceSamples.length/48000, referenceSamples.length), y: referenceSamples, name: 'Recorded signal', line: { color: '#0366d6ff', width: 1 }}
+                {x: linspace(0, referenceSamples.length/48000, referenceSamples.length), y: referenceSamples, name: 'Stimulus signal', line: { color: '#0366d6ff', width: 1 }}
             ],
             tabId, 
             'Stimulus Waveform', 

@@ -3309,7 +3309,7 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
         {
             x: responseFFT.frequency,
             y: db(responseFFT.magnitude),
-            name: "Measurement signal",
+            name: "Recorded signal",
             line: {
                 color: "#0366d666",
                 width: 1
@@ -3318,7 +3318,7 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
         {
             x: smoothedResponseFFT.frequency,
             y: smoothedResponseFFT.magnitude,
-            name: "Measurement signal (Smoothed)",
+            name: "Recorded signal (Smoothed)",
             line: {
                 color: "#0366d6",
                 width: 2
@@ -3330,7 +3330,12 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
             Math.log10(20),
             Math.log10(2e4)
         ]
-    }, {}, {}, true);
+    }, {
+        range: [
+            -85,
+            5
+        ]
+    }, {}, true);
     plot([
         {
             x: linspace(0, responseSamples.length / 48e3, responseSamples.length),
@@ -3371,12 +3376,17 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
                 Math.log10(20),
                 Math.log10(2e4)
             ]
-        }, {}, {}, true);
+        }, {
+            range: [
+                -85,
+                5
+            ]
+        }, {}, true);
         plot([
             {
                 x: linspace(0, referenceSamples.length / 48e3, referenceSamples.length),
                 y: referenceSamples,
-                name: "Recorded signal",
+                name: "Stimulus signal",
                 line: {
                     color: "#0366d6ff",
                     width: 1
