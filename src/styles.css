@@ -63,6 +63,40 @@
   src: url(https://fonts.gstatic.com/s/newsreader/v26/cY9AfjOCX1hbuyalUrK4397yjA.woff2) format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
+* {
+    scrollbar-color:var(--border) white;
+    scrollbar-width: thin;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+body {
+    background: #f5f5f5;
+}
+.upload-section {
+    margin-bottom: 24px;
+}
+.upload-section h3 {
+    margin-bottom: 12px;
+    color: #24292e;
+}
+.file-input-wrapper {
+    position: relative;
+    display: inline-block;
+    width: 100%;
+}
+input[type="file"] {
+    width: 100%;
+    padding: 10px;
+    border: 2px dashed #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.info {
+    color: #586069;
+    font-size: 13px;
+    margin-top: 8px;
+}
 
 .hej {
     @apply grid grid-cols-2 gap-4;
@@ -79,16 +113,69 @@
   --container-3xl: 1300px;
   --container-4xl: 2200px;
 }
-.analysis-title {
-    @apply text-xs uppercase py-1 px-2 m-1 border-b border-[#ddd];
+:root {
+  color-scheme: light;
 }
-
+.section {
+    .title {
+        @apply text-xs uppercase py-1 px-2 m-1 border-b border-[#ddd];
+    }
+    .list {
+        @apply text-sm list-disc list-inside mx-1 mb-2;
+        font-weight: 400;
+        li {
+            @apply px-2 font-light;
+            list-style-type: none;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        li:has(input[type="checkbox"]:focus) {
+            @apply bg-sky-100;
+        }
+        li:has(input[type="checkbox"]:disabled) {
+            color: #bbb;
+        }
+        label {
+            display: inline-block;
+            vertical-align: text-bottom;
+            margin-left: 1rem;
+            cursor: pointer;
+            width: calc(100% - 2rem);
+        }
+    }
+    p {
+        @apply text-sm px-2 mb-2;
+        line-height: 1.4;
+        color: #444;
+    }
+    i {
+        @apply text-xs text-black font-light;
+    }
+    border-bottom: 3px double var(--border);
+}
+input[type="checkbox"] {
+    cursor: pointer;
+    transform: translateY(0.05em);
+}
 .main-content {
     @apply @container/plots;
+    overflow-y: scroll;
+    overflow-x: hidden;
+    max-height: 100%;
+    background-color: #ddd;
 }
 .plot-box {
     @apply col-span-6 @min-3xl/plots:col-span-3 @min-4xl/plots:col-span-2;
     aspect-ratio:16/9;
+    .button-bar {
+        @apply flex gap-[1px] bg-white justify-end;
+    }
+    button, label {
+        cursor: pointer;
+        padding: 6px 12px;
+        @apply text-xs hover:bg-[#f6f8fa];
+
+    }
 }
 .plot-medium {
     width: 100%;
@@ -98,30 +185,47 @@
     position: absolute;
     top: 0;
     right: -3px;
-    width: 4px;
+    width: 7px;
     height: 100%;
     cursor: col-resize;
     user-select: none;
     z-index: 10;
 }
 .resize-handle:hover, .resize-handle:active {
-    transition-delay: 0.3s;
+    transition: 0.3s linear;
     background-color: var(--color);
 }
+.sidecar-toggle {
+    display: none;
+    padding: 6px 12px;
+    @apply text-xs;
+}
+@media (max-width: 720px) {
+    .sidecar {
+        display: none;
+    }
+    .sidecar-toggle {
+        display: block;
+    }
+}
 .sidecar {
-    @apply bg-gray-50;
+    background-color: #fcfcfc; /* Tailwind's gray-50 */
+    overflow-y: auto;
+    overflow-x: hidden;
+    max-height: 100%;
 }
 
 * {
+  accent-color: var(--color);  
   text-shadow: 1px 1px 1px rgba(0,0,0,0.004);
   text-rendering: optimizeLegibility !important;
   -webkit-font-smoothing: antialiased !important;
-  -webkit-text-stroke: .025em rgba(51,51,51,0.50);
+  -webkit-text-stroke: .01em rgba(51,51,51,0.25);
 }
 body {
     font-family: 'Outfit', sans-serif;
     background-color: #f3f4f6; /* Tailwind's gray-100 */
-    color: #111827; /* Tailwind's gray-900 */
+    color: black; /* Tailwind's gray-900 */
 }
 h5 {
     @apply text-xs italic text-gray-600 font-light;
@@ -187,10 +291,12 @@ img {
 .tabs {
     display: flex;
     background: #f7f8f9;
-    overflow-x: auto;
-    @apply flex-nowrap;
     border-top: var(--border) solid 1px;
     border-bottom: var(--border) solid 1px;
+}
+#tabs {
+    overflow-x: auto;
+    white-space: nowrap;
 }
 .tab-icon-recording::before {
     @apply text-red-500 font-bold mr-2 inline-block;

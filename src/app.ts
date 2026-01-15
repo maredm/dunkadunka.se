@@ -12,7 +12,8 @@ const uiColor = "#0366d6";
 root.style.setProperty('--color', uiColor);
 
 let tabCounter = 0;
-const tabsContainer = document.getElementById('tabs') as HTMLElement;
+const tabsContainer = document.getElementById('tabs-outer') as HTMLElement;
+const tabsInnerContainer = document.getElementById('tabs') as HTMLElement;
 const tabContents = document.getElementById('tab-contents') as HTMLElement;
 const responseFileInput = document.getElementById('responseFile') as HTMLInputElement;
 const referenceFileInput = document.getElementById('referenceFile') as HTMLInputElement;
@@ -498,7 +499,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
     tab.className = 'tab tab-closable';
     tab.dataset.tab = tabId;
     tab.innerHTML = `<span class="tab-icon-analysis"></span>${shortName} <span class="tab-close">✕</span>`;
-    tabsContainer.appendChild(tab);
+    tabsInnerContainer.appendChild(tab);
     
     // Create tab content
     const content = document.createElement('div');
@@ -518,93 +519,70 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
                     </select>
                 </div>
             </nav> <h5 class="text-xs italic text-gray-600">Frequency Response Analysis of ${filename}${referenceFilename ? ' / ' + referenceFilename : ''}</h5 -->
-            
+        <button class="sidecar-toggle" id="sidebar-toggle-${tabId}" title="Toggle Sidecar">Open settings pane</button>
         <div class="flex h-full">
-            <div class="flex-none w-64 border-r border-[#ddd] p-2 relative sidecar" style="transition:50ms linear;">
-                <div>
-                <div class="analysis-title">Plots</div>
+            <div class="flex-none w-86 border-r border-[#ddd] p-2 relative sidecar" style="transition:50ms linear;">
+                <div class="section">
+                    <div class="title">Settings</div>
+                    <p><i>There are no settings for this analysis.</i></p>
                 </div>
-                <div class="analysis-description" style="margin-bottom:12px; font-size:0.95rem; color:#24292e;">
-                    <p><strong>Analysis:</strong> Magnitude, phase and impulse‑response computed from the uploaded response (and optional reference) via FFT and a two‑channel impulse response.</p>
-                    <p><strong>Smoothing:</strong> Fractional‑octave smoothing applied to the reference response (1/6 octave).</p>
+                <div class="section">
+                    <div class="title">Plots</div>
+                    <ul class="list">
+                        <li><input type="checkbox" id="checkbox-magnitude-${tabId}" alt="show/hide" checked><label for="checkbox-magnitude-${tabId}">Magnitude</label></li>
+                        <li><input type="checkbox" id="checkbox-phase-${tabId}" alt="show/hide" checked><label for="checkbox-phase-${tabId}">Phase</label></li>
+                        <li><input type="checkbox" id="checkbox-ir-${tabId}" alt="show/hide" checked><label for="checkbox-ir-${tabId}">Impulse Response</label></li>
+                        <li><input type="checkbox" id="checkbox-ir-${tabId}" alt="show/hide" disabled><label for="checkbox-ir-${tabId}">Fundamental + Harmonic Distortion</label></li>
+                        <li><input type="checkbox" id="checkbox-distortion-${tabId}" alt="show/hide" disabled><label for="checkbox-distortion-${tabId}">Distortion</label></li>
+                        <li><input type="checkbox" id="checkbox-distortion-${tabId}" alt="show/hide" disabled><label for="checkbox-distortion-${tabId}">Sound Pressure Level</label></li>
+                        <li><input type="checkbox" id="checkbox-deconvoluted-ir-${tabId}" alt="show/hide" disabled><label for="checkbox-deconvoluted-ir-${tabId}">Deconvoluted Impulse Response</label></li>
+                        <li><input type="checkbox" id="checkbox-stimulus-waveform-${tabId}" alt="show/hide" disabled><label for="checkbox-stimulus-waveform-${tabId}">Stimulus Waveform</label></li>
+                        <li><input type="checkbox" id="checkbox-recorded-waveform-${tabId}" alt="show/hide" disabled><label for="checkbox-recorded-waveform-${tabId}">Recorded Waveform</label></li>
+                        <li><input type="checkbox" id="checkbox-target-curve-${tabId}" alt="show/hide" disabled><label for="checkbox-target-curve-${tabId}">Target Curve<button class="float-right text-xs cursor-pointer" style="color: #bbb; padding-top: 3px">Set</button></label></li>
+                    </ul>
+                </div>
+                <div class="section">
+                    <div class="title">Properties</div>
+                    <p><i>There are no properties for this analysis.</i></p>
                 </div>
                 <div id="resize-handle" class="resize-handle"></div>
             </div>
-            <div class="flex-1 h-full overflow-scroll-y main-content">
+            <div class="flex-1 main-content">
                 <div class="grid grid-cols-6 gap-[1px] bg-[#ddd] border-b border-[#ddd]">
                     <div class="plot-box">
                         <div id="plot-${tabId}-magnitude" class="plot-medium"></div>
+                        <div class="button-bar">
+                            <button>Customize...</button>
+                            <button>Export as...</button>
+                            <label for="checkbox-magnitude-${tabId}">Hide</label>
+                        </div>
                     </div>
                     <div class="plot-box">
                         <div id="plot-${tabId}-phase" class="plot-medium"></div>
+                        <div class="button-bar">
+                            <button>Customize...</button>
+                            <button>Export as...</button>
+                            <label for="checkbox-phase-${tabId}">Hide</label>
+                        </div>
                     </div>
                     <div class="plot-box">
                         <div id="plot-${tabId}-ir" class="plot-medium"></div>
-                    </div>
-                    <div class="plot-box bg-white">
-                        <div class="plot-medium"></div>
+                        <div class="button-bar">
+                            <button>Customize...</button>
+                            <button>Export as...</button>
+                            <label for="checkbox-ir-${tabId}">Hide</label>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
+       
         
     `;
     tabContents.appendChild(content);
 
     // Switch to new tab
     switchTab(tabId);
-
-    // If no reference data, render waveform view instead of frequency response
-    if (!referenceData) {
-        tab.innerHTML = `<span class="tab-icon-waveform"></span>${shortName} <span class="tab-close">✕</span>`;
-        // For waveform view, we need to replace the entire tab-inner-content structure
-        const tabInnerContent = content.querySelector<HTMLElement>('.tab-inner-content');
-        if (tabInnerContent) {
-            tabInnerContent.innerHTML = `
-                <div style="position: absolute; top: 0; left: 0; right: 0; height: 40px; display: flex; gap: 8px; align-items: center; padding: 0 12px; background: white; border-bottom: 1px solid #ddd; z-index: 10;">
-                    <h5 class="text-xs italic text-gray-600" style="margin: 0; flex-grow: 1;">Waveform View - ${filename}</h5>
-                    <button id="play-${tabId}" class="button-custom button-custom-primary">Play</button>
-                    <button id="stop-${tabId}" class="button-custom button-custom-secondary" disabled>Stop</button>
-                </div>
-                <div id="waveform-${tabId}" style="position: absolute; top: 40px; left: 0; right: 0; bottom: 0;"></div>
-            `;
-            
-            // Set tab-inner-content to position: relative for positioning context
-            tabInnerContent.style.position = 'relative';
-            tabInnerContent.style.top = '0';
-            tabInnerContent.style.left = '0';
-            tabInnerContent.style.right = '0';
-            tabInnerContent.style.bottom = '0';
-            tabInnerContent.style.padding = '0';
-            tabInnerContent.style.overflow = 'hidden';
-            tabInnerContent.style.width = '100%';
-            tabInnerContent.style.height = '100%';
-
-            // Create waveform editor
-            const waveformEl = content.querySelector<HTMLElement>(`#waveform-${tabId}`);
-            const playBtn = content.querySelector<HTMLButtonElement>(`#play-${tabId}`);
-            const stopBtn = content.querySelector<HTMLButtonElement>(`#stop-${tabId}`);
-
-            if (waveformEl && playBtn && stopBtn) {
-                const editor = createWaveformEditor(waveformEl, responseData);
-
-                playBtn.addEventListener('click', () => {
-                    editor.play();
-                    playBtn.disabled = true;
-                    stopBtn.disabled = false;
-                });
-
-                stopBtn.addEventListener('click', () => {
-                    editor.stop();
-                    playBtn.disabled = false;
-                    stopBtn.disabled = true;
-                });
-            }
-        }
-        
-        saveState();
-        return;
-    }
 
     // Compute and plot FFTs
     console.log('Analyzing response file:', filename);
@@ -613,14 +591,24 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
     
     console.log(responseData.getChannelData(0));
     const responseFFT = computeFFT(responseSamples);
+
+    const smoothedResponseFFT = smoothFFT(responseFFT, 1/6, 1/48);
     const tracesMagnitude: any[] = [{
         x: responseFFT.frequency,
         y: db(responseFFT.magnitude),
         type: 'scatter',
         mode: 'lines',
         name: 'Measurement signal',
-        line: { color: '#0366d6', width: 2 }
+        line: { color: '#0366d633', width: 1 }
     }];
+    tracesMagnitude.push({
+        x: smoothedResponseFFT.frequency,
+        y: smoothedResponseFFT.magnitude,
+        type: 'scatter',
+        mode: 'lines',
+        name: 'Measurement signal (Smoothed)',
+        line: { color: '#0366d6', width: 2 }
+    });
     const tracesPhase: any[] = [];
     const tracesPhaseSecondary: any[] = [];
     const tracesIR: any[] = [];
@@ -854,6 +842,23 @@ function stopResize(): void {
 }       
 
     document.getElementById('resize-handle')?.addEventListener('mousedown', initResize, false);
+
+        // Add event listeners for checkbox visibility toggles
+    document.getElementById(`checkbox-magnitude-${tabId}`)?.addEventListener('change', (e) => {
+        console.log('Toggling magnitude plot visibility');
+        const box = document.getElementById(`plot-${tabId}-magnitude`)!.parentElement!;
+        box.setAttribute('style', (e.target as HTMLInputElement).checked ? 'display: block;' : 'display: none;');
+    });
+
+    document.getElementById(`checkbox-phase-${tabId}`)?.addEventListener('change', (e) => {
+        const box = document.getElementById(`plot-${tabId}-phase`)!.parentElement!;
+        box.setAttribute('style', (e.target as HTMLInputElement).checked ? 'display: block;' : 'display: none;');
+    });
+
+    document.getElementById(`checkbox-ir-${tabId}`)?.addEventListener('change', (e) => {
+        const box = document.getElementById(`plot-${tabId}-ir`)!.parentElement!;
+        box.setAttribute('style', (e.target as HTMLInputElement).checked ? 'display: block;' : 'display: none;');
+    });
 }
 
 // Save and load state from sessionStorage

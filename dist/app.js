@@ -2348,356 +2348,6 @@ var storage = {
     clearStorage: clearStorage,
     dumpStorage: dumpStorage
 };
-// src/waveform_editor.ts
-var AGGREGATED_DATA_MULTIPLIER = 256;
-var AGGREGATED_WAVEFORM_THRESHOLD = 60 * 48e3;
-var WaveformEditor = /*#__PURE__*/ function() {
-    function WaveformEditor(containerElement) {
-        _class_call_check(this, WaveformEditor);
-        this.audioData = null;
-        this.svgContainer = null;
-        this.containerEl = null;
-        this.audioContext = null;
-        this.playbackSource = null;
-        this.zoomState = {
-            start: 0,
-            end: 0,
-            inited: false
-        };
-        this.viewState = {
-            start: 0,
-            end: 0,
-            zoom: 1,
-            amplitude_scaling: 1,
-            followPlayhead: true
-        };
-        this.playheadPosition = null;
-        this.isPlaying = false;
-        this.animationFrameId = null;
-        this.aggregatedData = [];
-        this.containerEl = containerElement;
-        this.setupAudioContext();
-        this.setupSVG();
-    }
-    _create_class(WaveformEditor, [
-        {
-            key: "setupAudioContext",
-            value: function setupAudioContext() {
-                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            }
-        },
-        {
-            key: "setupSVG",
-            value: function setupSVG() {
-                var _this = this;
-                if (!this.containerEl) return;
-                this.containerEl.innerHTML = "";
-                this.svgContainer = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-                this.svgContainer.style.width = "100%";
-                this.svgContainer.style.height = "100%";
-                this.svgContainer.style.display = "block";
-                this.svgContainer.style.background = "#fff";
-                this.containerEl.appendChild(this.svgContainer);
-                this.svgContainer.addEventListener("wheel", function(e) {
-                    return _this.handleWheel(e);
-                }, {
-                    passive: false
-                });
-                this.svgContainer.addEventListener("click", function(e) {
-                    return _this.handleClick(e);
-                });
-            }
-        },
-        {
-            key: "handleWheel",
-            value: function handleWheel(e) {
-                e.preventDefault();
-                var rect = this.svgContainer.getBoundingClientRect();
-                var mouseX = e.clientX - rect.left;
-                var normX = mouseX / rect.width;
-                var visible = this.zoomState.end - this.zoomState.start;
-                var factor = Math.pow(1.003, e.deltaY);
-                var minWindow = 20;
-                var maxWindow = this.getDuration();
-                var newWindow = Math.round(visible * factor);
-                newWindow = Math.min(Math.max(newWindow, minWindow), maxWindow);
-                var focalSample = this.zoomState.start + Math.round(normX * visible);
-                var newStart = Math.round(focalSample - normX * newWindow);
-                var PAN_SENSITIVITY = 0.5;
-                if (Math.abs(e.deltaX) > 0) {
-                    var panFraction = e.deltaX * PAN_SENSITIVITY / rect.width;
-                    var panSamples = Math.round(panFraction * visible);
-                    newStart += panSamples;
-                }
-                newStart = Math.min(Math.max(0, newStart), this.getDuration() - newWindow);
-                var newEnd = newStart + newWindow;
-                this.zoomState.start = newStart;
-                this.zoomState.end = newEnd;
-                this.viewState.start = newStart;
-                this.viewState.end = newEnd;
-                this.render();
-            }
-        },
-        {
-            key: "handleClick",
-            value: function handleClick(e) {
-                var rect = this.svgContainer.getBoundingClientRect();
-                var x = e.clientX - rect.left;
-                var ratio = x / rect.width;
-                var duration = this.getDuration();
-                var samplePosition = this.zoomState.start + ratio * (this.zoomState.end - this.zoomState.start);
-                this.seek(Math.max(0, Math.min(samplePosition, duration)));
-            }
-        },
-        {
-            key: "loadAudio",
-            value: function loadAudio(audio2) {
-                this.audioData = audio2;
-                var duration = audio2.length;
-                this.zoomState = {
-                    start: 0,
-                    end: duration,
-                    inited: false
-                };
-                this.viewState.start = 0;
-                this.viewState.end = duration;
-                this.viewState.amplitude_scaling = 1;
-                this.processWaveformData();
-                this.render();
-            }
-        },
-        {
-            key: "processWaveformData",
-            value: function processWaveformData() {
-                if (!this.audioData) return;
-                this.aggregatedData = [];
-                for(var ch = 0; ch < this.audioData.numberOfChannels; ch++){
-                    var samples = this.audioData.getChannelData(ch);
-                    var aggregatedLength = Math.ceil(samples.length / AGGREGATED_DATA_MULTIPLIER);
-                    var _this_computeWaveformEnvelope = this.computeWaveformEnvelope(aggregatedLength, samples), max2 = _this_computeWaveformEnvelope.max, min = _this_computeWaveformEnvelope.min;
-                    this.aggregatedData[ch] = {
-                        max: max2,
-                        min: min
-                    };
-                }
-            }
-        },
-        {
-            key: "computeWaveformEnvelope",
-            value: function computeWaveformEnvelope(bins, samples) {
-                var step = Math.max(1, samples.length / bins);
-                var max2 = new Float32Array(bins).fill(-Infinity);
-                var min = new Float32Array(bins).fill(Infinity);
-                for(var i = 0; i < samples.length; i++){
-                    var idx = Math.floor(i / step);
-                    if (idx >= bins) break;
-                    max2[idx] = Math.max(max2[idx], samples[i]);
-                    min[idx] = Math.min(min[idx], samples[i]);
-                }
-                return {
-                    max: max2,
-                    min: min
-                };
-            }
-        },
-        {
-            key: "render",
-            value: function render() {
-                if (!this.svgContainer || !this.audioData) return;
-                var rect = this.containerEl.getBoundingClientRect();
-                var displayWidth = Math.max(1, Math.floor(rect.width));
-                var displayHeight = Math.max(1, Math.floor(rect.height));
-                this.svgContainer.setAttribute("viewBox", "0 0 ".concat(displayWidth, " ").concat(displayHeight));
-                this.svgContainer.innerHTML = "";
-                var centerY = displayHeight / 2;
-                var maxAmplitude = 0.9 * centerY;
-                var bg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-                bg.setAttribute("width", displayWidth.toString());
-                bg.setAttribute("height", displayHeight.toString());
-                bg.setAttribute("fill", "#fff");
-                this.svgContainer.appendChild(bg);
-                this.drawGrid(displayWidth, displayHeight);
-                var centerLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
-                centerLine.setAttribute("x1", "0");
-                centerLine.setAttribute("y1", centerY.toString());
-                centerLine.setAttribute("x2", displayWidth.toString());
-                centerLine.setAttribute("y2", centerY.toString());
-                centerLine.setAttribute("stroke", "rgba(0,0,0,0.1)");
-                centerLine.setAttribute("stroke-width", "1");
-                this.svgContainer.appendChild(centerLine);
-                var channel = 0;
-                this.drawWaveform(channel, displayWidth, displayHeight, centerY, maxAmplitude);
-                if (this.playheadPosition !== null) {
-                    this.drawPlayhead(displayWidth, displayHeight);
-                }
-            }
-        },
-        {
-            key: "drawGrid",
-            value: function drawGrid(width, height) {
-                var lineCount = 5;
-                for(var i = 1; i < lineCount; i++){
-                    var y = height / lineCount * i;
-                    var line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-                    line.setAttribute("x1", "0");
-                    line.setAttribute("y1", y.toString());
-                    line.setAttribute("x2", width.toString());
-                    line.setAttribute("y2", y.toString());
-                    line.setAttribute("stroke", "#e1e4e8");
-                    line.setAttribute("stroke-width", "1");
-                    this.svgContainer.appendChild(line);
-                }
-            }
-        },
-        {
-            key: "drawWaveform",
-            value: function drawWaveform(channel, width, height, centerY, maxAmplitude) {
-                if (!this.audioData || !this.aggregatedData[channel]) return;
-                var _this_aggregatedData_channel = this.aggregatedData[channel], max2 = _this_aggregatedData_channel.max, min = _this_aggregatedData_channel.min;
-                var visibleSamples = this.zoomState.end - this.zoomState.start;
-                var pathTop = "M 0 ".concat(centerY);
-                var pathBottom = "M 0 ".concat(centerY);
-                for(var x = 0; x < width; x++){
-                    var sampleIdx = this.zoomState.start + x / width * visibleSamples;
-                    var binIdx = Math.floor(sampleIdx / AGGREGATED_DATA_MULTIPLIER);
-                    if (binIdx >= max2.length) break;
-                    var maxVal = Math.max(max2[binIdx], 0) * maxAmplitude;
-                    var minVal = Math.min(min[binIdx], 0) * maxAmplitude;
-                    var yTop = centerY - maxVal;
-                    var yBottom = centerY - minVal;
-                    pathTop += " L ".concat(x, " ").concat(yTop);
-                    pathBottom += " L ".concat(x, " ").concat(yBottom);
-                }
-                pathBottom += " L ".concat(width, " ").concat(centerY, " Z");
-                var fill = document.createElementNS("http://www.w3.org/2000/svg", "path");
-                fill.setAttribute("d", pathTop + " L ".concat(width, " ").concat(centerY) + pathBottom.slice(pathBottom.indexOf("L")));
-                fill.setAttribute("fill", "rgba(3, 102, 214, 0.15)");
-                fill.setAttribute("stroke", "none");
-                this.svgContainer.appendChild(fill);
-                var topLine = document.createElementNS("http://www.w3.org/2000/svg", "path");
-                topLine.setAttribute("d", pathTop);
-                topLine.setAttribute("stroke", "#0366d6");
-                topLine.setAttribute("stroke-width", "1");
-                topLine.setAttribute("fill", "none");
-                this.svgContainer.appendChild(topLine);
-                var bottomLine = document.createElementNS("http://www.w3.org/2000/svg", "path");
-                bottomLine.setAttribute("d", pathBottom.split("Z")[0]);
-                bottomLine.setAttribute("stroke", "#0366d6");
-                bottomLine.setAttribute("stroke-width", "1");
-                bottomLine.setAttribute("fill", "none");
-                this.svgContainer.appendChild(bottomLine);
-            }
-        },
-        {
-            key: "drawPlayhead",
-            value: function drawPlayhead(width, height) {
-                if (this.playheadPosition === null) return;
-                var visibleSamples = this.zoomState.end - this.zoomState.start;
-                var position = this.playheadPosition - this.zoomState.start;
-                var x = position / visibleSamples * width;
-                var line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-                line.setAttribute("x1", x.toString());
-                line.setAttribute("y1", "0");
-                line.setAttribute("x2", x.toString());
-                line.setAttribute("y2", height.toString());
-                line.setAttribute("stroke", "#d73a49");
-                line.setAttribute("stroke-width", "2");
-                this.svgContainer.appendChild(line);
-            }
-        },
-        {
-            key: "play",
-            value: function play() {
-                if (!this.audioContext || !this.audioData) return;
-                this.stop();
-                var sourceBuffer = this.audioContext.createBuffer(this.audioData.numberOfChannels, this.audioData.length, this.audioContext.sampleRate);
-                for(var ch = 0; ch < this.audioData.numberOfChannels; ch++){
-                    sourceBuffer.getChannelData(ch).set(this.audioData.getChannelData(ch));
-                }
-                this.playbackSource = this.audioContext.createBufferSource();
-                this.playbackSource.buffer = sourceBuffer;
-                this.playbackSource.connect(this.audioContext.destination);
-                var startPosition = (this.playheadPosition || 0) / this.audioContext.sampleRate;
-                this.playbackSource.start(0, startPosition);
-                this.isPlaying = true;
-                this.animatePlayhead();
-            }
-        },
-        {
-            key: "stop",
-            value: function stop() {
-                if (this.playbackSource) {
-                    try {
-                        this.playbackSource.stop();
-                    } catch (e) {}
-                }
-                this.isPlaying = false;
-                if (this.animationFrameId !== null) {
-                    cancelAnimationFrame(this.animationFrameId);
-                    this.animationFrameId = null;
-                }
-            }
-        },
-        {
-            key: "seek",
-            value: function seek(samplePosition) {
-                this.stop();
-                this.playheadPosition = Math.max(0, Math.min(samplePosition, this.getDuration()));
-                this.render();
-            }
-        },
-        {
-            key: "animatePlayhead",
-            value: function animatePlayhead() {
-                var _this = this;
-                if (!this.audioContext || !this.isPlaying) return;
-                var startTime = this.audioContext.currentTime;
-                var startPosition = this.playheadPosition || 0;
-                var animate = function() {
-                    if (!_this.isPlaying) return;
-                    var elapsed = (_this.audioContext.currentTime - startTime) * _this.audioContext.sampleRate;
-                    var newPosition = startPosition + elapsed;
-                    if (newPosition >= _this.getDuration()) {
-                        _this.stop();
-                        _this.render();
-                        return;
-                    }
-                    _this.playheadPosition = newPosition;
-                    _this.render();
-                    _this.animationFrameId = requestAnimationFrame(animate);
-                };
-                this.animationFrameId = requestAnimationFrame(animate);
-            }
-        },
-        {
-            key: "getDuration",
-            value: function getDuration() {
-                return this.audioData ? this.audioData.length : 0;
-            }
-        },
-        {
-            key: "destroy",
-            value: function destroy() {
-                var _this = this;
-                this.stop();
-                if (this.svgContainer) {
-                    this.svgContainer.removeEventListener("wheel", function(e) {
-                        return _this.handleWheel(e);
-                    });
-                    this.svgContainer.removeEventListener("click", function(e) {
-                        return _this.handleClick(e);
-                    });
-                }
-            }
-        }
-    ]);
-    return WaveformEditor;
-}();
-function createWaveformEditor(containerElement, audio2) {
-    var editor = new WaveformEditor(containerElement);
-    editor.loadAudio(audio2);
-    return editor;
-}
 // src/device-settings.ts
 var INPUT_KEY = "preferredAudioInputId";
 var OUTPUT_KEY = "preferredAudioOutputId";
@@ -2925,7 +2575,8 @@ var root = document.documentElement;
 var uiColor = "#0366d6";
 root.style.setProperty("--color", uiColor);
 var tabCounter = 0;
-var tabsContainer = document.getElementById("tabs");
+var tabsContainer = document.getElementById("tabs-outer");
+var tabsInnerContainer = document.getElementById("tabs");
 var tabContents = document.getElementById("tab-contents");
 var responseFileInput = document.getElementById("responseFile");
 var referenceFileInput = document.getElementById("referenceFile");
@@ -3549,7 +3200,7 @@ analyzeBtn.addEventListener("click", function() {
     })();
 });
 function createAnalysisTab(responseData, referenceData, filename, referenceFilename) {
-    var _document_getElementById;
+    var _document_getElementById, _document_getElementById1, _document_getElementById2, _document_getElementById3;
     tabCounter++;
     var tabId = "analysis-".concat(tabCounter);
     var shortName = filename.length > 20 ? filename.substring(0, 17) + "..." : filename;
@@ -3561,52 +3212,19 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
     tab.className = "tab tab-closable";
     tab.dataset.tab = tabId;
     tab.innerHTML = '<span class="tab-icon-analysis"></span>'.concat(shortName, ' <span class="tab-close">✕</span>');
-    tabsContainer.appendChild(tab);
+    tabsInnerContainer.appendChild(tab);
     var content = document.createElement("div");
     content.className = "tab-content";
     content.dataset.content = tabId;
-    content.innerHTML = '\n    <!-- nav class="tab-menu-bar">\n                <div>\n                    <label for="smoothing-'.concat(tabId, '">Smoothing</label>\n                    <select id="smoothing-').concat(tabId, '" class="smoothing-select" aria-label="Smoothing factor">\n                        <option value="0">None</option>\n                        <option value="1/3">1/3 octave</option>\n                        <option value="1/6" selected>1/6 octave</option>\n                        <option value="1/12">1/12 octave</option>\n                        <option value="1/24">1/24 octave</option>\n                        <option value="1/48">1/48 octave</option>\n                    </select>\n                </div>\n            </nav> <h5 class="text-xs italic text-gray-600">Frequency Response Analysis of ').concat(filename).concat(referenceFilename ? " / " + referenceFilename : "", '</h5 -->\n            \n        <div class="flex h-full">\n            <div class="flex-none w-64 border-r border-[#ddd] p-2 relative sidecar" style="transition:50ms linear;">\n                <div>\n                <div class="analysis-title">Plots</div>\n                </div>\n                <div class="analysis-description" style="margin-bottom:12px; font-size:0.95rem; color:#24292e;">\n                    <p><strong>Analysis:</strong> Magnitude, phase and impulse‑response computed from the uploaded response (and optional reference) via FFT and a two‑channel impulse response.</p>\n                    <p><strong>Smoothing:</strong> Fractional‑octave smoothing applied to the reference response (1/6 octave).</p>\n                </div>\n                <div id="resize-handle" class="resize-handle"></div>\n            </div>\n            <div class="flex-1 h-full overflow-scroll-y main-content">\n                <div class="grid grid-cols-6 gap-[1px] bg-[#ddd] border-b border-[#ddd]">\n                    <div class="plot-box">\n                        <div id="plot-').concat(tabId, '-magnitude" class="plot-medium"></div>\n                    </div>\n                    <div class="plot-box">\n                        <div id="plot-').concat(tabId, '-phase" class="plot-medium"></div>\n                    </div>\n                    <div class="plot-box">\n                        <div id="plot-').concat(tabId, '-ir" class="plot-medium"></div>\n                    </div>\n                    <div class="plot-box bg-white">\n                        <div class="plot-medium"></div>\n                    </div>\n                </div>\n            </div>\n        </div>\n        \n    ');
+    content.innerHTML = '\n    <!-- nav class="tab-menu-bar">\n                <div>\n                    <label for="smoothing-'.concat(tabId, '">Smoothing</label>\n                    <select id="smoothing-').concat(tabId, '" class="smoothing-select" aria-label="Smoothing factor">\n                        <option value="0">None</option>\n                        <option value="1/3">1/3 octave</option>\n                        <option value="1/6" selected>1/6 octave</option>\n                        <option value="1/12">1/12 octave</option>\n                        <option value="1/24">1/24 octave</option>\n                        <option value="1/48">1/48 octave</option>\n                    </select>\n                </div>\n            </nav> <h5 class="text-xs italic text-gray-600">Frequency Response Analysis of ').concat(filename).concat(referenceFilename ? " / " + referenceFilename : "", '</h5 -->\n        <button class="sidecar-toggle" id="sidebar-toggle-').concat(tabId, '" title="Toggle Sidecar">Open settings pane</button>\n        <div class="flex h-full">\n            <div class="flex-none w-86 border-r border-[#ddd] p-2 relative sidecar" style="transition:50ms linear;">\n                <div class="section">\n                    <div class="title">Settings</div>\n                    <p><i>There are no settings for this analysis.</i></p>\n                </div>\n                <div class="section">\n                    <div class="title">Plots</div>\n                    <ul class="list">\n                        <li><input type="checkbox" id="checkbox-magnitude-').concat(tabId, '" alt="show/hide" checked><label for="checkbox-magnitude-').concat(tabId, '">Magnitude</label></li>\n                        <li><input type="checkbox" id="checkbox-phase-').concat(tabId, '" alt="show/hide" checked><label for="checkbox-phase-').concat(tabId, '">Phase</label></li>\n                        <li><input type="checkbox" id="checkbox-ir-').concat(tabId, '" alt="show/hide" checked><label for="checkbox-ir-').concat(tabId, '">Impulse Response</label></li>\n                        <li><input type="checkbox" id="checkbox-ir-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-ir-').concat(tabId, '">Fundamental + Harmonic Distortion</label></li>\n                        <li><input type="checkbox" id="checkbox-distortion-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-distortion-').concat(tabId, '">Distortion</label></li>\n                        <li><input type="checkbox" id="checkbox-distortion-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-distortion-').concat(tabId, '">Sound Pressure Level</label></li>\n                        <li><input type="checkbox" id="checkbox-deconvoluted-ir-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-deconvoluted-ir-').concat(tabId, '">Deconvoluted Impulse Response</label></li>\n                        <li><input type="checkbox" id="checkbox-stimulus-waveform-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-stimulus-waveform-').concat(tabId, '">Stimulus Waveform</label></li>\n                        <li><input type="checkbox" id="checkbox-recorded-waveform-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-recorded-waveform-').concat(tabId, '">Recorded Waveform</label></li>\n                        <li><input type="checkbox" id="checkbox-target-curve-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-target-curve-').concat(tabId, '">Target Curve<button class="float-right text-xs cursor-pointer" style="color: #bbb; padding-top: 3px">Set</button></label></li>\n                    </ul>\n                </div>\n                <div class="section">\n                    <div class="title">Properties</div>\n                    <p><i>There are no properties for this analysis.</i></p>\n                </div>\n                <div id="resize-handle" class="resize-handle"></div>\n            </div>\n            <div class="flex-1 main-content">\n                <div class="grid grid-cols-6 gap-[1px] bg-[#ddd] border-b border-[#ddd]">\n                    <div class="plot-box">\n                        <div id="plot-').concat(tabId, '-magnitude" class="plot-medium"></div>\n                        <div class="button-bar">\n                            <button>Customize...</button>\n                            <button>Export as...</button>\n                            <label for="checkbox-magnitude-').concat(tabId, '">Hide</label>\n                        </div>\n                    </div>\n                    <div class="plot-box">\n                        <div id="plot-').concat(tabId, '-phase" class="plot-medium"></div>\n                        <div class="button-bar">\n                            <button>Customize...</button>\n                            <button>Export as...</button>\n                            <label for="checkbox-phase-').concat(tabId, '">Hide</label>\n                        </div>\n                    </div>\n                    <div class="plot-box">\n                        <div id="plot-').concat(tabId, '-ir" class="plot-medium"></div>\n                        <div class="button-bar">\n                            <button>Customize...</button>\n                            <button>Export as...</button>\n                            <label for="checkbox-ir-').concat(tabId, '">Hide</label>\n                        </div>\n                    </div>\n                </div>\n            </div>\n        </div>\n       \n        \n    ');
     tabContents.appendChild(content);
     switchTab(tabId);
-    if (!referenceData) {
-        tab.innerHTML = '<span class="tab-icon-waveform"></span>'.concat(shortName, ' <span class="tab-close">✕</span>');
-        var tabInnerContent = content.querySelector(".tab-inner-content");
-        if (tabInnerContent) {
-            tabInnerContent.innerHTML = '\n                <div style="position: absolute; top: 0; left: 0; right: 0; height: 40px; display: flex; gap: 8px; align-items: center; padding: 0 12px; background: white; border-bottom: 1px solid #ddd; z-index: 10;">\n                    <h5 class="text-xs italic text-gray-600" style="margin: 0; flex-grow: 1;">Waveform View - '.concat(filename, '</h5>\n                    <button id="play-').concat(tabId, '" class="button-custom button-custom-primary">Play</button>\n                    <button id="stop-').concat(tabId, '" class="button-custom button-custom-secondary" disabled>Stop</button>\n                </div>\n                <div id="waveform-').concat(tabId, '" style="position: absolute; top: 40px; left: 0; right: 0; bottom: 0;"></div>\n            ');
-            tabInnerContent.style.position = "relative";
-            tabInnerContent.style.top = "0";
-            tabInnerContent.style.left = "0";
-            tabInnerContent.style.right = "0";
-            tabInnerContent.style.bottom = "0";
-            tabInnerContent.style.padding = "0";
-            tabInnerContent.style.overflow = "hidden";
-            tabInnerContent.style.width = "100%";
-            tabInnerContent.style.height = "100%";
-            var waveformEl = content.querySelector("#waveform-".concat(tabId));
-            var playBtn2 = content.querySelector("#play-".concat(tabId));
-            var stopBtn2 = content.querySelector("#stop-".concat(tabId));
-            if (waveformEl && playBtn2 && stopBtn2) {
-                var editor = createWaveformEditor(waveformEl, responseData);
-                playBtn2.addEventListener("click", function() {
-                    editor.play();
-                    playBtn2.disabled = true;
-                    stopBtn2.disabled = false;
-                });
-                stopBtn2.addEventListener("click", function() {
-                    editor.stop();
-                    playBtn2.disabled = false;
-                    stopBtn2.disabled = true;
-                });
-            }
-        }
-        saveState();
-        return;
-    }
     console.log("Analyzing response file:", filename);
     console.log("Response audio data:", responseData);
     var responseSamples = responseData.getChannelData(0);
     console.log(responseData.getChannelData(0));
     var responseFFT = computeFFT(responseSamples);
+    var smoothedResponseFFT = smoothFFT(responseFFT, 1 / 6, 1 / 48);
     var tracesMagnitude = [
         {
             x: responseFFT.frequency,
@@ -3615,11 +3233,22 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
             mode: "lines",
             name: "Measurement signal",
             line: {
-                color: "#0366d6",
-                width: 2
+                color: "#0366d633",
+                width: 1
             }
         }
     ];
+    tracesMagnitude.push({
+        x: smoothedResponseFFT.frequency,
+        y: smoothedResponseFFT.magnitude,
+        type: "scatter",
+        mode: "lines",
+        name: "Measurement signal (Smoothed)",
+        line: {
+            color: "#0366d6",
+            width: 2
+        }
+    });
     var tracesPhase = [];
     var tracesPhaseSecondary = [];
     var tracesIR = [];
@@ -3894,6 +3523,19 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
         document.body.style.cursor = "default";
     }
     (_document_getElementById = document.getElementById("resize-handle")) === null || _document_getElementById === void 0 ? void 0 : _document_getElementById.addEventListener("mousedown", initResize, false);
+    (_document_getElementById1 = document.getElementById("checkbox-magnitude-".concat(tabId))) === null || _document_getElementById1 === void 0 ? void 0 : _document_getElementById1.addEventListener("change", function(e) {
+        console.log("Toggling magnitude plot visibility");
+        var box = document.getElementById("plot-".concat(tabId, "-magnitude")).parentElement;
+        box.setAttribute("style", e.target.checked ? "display: block;" : "display: none;");
+    });
+    (_document_getElementById2 = document.getElementById("checkbox-phase-".concat(tabId))) === null || _document_getElementById2 === void 0 ? void 0 : _document_getElementById2.addEventListener("change", function(e) {
+        var box = document.getElementById("plot-".concat(tabId, "-phase")).parentElement;
+        box.setAttribute("style", e.target.checked ? "display: block;" : "display: none;");
+    });
+    (_document_getElementById3 = document.getElementById("checkbox-ir-".concat(tabId))) === null || _document_getElementById3 === void 0 ? void 0 : _document_getElementById3.addEventListener("change", function(e) {
+        var box = document.getElementById("plot-".concat(tabId, "-ir")).parentElement;
+        box.setAttribute("style", e.target.checked ? "display: block;" : "display: none;");
+    });
 }
 function saveState() {
     var tabs = Array.from(document.querySelectorAll(".tab[data-tab]")).map(function(tab) {
