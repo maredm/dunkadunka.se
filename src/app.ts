@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { audio } from "./audio";
 import { createWaveformEditor, WaveformEditor } from "./waveform_editor";
 import "./device-settings";
+import { linspace } from "./math";
 
 console.debug("App module loaded");
 
@@ -466,6 +467,93 @@ analyzeBtn.addEventListener('click', async () => {
     }
 });
 
+function addPlotToList(tabId: string, plotId: string, plotName: string, hidden: boolean = false): void {
+    const plotList = document.getElementById(`plot-list-${tabId}`) as HTMLElement;
+    const listItem = document.createElement('li');
+    listItem.innerHTML = `<input type="checkbox" id="checkbox-${plotId}" alt="show/hide" ${hidden ? '' : 'checked'}><label for="checkbox-${plotId}">${plotName}</label>`;
+    plotList.appendChild(listItem);
+}
+
+function addPlotElement(tabId: string, plotId: string, hidden: boolean = false): HTMLElement {
+    const tabContent = document.querySelector(`[data-content="${tabId}"]`) as HTMLElement;
+    const plotBox = document.createElement('div');
+    plotBox.className = 'plot-box';
+    plotBox.innerHTML = `
+        <div id="${plotId}" class="plot-medium"></div>
+        <div class="button-bar">
+            <button>Customize...</button>
+            <button>Export as...</button>
+            <label for="checkbox-${plotId}">Hide</label>
+        </div>
+    `;
+    tabContent.querySelector('.plot-outer')?.appendChild(plotBox);
+    if (hidden) {
+        plotBox.style.display = 'none';
+    }
+    return plotBox.querySelector(`#${plotId}`) as HTMLElement;
+}
+
+function plot(
+    traces: any[], 
+    tabId: string,
+    title: string, 
+    xTitle: string, 
+    yTitle: string, 
+    xAxisExtras: any = {},
+    yAxisExtras: any = {},
+    layoutExtras: any = {},
+    hidden: boolean = false,
+): void {
+    const plotSettings: {[key: string]: any} = {
+        plotGlPixelRatio: 2, // For better clarity on high-DPI screens
+        legend: {"orientation": "h", "y": -0.2, "yanchor": "top"},
+        plot_bgcolor: '#fafbfc',
+        paper_bgcolor: '#fff',
+        staticPlot: false, // Enable interactivity
+        dragmode: 'pan',
+        showAxisDragHandles: true,
+        showAxisRangeEntryBoxes: true,
+        axisDragOnHover: true,
+        tightenLats: true,
+        font: {
+            family: "'Newsreader', Georgia, 'Times New Roman', Times, serif",
+        },
+        margin: { t: 80, r: 65, b: 70, l: 65 }
+    };
+
+    const layout = {
+        title: title,
+        xaxis: { 
+            title: xTitle,
+            gridcolor: '#e1e4e8',
+            tickformat: '.0f',
+            ...xAxisExtras
+        },
+        yaxis: { 
+            title: yTitle,
+            gridcolor: '#e1e4e8',
+            automargin: true,
+            ...yAxisExtras
+        },
+        ...layoutExtras,
+        ...plotSettings
+    };
+
+    const plotId = `plot-${tabId}-${title.toLowerCase().replace(/\s+/g, '-')}`;
+
+    const element = addPlotElement(tabId, plotId, hidden);
+    (window as any).Plotly.newPlot(element, traces, layout, {responsive: true});
+    addPlotToList(tabId, plotId, title, hidden);
+
+    document.getElementById(`checkbox-${plotId}`)?.addEventListener('change', (e) => {
+        const box = document.getElementById(`${plotId}`)!.parentElement!;
+        box.setAttribute('style', (e.target as HTMLInputElement).checked ? 'display: block;' : 'display: none;');
+        window.dispatchEvent(new Event('resize'));
+    });
+
+    console.log(`Plotted ${title} in tab ${tabId}`);
+}
+
 
 /**
  * Creates a new analysis tab in the UI and renders magnitude, phase and impulse-response plots for the provided audio.
@@ -528,8 +616,8 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
                 </div>
                 <div class="section">
                     <div class="title">Plots</div>
-                    <ul class="list">
-                        <li><input type="checkbox" id="checkbox-magnitude-${tabId}" alt="show/hide" checked><label for="checkbox-magnitude-${tabId}">Magnitude</label></li>
+                    <ul class="list" id="plot-list-${tabId}">
+                        <!--li><input type="checkbox" id="checkbox-magnitude-${tabId}" alt="show/hide" checked><label for="checkbox-magnitude-${tabId}">Magnitude</label></li>
                         <li><input type="checkbox" id="checkbox-phase-${tabId}" alt="show/hide" checked><label for="checkbox-phase-${tabId}">Phase</label></li>
                         <li><input type="checkbox" id="checkbox-ir-${tabId}" alt="show/hide" checked><label for="checkbox-ir-${tabId}">Impulse Response</label></li>
                         <li><input type="checkbox" id="checkbox-ir-${tabId}" alt="show/hide" disabled><label for="checkbox-ir-${tabId}">Fundamental + Harmonic Distortion</label></li>
@@ -539,7 +627,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
                         <li><input type="checkbox" id="checkbox-stimulus-waveform-${tabId}" alt="show/hide" disabled><label for="checkbox-stimulus-waveform-${tabId}">Stimulus Waveform</label></li>
                         <li><input type="checkbox" id="checkbox-recorded-waveform-${tabId}" alt="show/hide" disabled><label for="checkbox-recorded-waveform-${tabId}">Recorded Waveform</label></li>
                         <li><input type="checkbox" id="checkbox-recorded-noise-floor-${tabId}" alt="show/hide" disabled><label for="checkbox-recorded-noise-floor-${tabId}">Recorded Noise Floor</label></li>
-                        <li><input type="checkbox" id="checkbox-target-curve-${tabId}" alt="show/hide" disabled><label for="checkbox-target-curve-${tabId}">Target Curve<button class="float-right text-xs cursor-pointer" style="color: #bbb; padding-top: 3px">Set</button></label></li>
+                        <li><input type="checkbox" id="checkbox-target-curve-${tabId}" alt="show/hide" disabled><label for="checkbox-target-curve-${tabId}">Target Curve<button class="float-right text-xs cursor-pointer" style="color: #bbb; padding-top: 3px">Set</button></label></li-->
                     </ul>
                 </div>
                 <div class="section">
@@ -549,31 +637,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
                 <div id="resize-handle" class="resize-handle"></div>
             </div>
             <div class="flex-1 main-content">
-                <div class="grid grid-cols-6 gap-[1px] bg-[#ddd] border-b border-[#ddd]">
-                    <div class="plot-box">
-                        <div id="plot-${tabId}-magnitude" class="plot-medium"></div>
-                        <div class="button-bar">
-                            <button>Customize...</button>
-                            <button>Export as...</button>
-                            <label for="checkbox-magnitude-${tabId}">Hide</label>
-                        </div>
-                    </div>
-                    <div class="plot-box">
-                        <div id="plot-${tabId}-phase" class="plot-medium"></div>
-                        <div class="button-bar">
-                            <button>Customize...</button>
-                            <button>Export as...</button>
-                            <label for="checkbox-phase-${tabId}">Hide</label>
-                        </div>
-                    </div>
-                    <div class="plot-box">
-                        <div id="plot-${tabId}-ir" class="plot-medium"></div>
-                        <div class="button-bar">
-                            <button>Customize...</button>
-                            <button>Export as...</button>
-                            <label for="checkbox-ir-${tabId}">Hide</label>
-                        </div>
-                    </div>
+                <div class="grid grid-cols-6 gap-[1px] bg-[#ddd] border-b border-[#ddd] plot-outer">
                 </div>
             </div>
         </div>
@@ -590,26 +654,8 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
     console.log('Response audio data:', responseData);
     const responseSamples = responseData.getChannelData(0);
     
-    console.log(responseData.getChannelData(0));
     const responseFFT = computeFFT(responseSamples);
-
     const smoothedResponseFFT = smoothFFT(responseFFT, 1/6, 1/48);
-    const tracesMagnitude: any[] = [{
-        x: responseFFT.frequency,
-        y: db(responseFFT.magnitude),
-        type: 'scatter',
-        mode: 'lines',
-        name: 'Measurement signal',
-        line: { color: '#0366d633', width: 1 }
-    }];
-    tracesMagnitude.push({
-        x: smoothedResponseFFT.frequency,
-        y: smoothedResponseFFT.magnitude,
-        type: 'scatter',
-        mode: 'lines',
-        name: 'Measurement signal (Smoothed)',
-        line: { color: '#0366d6', width: 2 }
-    });
     const tracesPhase: any[] = [];
     const tracesPhaseSecondary: any[] = [];
     const tracesIR: any[] = [];
@@ -618,17 +664,65 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
 
     let referenceSamples = Float32Array.from([]);
 
+    plot(
+        [
+            {x: responseFFT.frequency, y: db(responseFFT.magnitude), name: 'Recorded signal', line: { color: '#0366d666', width: 1 }},
+            {x: smoothedResponseFFT.frequency, y: smoothedResponseFFT.magnitude, name: 'Recorded signal (Smoothed)', line: { color: '#0366d6', width: 2 }}
+        ], 
+        tabId, 
+        'Recorded Spectrogram', 
+        'Frequency', 
+        'Amplitude (dBFS)',
+        {type: 'log', range: [Math.log10(20), Math.log10(20000)]}, 
+        {range: [-85, 5]},
+        {}, 
+        true
+    );
+    plot(
+        [
+            {x: linspace(0, responseSamples.length/48000, responseSamples.length), y: responseSamples, name: 'Recorded signal', line: { color: '#0366d6ff', width: 1 }}
+        ],
+        tabId, 
+        'Recorded Waveform', 
+        'Time (s)', 
+        'Amplitude',
+        {}, 
+        {}, 
+        {}, 
+        true
+    );
+
     if (referenceData) {
         referenceSamples = referenceData.getChannelData(0);
         const referenceFFT: FFTResult = computeFFT(referenceSamples);
-        tracesMagnitude.push({
-            x: referenceFFT.frequency,
-            y: db(referenceFFT.magnitude),
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Reference signal',
-            line: { color: '#0366d6', width: 2 }
-        });
+        const smoothedReferenceFFT = smoothFFT(referenceFFT, 1/6, 1/48);
+        plot(
+            [
+                {x: referenceFFT.frequency, y: db(referenceFFT.magnitude), name: 'Stimulus signal', line: { color: '#0366d666', width: 1 }},
+                {x: smoothedReferenceFFT.frequency, y: smoothedReferenceFFT.magnitude, name: 'Stimulus signal (Smoothed)', line: { color: '#0366d6', width: 2 }}
+            ], 
+            tabId, 
+            'Stimulus Spectrogram', 
+            'Frequency', 
+            'Amplitude (dBFS)',
+            {type: 'log', range: [Math.log10(20), Math.log10(20000)]}, 
+            {range: [-85, 5]},
+            {}, 
+            true
+        );
+        plot(
+            [
+                {x: linspace(0, referenceSamples.length/48000, referenceSamples.length), y: referenceSamples, name: 'Stimulus signal', line: { color: '#0366d6ff', width: 1 }}
+            ],
+            tabId, 
+            'Stimulus Waveform', 
+            'Time (s)', 
+            'Amplitude',
+            {}, 
+            {}, 
+            {}, 
+            true
+        );
         const ir: ImpulseResponseResult = twoChannelImpulseResponse(responseSamples, referenceSamples);
         const farina_ir: ImpulseResponseResult = FarinaImpulseResponse(responseSamples, referenceSamples);
 
@@ -643,170 +737,70 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             name: 'Dual-FFT Impulse Response',
             line: { color: '#d73a49', width: 1 }
         });
-        /* tracesIR.push({
-            x: farina_ir.t,
-            y: db(farina_ir.ir.map(v => Math.abs(v))),        
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Farina Impulse Response',
-            line: { color: '#d73a49', width: 1 }
-        }); */
         const transferFunction = computeFFTFromIR(ir);
         const transferFunctionFarina = computeFFTFromIR(farina_ir);
         // const dreferenceFFT = twoChannelFFT(responseData.data, referenceSamples, nextPow2(referenceSamples.length), -5627);
         const smoothedFreqResponse = smoothFFT(transferFunction, 1/6, 1/48);
         const smoothedFreqResponseFarina = smoothFFT(transferFunctionFarina, 1/6, 1/48);
-        
-        const rmsValue = 1;  // rms(referenceSamples);
-        console.log('Reference RMS:', db(rmsValue));
-
-        tracesMagnitude.push({
-            x: transferFunction.frequency,
-            y: db(transferFunction.magnitude.map(v => v * rmsValue)),
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Dual-FFT Transfer Function (Raw)',
-            line: { color: '#d73a4933', width: 1 }
-        });
-        tracesMagnitude.push({
-            x: smoothedFreqResponse.frequency,
-            y: smoothedFreqResponse.magnitude.map(v => v + db(rmsValue)),
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Dual-FFT Transfer Function (Smoothed)',
-            line: { color: '#d73a49', width: 2 }
-        });
-        tracesMagnitude.push({
-            x: transferFunctionFarina.frequency.map(v => v),
-            y: db(transferFunctionFarina.magnitude.map(v => v * rmsValue)),
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Farina Transfer Function',
-            line: { color: '#341fad33', width: 1 }
-        });
-        tracesMagnitude.push({
-            x: smoothedFreqResponseFarina.frequency.map(v => v),
-            y: smoothedFreqResponseFarina.magnitude.map(v => v + db(rmsValue)),
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Farina Transfer Function (Smoothed)',
-            line: { color: '#341fadff', width: 2 }
-        });
-
-
-        tracesPhase.push({
-            x: transferFunction.frequency,
-            y: transferFunction.phase,
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Dual-FFT Transfer Function (Raw)',
-            line: { color: '#d73a4933', width: 1 }
-        });
-        tracesPhase.push({
-            x: smoothedFreqResponse.frequency,
-            y: smoothedFreqResponse.phase,
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Dual-FFT Transfer Function (Smoothed)',
-            line: { color: '#d73a49', width: 2 }
-        });
         const gd = groupDelays(transferFunction, 1000);
-        tracesPhase.push({
-            x: transferFunction.frequency,
-            y: gd,
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Group Delay (Calculated on a reduced set of points)',
-            line: { color: '#d73a49', width: 2, dash: 'dot' },
-            yaxis: 'y2'
-        });
+
+        plot(
+            [
+                {x: transferFunction.frequency, y: db(transferFunction.magnitude), name: 'Magnitude', line: { color: '#0366d666', width: 1 }},
+                {x: smoothedFreqResponse.frequency, y: smoothedFreqResponse.magnitude, name: 'Magnitude (Smoothed)', line: { color: '#0366d6', width: 2 }}
+            ], 
+            tabId, 
+            'Transfer Function', 
+            'Frequency', 
+            'Amplitude (dBFS)',
+            {type: 'log', range: [Math.log10(20), Math.log10(20000)]}, 
+            {range: [-85, 5]},
+            {}, 
+            false
+        );
+        plot(
+            [
+                {x: transferFunctionFarina.frequency, y: db(transferFunctionFarina.magnitude), name: 'Fundamental', line: { color: '#0366d666', width: 1 }},
+                {x: smoothedFreqResponseFarina.frequency, y: smoothedFreqResponseFarina.magnitude, name: 'Fundamental (Smoothed)', line: { color: '#0366d6', width: 2 }}
+            ], 
+            tabId, 
+            'Fundamental and Harmonic Distortion', 
+            'Frequency', 
+            'Amplitude (dBFS)',
+            {type: 'log', range: [Math.log10(20), Math.log10(20000)]}, 
+            {range: [-85, 5]},
+            {}, 
+            false
+        );
+        plot(
+            [
+                {x: transferFunction.frequency, y: transferFunction.phase, name: 'Phase', line: { color: '#0366d666', width: 1 }},
+                {x: smoothedFreqResponse.frequency, y: smoothedFreqResponse.phase, name: 'Phase (Smoothed)', line: { color: '#0366d6', width: 2 }}
+            ], 
+            tabId, 
+            'Phase', 
+            'Frequency', 
+            'Amplitude (dBFS)',
+            {type: 'log', range: [Math.log10(20), Math.log10(20000)]}, 
+            {range: [-720, 720]}, 
+            {}, 
+            false
+        );
+        plot(
+            [
+                {x: transferFunctionFarina.frequency, y: gd, name: 'Group Delay', line: { color: '#d73a49', width: 2, dash: 'dot' }}
+            ], 
+            tabId, 
+            'Group Delay', 
+            'Frequency', 
+            'Group Delay (ms)',
+            {type: 'log', range: [Math.log10(20), Math.log10(20000)]}, 
+            {range: [-20, 20]}, 
+            {}, 
+            false
+        );
     }
 
-    const plotSettings: {[key: string]: any} = {
-        plotGlPixelRatio: 2, // For better clarity on high-DPI screens
-        legend: {"orientation": "h", "y": -0.2, "yanchor": "top"},
-        plot_bgcolor: '#fafbfc',
-        paper_bgcolor: '#fff',
-        staticPlot: false, // Enable interactivity
-        dragmode: 'pan',
-        showAxisDragHandles: true,
-        showAxisRangeEntryBoxes: true,
-        axisDragOnHover: true,
-        tightenLats: true,
-        font: {
-            family: "'Newsreader', Georgia, 'Times New Roman', Times, serif",
-        },
-        margin: { t: 80, r: 65, b: 70, l: 65 }
-    };
-
-    const layoutPhase = {
-        title: 'Phase Analysis',
-        xaxis: { 
-            title: 'Frequency (Hz)', 
-            type: 'log',
-            gridcolor: '#e1e4e8',
-            range: [Math.log10(20), Math.log10(20000)],
-            tickformat: '.0f',
-        },
-        yaxis: { 
-            title: 'Phase (degrees)',
-            gridcolor: '#e1e4e8',
-            automargin: true,
-            range: [-720, 720],
-        },
-        yaxis2: { 
-            title: 'Group Delay (ms)',
-            gridcolor: '#e1e4e8',
-            automargin: true,
-            anchor: 'x', 
-            overlaying: 'y', 
-            side: 'right',
-            range: [-20, 20],
-        },
-        ...plotSettings
-    };
-
-    (window as any).Plotly.newPlot(`plot-${tabId}-phase`, tracesPhase, layoutPhase, { responsive: true });
-
-
-    const layoutMagnitude = {
-        title: 'Magnitude Analysis',    
-        xaxis: { 
-            title: 'Frequency (Hz)', 
-            type: 'log',
-            gridcolor: '#e1e4e8',
-            range: [Math.log10(20), Math.log10(20000)],
-            tickformat: '.0f',
-
-        },
-        yaxis: { 
-            title: 'Magnitude (dB)',
-            gridcolor: '#e1e4e8',
-            rangemode: 'tozero',
-            range: [-85, 5],
-        },
-        ...plotSettings
-    };
-
-    (window as any).Plotly.newPlot(`plot-${tabId}-magnitude`, tracesMagnitude, layoutMagnitude, { responsive: true });
-
-    
-    const layoutIR = {
-        title: 'Impulse response',
-        xaxis: { 
-            title: 'Amplitude', 
-            gridcolor: '#e1e4e8',
-            range: [-0.05 + irPeakAt / responseData.sampleRate, 0.05 + irPeakAt / responseData.sampleRate],
-        },
-        yaxis: { 
-            title: 'Amplitude (gain)',
-            gridcolor: '#e1e4e8',
-            automargin: true,
-        },
-        ...plotSettings
-    };
-
-    (window as any).Plotly.newPlot(`plot-${tabId}-ir`, tracesIR, layoutIR, { responsive: true });
     saveState();
 
     // Persist analysis using IndexedDB (mirrored to sessionStorage for compatibility)
