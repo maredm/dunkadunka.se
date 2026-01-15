@@ -3199,189 +3199,29 @@ analyzeBtn.addEventListener("click", function() {
         });
     })();
 });
-function createAnalysisTab(responseData, referenceData, filename, referenceFilename) {
-    var _document_getElementById, _document_getElementById1, _document_getElementById2, _document_getElementById3;
-    tabCounter++;
-    var tabId = "analysis-".concat(tabCounter);
-    var shortName = filename.length > 20 ? filename.substring(0, 17) + "..." : filename;
-    if (referenceFilename != null) {
-        var shortReferenceName = (referenceFilename === null || referenceFilename === void 0 ? void 0 : referenceFilename.length) > 20 ? referenceFilename.substring(0, 17) + "..." : referenceFilename;
-        shortName += " / " + shortReferenceName;
+function addPlotToList(tabId, plotId, plotName) {
+    var hidden = arguments.length > 3 && arguments[3] !== void 0 ? arguments[3] : false;
+    var plotList = document.getElementById("plot-list-".concat(tabId));
+    var listItem = document.createElement("li");
+    listItem.innerHTML = '<input type="checkbox" id="checkbox-'.concat(plotId, '" alt="show/hide" ').concat(hidden ? "" : "checked", '><label for="checkbox-').concat(plotId, '">').concat(plotName, "</label>");
+    plotList.appendChild(listItem);
+}
+function addPlotElement(tabId, plotId) {
+    var hidden = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : false;
+    var _tabContent_querySelector;
+    var tabContent = document.querySelector('[data-content="'.concat(tabId, '"]'));
+    var plotBox = document.createElement("div");
+    plotBox.className = "plot-box";
+    plotBox.innerHTML = '\n        <div id="'.concat(plotId, '" class="plot-medium"></div>\n        <div class="button-bar">\n            <button>Customize...</button>\n            <button>Export as...</button>\n            <label for="checkbox-').concat(plotId, '">Hide</label>\n        </div>\n    ');
+    (_tabContent_querySelector = tabContent.querySelector(".plot-outer")) === null || _tabContent_querySelector === void 0 ? void 0 : _tabContent_querySelector.appendChild(plotBox);
+    if (hidden) {
+        plotBox.style.display = "none";
     }
-    var tab = document.createElement("button");
-    tab.className = "tab tab-closable";
-    tab.dataset.tab = tabId;
-    tab.innerHTML = '<span class="tab-icon-analysis"></span>'.concat(shortName, ' <span class="tab-close">✕</span>');
-    tabsInnerContainer.appendChild(tab);
-    var content = document.createElement("div");
-    content.className = "tab-content";
-    content.dataset.content = tabId;
-    content.innerHTML = '\n    <!-- nav class="tab-menu-bar">\n                <div>\n                    <label for="smoothing-'.concat(tabId, '">Smoothing</label>\n                    <select id="smoothing-').concat(tabId, '" class="smoothing-select" aria-label="Smoothing factor">\n                        <option value="0">None</option>\n                        <option value="1/3">1/3 octave</option>\n                        <option value="1/6" selected>1/6 octave</option>\n                        <option value="1/12">1/12 octave</option>\n                        <option value="1/24">1/24 octave</option>\n                        <option value="1/48">1/48 octave</option>\n                    </select>\n                </div>\n            </nav> <h5 class="text-xs italic text-gray-600">Frequency Response Analysis of ').concat(filename).concat(referenceFilename ? " / " + referenceFilename : "", '</h5 -->\n        <button class="sidecar-toggle" id="sidebar-toggle-').concat(tabId, '" title="Toggle Sidecar">Open settings pane</button>\n        <div class="flex h-full">\n            <div class="flex-none w-86 border-r border-[#ddd] p-2 relative sidecar" style="transition:50ms linear;">\n                <div class="section">\n                    <div class="title">Settings</div>\n                    <p><i>There are no settings for this analysis.</i></p>\n                </div>\n                <div class="section">\n                    <div class="title">Plots</div>\n                    <ul class="list">\n                        <li><input type="checkbox" id="checkbox-magnitude-').concat(tabId, '" alt="show/hide" checked><label for="checkbox-magnitude-').concat(tabId, '">Magnitude</label></li>\n                        <li><input type="checkbox" id="checkbox-phase-').concat(tabId, '" alt="show/hide" checked><label for="checkbox-phase-').concat(tabId, '">Phase</label></li>\n                        <li><input type="checkbox" id="checkbox-ir-').concat(tabId, '" alt="show/hide" checked><label for="checkbox-ir-').concat(tabId, '">Impulse Response</label></li>\n                        <li><input type="checkbox" id="checkbox-ir-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-ir-').concat(tabId, '">Fundamental + Harmonic Distortion</label></li>\n                        <li><input type="checkbox" id="checkbox-distortion-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-distortion-').concat(tabId, '">Distortion</label></li>\n                        <li><input type="checkbox" id="checkbox-distortion-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-distortion-').concat(tabId, '">Sound Pressure Level</label></li>\n                        <li><input type="checkbox" id="checkbox-deconvoluted-ir-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-deconvoluted-ir-').concat(tabId, '">Deconvoluted Impulse Response</label></li>\n                        <li><input type="checkbox" id="checkbox-stimulus-waveform-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-stimulus-waveform-').concat(tabId, '">Stimulus Waveform</label></li>\n                        <li><input type="checkbox" id="checkbox-recorded-waveform-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-recorded-waveform-').concat(tabId, '">Recorded Waveform</label></li>\n                        <li><input type="checkbox" id="checkbox-recorded-noise-floor-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-recorded-noise-floor-').concat(tabId, '">Recorded Noise Floor</label></li>\n                        <li><input type="checkbox" id="checkbox-target-curve-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-target-curve-').concat(tabId, '">Target Curve<button class="float-right text-xs cursor-pointer" style="color: #bbb; padding-top: 3px">Set</button></label></li>\n                    </ul>\n                </div>\n                <div class="section">\n                    <div class="title">Properties</div>\n                    <p><i>There are no properties for this analysis.</i></p>\n                </div>\n                <div id="resize-handle" class="resize-handle"></div>\n            </div>\n            <div class="flex-1 main-content">\n                <div class="grid grid-cols-6 gap-[1px] bg-[#ddd] border-b border-[#ddd]">\n                    <div class="plot-box">\n                        <div id="plot-').concat(tabId, '-magnitude" class="plot-medium"></div>\n                        <div class="button-bar">\n                            <button>Customize...</button>\n                            <button>Export as...</button>\n                            <label for="checkbox-magnitude-').concat(tabId, '">Hide</label>\n                        </div>\n                    </div>\n                    <div class="plot-box">\n                        <div id="plot-').concat(tabId, '-phase" class="plot-medium"></div>\n                        <div class="button-bar">\n                            <button>Customize...</button>\n                            <button>Export as...</button>\n                            <label for="checkbox-phase-').concat(tabId, '">Hide</label>\n                        </div>\n                    </div>\n                    <div class="plot-box">\n                        <div id="plot-').concat(tabId, '-ir" class="plot-medium"></div>\n                        <div class="button-bar">\n                            <button>Customize...</button>\n                            <button>Export as...</button>\n                            <label for="checkbox-ir-').concat(tabId, '">Hide</label>\n                        </div>\n                    </div>\n                </div>\n            </div>\n        </div>\n       \n        \n    ');
-    tabContents.appendChild(content);
-    switchTab(tabId);
-    console.log("Analyzing response file:", filename);
-    console.log("Response audio data:", responseData);
-    var responseSamples = responseData.getChannelData(0);
-    console.log(responseData.getChannelData(0));
-    var responseFFT = computeFFT(responseSamples);
-    var smoothedResponseFFT = smoothFFT(responseFFT, 1 / 6, 1 / 48);
-    var tracesMagnitude = [
-        {
-            x: responseFFT.frequency,
-            y: db(responseFFT.magnitude),
-            type: "scatter",
-            mode: "lines",
-            name: "Measurement signal",
-            line: {
-                color: "#0366d633",
-                width: 1
-            }
-        }
-    ];
-    tracesMagnitude.push({
-        x: smoothedResponseFFT.frequency,
-        y: smoothedResponseFFT.magnitude,
-        type: "scatter",
-        mode: "lines",
-        name: "Measurement signal (Smoothed)",
-        line: {
-            color: "#0366d6",
-            width: 2
-        }
-    });
-    var tracesPhase = [];
-    var tracesPhaseSecondary = [];
-    var tracesIR = [];
-    var irPeakAt = 0;
-    var referenceSamples = Float32Array.from([]);
-    if (referenceData) {
-        referenceSamples = referenceData.getChannelData(0);
-        var referenceFFT = computeFFT(referenceSamples);
-        tracesMagnitude.push({
-            x: referenceFFT.frequency,
-            y: db(referenceFFT.magnitude),
-            type: "scatter",
-            mode: "lines",
-            name: "Reference signal",
-            line: {
-                color: "#0366d6",
-                width: 2
-            }
-        });
-        var ir = twoChannelImpulseResponse(responseSamples, referenceSamples);
-        var farina_ir = FarinaImpulseResponse(responseSamples, referenceSamples);
-        console.log("Impulse response peak at", ir.peakAt);
-        irPeakAt = ir.peakAt;
-        tracesIR.push({
-            x: ir.t,
-            y: ir.ir,
-            type: "scatter",
-            mode: "lines",
-            name: "Dual-FFT Impulse Response",
-            line: {
-                color: "#d73a49",
-                width: 1
-            }
-        });
-        var transferFunction = computeFFTFromIR(ir);
-        var transferFunctionFarina = computeFFTFromIR(farina_ir);
-        var smoothedFreqResponse = smoothFFT(transferFunction, 1 / 6, 1 / 48);
-        var smoothedFreqResponseFarina = smoothFFT(transferFunctionFarina, 1 / 6, 1 / 48);
-        var rmsValue = 1;
-        console.log("Reference RMS:", db(rmsValue));
-        tracesMagnitude.push({
-            x: transferFunction.frequency,
-            y: db(transferFunction.magnitude.map(function(v) {
-                return v * rmsValue;
-            })),
-            type: "scatter",
-            mode: "lines",
-            name: "Dual-FFT Transfer Function (Raw)",
-            line: {
-                color: "#d73a4933",
-                width: 1
-            }
-        });
-        tracesMagnitude.push({
-            x: smoothedFreqResponse.frequency,
-            y: smoothedFreqResponse.magnitude.map(function(v) {
-                return v + db(rmsValue);
-            }),
-            type: "scatter",
-            mode: "lines",
-            name: "Dual-FFT Transfer Function (Smoothed)",
-            line: {
-                color: "#d73a49",
-                width: 2
-            }
-        });
-        tracesMagnitude.push({
-            x: transferFunctionFarina.frequency.map(function(v) {
-                return v;
-            }),
-            y: db(transferFunctionFarina.magnitude.map(function(v) {
-                return v * rmsValue;
-            })),
-            type: "scatter",
-            mode: "lines",
-            name: "Farina Transfer Function",
-            line: {
-                color: "#341fad33",
-                width: 1
-            }
-        });
-        tracesMagnitude.push({
-            x: smoothedFreqResponseFarina.frequency.map(function(v) {
-                return v;
-            }),
-            y: smoothedFreqResponseFarina.magnitude.map(function(v) {
-                return v + db(rmsValue);
-            }),
-            type: "scatter",
-            mode: "lines",
-            name: "Farina Transfer Function (Smoothed)",
-            line: {
-                color: "#341fadff",
-                width: 2
-            }
-        });
-        tracesPhase.push({
-            x: transferFunction.frequency,
-            y: transferFunction.phase,
-            type: "scatter",
-            mode: "lines",
-            name: "Dual-FFT Transfer Function (Raw)",
-            line: {
-                color: "#d73a4933",
-                width: 1
-            }
-        });
-        tracesPhase.push({
-            x: smoothedFreqResponse.frequency,
-            y: smoothedFreqResponse.phase,
-            type: "scatter",
-            mode: "lines",
-            name: "Dual-FFT Transfer Function (Smoothed)",
-            line: {
-                color: "#d73a49",
-                width: 2
-            }
-        });
-        var gd = groupDelays(transferFunction, 1e3);
-        tracesPhase.push({
-            x: transferFunction.frequency,
-            y: gd,
-            type: "scatter",
-            mode: "lines",
-            name: "Group Delay (Calculated on a reduced set of points)",
-            line: {
-                color: "#d73a49",
-                width: 2,
-                dash: "dot"
-            },
-            yaxis: "y2"
-        });
-    }
+    return plotBox.querySelector("#".concat(plotId));
+}
+function plot(traces, tabId, title, xTitle, yTitle) {
+    var xAxisExtras = arguments.length > 5 && arguments[5] !== void 0 ? arguments[5] : {}, yAxisExtras = arguments.length > 6 && arguments[6] !== void 0 ? arguments[6] : {}, layoutExtras = arguments.length > 7 && arguments[7] !== void 0 ? arguments[7] : {}, hidden = arguments.length > 8 && arguments[8] !== void 0 ? arguments[8] : false;
+    var _document_getElementById;
     var plotSettings = {
         plotGlPixelRatio: 2,
         // For better clarity on high-DPI screens
@@ -3409,87 +3249,277 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
             l: 65
         }
     };
-    var layoutPhase = _object_spread({
-        title: "Phase Analysis",
-        xaxis: {
-            title: "Frequency (Hz)",
-            type: "log",
+    var layout = _object_spread({
+        title: title,
+        xaxis: _object_spread({
+            title: xTitle,
             gridcolor: "#e1e4e8",
-            range: [
-                Math.log10(20),
-                Math.log10(2e4)
-            ],
             tickformat: ".0f"
-        },
-        yaxis: {
-            title: "Phase (degrees)",
+        }, xAxisExtras),
+        yaxis: _object_spread({
+            title: yTitle,
             gridcolor: "#e1e4e8",
-            automargin: true,
-            range: [
-                -720,
-                720
-            ]
-        },
-        yaxis2: {
-            title: "Group Delay (ms)",
-            gridcolor: "#e1e4e8",
-            automargin: true,
-            anchor: "x",
-            overlaying: "y",
-            side: "right",
-            range: [
-                -20,
-                20
-            ]
-        }
-    }, plotSettings);
-    window.Plotly.newPlot("plot-".concat(tabId, "-phase"), tracesPhase, layoutPhase, {
+            automargin: true
+        }, yAxisExtras)
+    }, layoutExtras, plotSettings);
+    var plotId = "plot-".concat(tabId, "-").concat(title.toLowerCase().replace(/\s+/g, "-"));
+    var element = addPlotElement(tabId, plotId, hidden);
+    window.Plotly.newPlot(element, traces, layout, {
         responsive: true
     });
-    var layoutMagnitude = _object_spread({
-        title: "Magnitude Analysis",
-        xaxis: {
-            title: "Frequency (Hz)",
+    addPlotToList(tabId, plotId, title, hidden);
+    (_document_getElementById = document.getElementById("checkbox-".concat(plotId))) === null || _document_getElementById === void 0 ? void 0 : _document_getElementById.addEventListener("change", function(e) {
+        var box = document.getElementById("".concat(plotId)).parentElement;
+        box.setAttribute("style", e.target.checked ? "display: block;" : "display: none;");
+        window.dispatchEvent(new Event("resize"));
+    });
+    console.log("Plotted ".concat(title, " in tab ").concat(tabId));
+}
+function createAnalysisTab(responseData, referenceData, filename, referenceFilename) {
+    var _document_getElementById, _document_getElementById1, _document_getElementById2, _document_getElementById3;
+    tabCounter++;
+    var tabId = "analysis-".concat(tabCounter);
+    var shortName = filename.length > 20 ? filename.substring(0, 17) + "..." : filename;
+    if (referenceFilename != null) {
+        var shortReferenceName = (referenceFilename === null || referenceFilename === void 0 ? void 0 : referenceFilename.length) > 20 ? referenceFilename.substring(0, 17) + "..." : referenceFilename;
+        shortName += " / " + shortReferenceName;
+    }
+    var tab = document.createElement("button");
+    tab.className = "tab tab-closable";
+    tab.dataset.tab = tabId;
+    tab.innerHTML = '<span class="tab-icon-analysis"></span>'.concat(shortName, ' <span class="tab-close">✕</span>');
+    tabsInnerContainer.appendChild(tab);
+    var content = document.createElement("div");
+    content.className = "tab-content";
+    content.dataset.content = tabId;
+    content.innerHTML = '\n    <!-- nav class="tab-menu-bar">\n                <div>\n                    <label for="smoothing-'.concat(tabId, '">Smoothing</label>\n                    <select id="smoothing-').concat(tabId, '" class="smoothing-select" aria-label="Smoothing factor">\n                        <option value="0">None</option>\n                        <option value="1/3">1/3 octave</option>\n                        <option value="1/6" selected>1/6 octave</option>\n                        <option value="1/12">1/12 octave</option>\n                        <option value="1/24">1/24 octave</option>\n                        <option value="1/48">1/48 octave</option>\n                    </select>\n                </div>\n            </nav> <h5 class="text-xs italic text-gray-600">Frequency Response Analysis of ').concat(filename).concat(referenceFilename ? " / " + referenceFilename : "", '</h5 -->\n        <button class="sidecar-toggle" id="sidebar-toggle-').concat(tabId, '" title="Toggle Sidecar">Open settings pane</button>\n        <div class="flex h-full">\n            <div class="flex-none w-86 border-r border-[#ddd] p-2 relative sidecar" style="transition:50ms linear;">\n                <div class="section">\n                    <div class="title">Settings</div>\n                    <p><i>There are no settings for this analysis.</i></p>\n                </div>\n                <div class="section">\n                    <div class="title">Plots</div>\n                    <ul class="list" id="plot-list-').concat(tabId, '">\n                        <!--li><input type="checkbox" id="checkbox-magnitude-').concat(tabId, '" alt="show/hide" checked><label for="checkbox-magnitude-').concat(tabId, '">Magnitude</label></li>\n                        <li><input type="checkbox" id="checkbox-phase-').concat(tabId, '" alt="show/hide" checked><label for="checkbox-phase-').concat(tabId, '">Phase</label></li>\n                        <li><input type="checkbox" id="checkbox-ir-').concat(tabId, '" alt="show/hide" checked><label for="checkbox-ir-').concat(tabId, '">Impulse Response</label></li>\n                        <li><input type="checkbox" id="checkbox-ir-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-ir-').concat(tabId, '">Fundamental + Harmonic Distortion</label></li>\n                        <li><input type="checkbox" id="checkbox-distortion-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-distortion-').concat(tabId, '">Distortion</label></li>\n                        <li><input type="checkbox" id="checkbox-distortion-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-distortion-').concat(tabId, '">Sound Pressure Level</label></li>\n                        <li><input type="checkbox" id="checkbox-deconvoluted-ir-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-deconvoluted-ir-').concat(tabId, '">Deconvoluted Impulse Response</label></li>\n                        <li><input type="checkbox" id="checkbox-stimulus-waveform-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-stimulus-waveform-').concat(tabId, '">Stimulus Waveform</label></li>\n                        <li><input type="checkbox" id="checkbox-recorded-waveform-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-recorded-waveform-').concat(tabId, '">Recorded Waveform</label></li>\n                        <li><input type="checkbox" id="checkbox-recorded-noise-floor-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-recorded-noise-floor-').concat(tabId, '">Recorded Noise Floor</label></li>\n                        <li><input type="checkbox" id="checkbox-target-curve-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-target-curve-').concat(tabId, '">Target Curve<button class="float-right text-xs cursor-pointer" style="color: #bbb; padding-top: 3px">Set</button></label></li-->\n                    </ul>\n                </div>\n                <div class="section">\n                    <div class="title">Properties</div>\n                    <p><i>There are no properties for this analysis.</i></p>\n                </div>\n                <div id="resize-handle" class="resize-handle"></div>\n            </div>\n            <div class="flex-1 main-content">\n                <div class="grid grid-cols-6 gap-[1px] bg-[#ddd] border-b border-[#ddd] plot-outer">\n                </div>\n            </div>\n        </div>\n       \n        \n    ');
+    tabContents.appendChild(content);
+    switchTab(tabId);
+    console.log("Analyzing response file:", filename);
+    console.log("Response audio data:", responseData);
+    var responseSamples = responseData.getChannelData(0);
+    var responseFFT = computeFFT(responseSamples);
+    var smoothedResponseFFT = smoothFFT(responseFFT, 1 / 6, 1 / 48);
+    var tracesPhase = [];
+    var tracesPhaseSecondary = [];
+    var tracesIR = [];
+    var irPeakAt = 0;
+    var referenceSamples = Float32Array.from([]);
+    plot([
+        {
+            x: responseFFT.frequency,
+            y: db(responseFFT.magnitude),
+            name: "Measurement signal",
+            line: {
+                color: "#0366d666",
+                width: 1
+            }
+        },
+        {
+            x: smoothedResponseFFT.frequency,
+            y: smoothedResponseFFT.magnitude,
+            name: "Measurement signal (Smoothed)",
+            line: {
+                color: "#0366d6",
+                width: 2
+            }
+        }
+    ], tabId, "Recorded Spectrogram", "Frequency", "Amplitude (dBFS)", {
+        type: "log",
+        range: [
+            Math.log10(20),
+            Math.log10(2e4)
+        ]
+    }, {}, {}, true);
+    plot([
+        {
+            x: linspace(0, responseSamples.length / 48e3, responseSamples.length),
+            y: responseSamples,
+            name: "Recorded signal",
+            line: {
+                color: "#0366d6ff",
+                width: 1
+            }
+        }
+    ], tabId, "Recorded Waveform", "Time (s)", "Amplitude", {}, {}, {}, true);
+    if (referenceData) {
+        referenceSamples = referenceData.getChannelData(0);
+        var referenceFFT = computeFFT(referenceSamples);
+        var smoothedReferenceFFT = smoothFFT(referenceFFT, 1 / 6, 1 / 48);
+        plot([
+            {
+                x: referenceFFT.frequency,
+                y: db(referenceFFT.magnitude),
+                name: "Stimulus signal",
+                line: {
+                    color: "#0366d666",
+                    width: 1
+                }
+            },
+            {
+                x: smoothedReferenceFFT.frequency,
+                y: smoothedReferenceFFT.magnitude,
+                name: "Stimulus signal (Smoothed)",
+                line: {
+                    color: "#0366d6",
+                    width: 2
+                }
+            }
+        ], tabId, "Stimulus Spectrogram", "Frequency", "Amplitude (dBFS)", {
             type: "log",
-            gridcolor: "#e1e4e8",
             range: [
                 Math.log10(20),
                 Math.log10(2e4)
-            ],
-            tickformat: ".0f"
-        },
-        yaxis: {
-            title: "Magnitude (dB)",
-            gridcolor: "#e1e4e8",
-            rangemode: "tozero",
+            ]
+        }, {}, {}, true);
+        plot([
+            {
+                x: linspace(0, referenceSamples.length / 48e3, referenceSamples.length),
+                y: referenceSamples,
+                name: "Recorded signal",
+                line: {
+                    color: "#0366d6ff",
+                    width: 1
+                }
+            }
+        ], tabId, "Stimulus Waveform", "Time (s)", "Amplitude", {}, {}, {}, true);
+        var ir = twoChannelImpulseResponse(responseSamples, referenceSamples);
+        var farina_ir = FarinaImpulseResponse(responseSamples, referenceSamples);
+        console.log("Impulse response peak at", ir.peakAt);
+        irPeakAt = ir.peakAt;
+        tracesIR.push({
+            x: ir.t,
+            y: ir.ir,
+            type: "scatter",
+            mode: "lines",
+            name: "Dual-FFT Impulse Response",
+            line: {
+                color: "#d73a49",
+                width: 1
+            }
+        });
+        var transferFunction = computeFFTFromIR(ir);
+        var transferFunctionFarina = computeFFTFromIR(farina_ir);
+        var smoothedFreqResponse = smoothFFT(transferFunction, 1 / 6, 1 / 48);
+        var smoothedFreqResponseFarina = smoothFFT(transferFunctionFarina, 1 / 6, 1 / 48);
+        var gd = groupDelays(transferFunction, 1e3);
+        plot([
+            {
+                x: transferFunction.frequency,
+                y: db(transferFunction.magnitude),
+                name: "Magnitude",
+                line: {
+                    color: "#0366d666",
+                    width: 1
+                }
+            },
+            {
+                x: smoothedFreqResponse.frequency,
+                y: smoothedFreqResponse.magnitude,
+                name: "Magnitude (Smoothed)",
+                line: {
+                    color: "#0366d6",
+                    width: 2
+                }
+            }
+        ], tabId, "Transfer Function", "Frequency", "Amplitude (dBFS)", {
+            type: "log",
+            range: [
+                Math.log10(20),
+                Math.log10(2e4)
+            ]
+        }, {
             range: [
                 -85,
                 5
             ]
-        }
-    }, plotSettings);
-    window.Plotly.newPlot("plot-".concat(tabId, "-magnitude"), tracesMagnitude, layoutMagnitude, {
-        responsive: true
-    });
-    var layoutIR = _object_spread({
-        title: "Impulse response",
-        xaxis: {
-            title: "Amplitude",
-            gridcolor: "#e1e4e8",
+        }, {}, false);
+        plot([
+            {
+                x: transferFunctionFarina.frequency,
+                y: db(transferFunctionFarina.magnitude),
+                name: "Fundamental",
+                line: {
+                    color: "#0366d666",
+                    width: 1
+                }
+            },
+            {
+                x: smoothedFreqResponseFarina.frequency,
+                y: smoothedFreqResponseFarina.magnitude,
+                name: "Fundamental (Smoothed)",
+                line: {
+                    color: "#0366d6",
+                    width: 2
+                }
+            }
+        ], tabId, "Fundamental and Harmonic Distortion", "Frequency", "Amplitude (dBFS)", {
+            type: "log",
             range: [
-                -0.05 + irPeakAt / responseData.sampleRate,
-                0.05 + irPeakAt / responseData.sampleRate
+                Math.log10(20),
+                Math.log10(2e4)
             ]
-        },
-        yaxis: {
-            title: "Amplitude (gain)",
-            gridcolor: "#e1e4e8",
-            automargin: true
-        }
-    }, plotSettings);
-    window.Plotly.newPlot("plot-".concat(tabId, "-ir"), tracesIR, layoutIR, {
-        responsive: true
-    });
+        }, {
+            range: [
+                -85,
+                5
+            ]
+        }, {}, false);
+        plot([
+            {
+                x: transferFunction.frequency,
+                y: transferFunction.phase,
+                name: "Phase",
+                line: {
+                    color: "#0366d666",
+                    width: 1
+                }
+            },
+            {
+                x: smoothedFreqResponse.frequency,
+                y: smoothedFreqResponse.phase,
+                name: "Phase (Smoothed)",
+                line: {
+                    color: "#0366d6",
+                    width: 2
+                }
+            }
+        ], tabId, "Phase", "Frequency", "Amplitude (dBFS)", {
+            type: "log",
+            range: [
+                Math.log10(20),
+                Math.log10(2e4)
+            ]
+        }, {
+            range: [
+                -720,
+                720
+            ]
+        }, {}, false);
+        plot([
+            {
+                x: transferFunctionFarina.frequency,
+                y: gd,
+                name: "Group Delay",
+                line: {
+                    color: "#d73a49",
+                    width: 2,
+                    dash: "dot"
+                }
+            }
+        ], tabId, "Group Delay", "Frequency", "Group Delay (ms)", {
+            type: "log",
+            range: [
+                Math.log10(20),
+                Math.log10(2e4)
+            ]
+        }, {
+            range: [
+                -20,
+                20
+            ]
+        }, {}, false);
+    }
     saveState();
     storage.setItem("".concat(tabId), JSON.stringify({
         filename: filename,
