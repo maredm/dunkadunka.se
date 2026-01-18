@@ -835,7 +835,6 @@ function getFractionalOctaveFrequencies(fraction) {
 }
 function fractionalOctaveSmoothing(frequencyData, fraction, frequencies) {
     var frequenciesAll = linspace(0, 48e3 / 2, frequencyData.length);
-    var frequency_resolution = 48e3 / frequencyData.length;
     var smoothedData = new Float32Array(frequencies.length);
     var n = frequencyData.length;
     var factor = Math.pow(2, 0.5 * fraction) - Math.pow(0.5, 0.5 * fraction);
@@ -875,8 +874,14 @@ function db(value) {
         return 20 * Math.log10(value + 1e-50);
     }
 }
-function dbToLinear(db2) {
-    return Math.pow(10, db2 / 20);
+function dbToLinear(value) {
+    if (_instanceof(value, Float32Array)) {
+        return value.map(function(v) {
+            return Math.pow(10, v / 20);
+        });
+    } else {
+        return Math.pow(10, value / 20);
+    }
 }
 function loadAudioFile(file) {
     return _async_to_generator(function() {
@@ -1321,7 +1326,7 @@ function smoothFFT(fftData, fraction, resolution) {
         return 0;
     });
     var fractionalFrequencies = getFractionalOctaveFrequencies(resolution, 20, 24e3, fftSize);
-    var smoothed = fractionalOctaveSmoothing(db(magnitude), fraction, fractionalFrequencies);
+    var smoothed = dbToLinear(fractionalOctaveSmoothing(db(magnitude), fraction, fractionalFrequencies));
     var smoothedPhase = fractionalOctaveSmoothing(phase, fraction, fractionalFrequencies);
     return {
         frequency: fractionalFrequencies,
@@ -1652,7 +1657,7 @@ function twoChannelFFT(dataArray, reference, fftSize, offset) {
     };
 }
 function computeFFTFromIR(ir) {
-    var f_phase_wrap = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : 1e3;
+    var f_phase_wrap = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : 1e3, frequency_multiplier = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : 1;
     var fftSize = nextPow2(ir.ir.length);
     console.log("Computing FFT from IR with size ".concat(fftSize));
     var fft = new FFT(fftSize);
@@ -1876,6 +1881,7 @@ function rectangularWindow(length) {
     return window2;
 }
 function getSelectedWindow(windowType, length) {
+    var correct = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : true;
     var type = windowType;
     var window2 = new Float32Array(length);
     var wcf = 1;
@@ -1895,10 +1901,100 @@ function getSelectedWindow(windowType, length) {
         window2 = rectangularWindow(length);
         wcf = 1;
     }
-    window2 = window2.map(function(v) {
-        return v / wcf;
-    });
+    if (correct) {
+        window2 = window2.map(function(v) {
+            return v / wcf;
+        });
+    }
     return window2;
+}
+// src/plotting.ts
+var COLORS = [
+    "#1f77b4",
+    "#ff7f0e",
+    "#2ca02c",
+    "#d62728",
+    "#9467bd",
+    "#8c564b",
+    "#e377c2",
+    "#7f7f7f",
+    "#bcbd22",
+    "#17becf"
+];
+function addPlotToList(tabId, plotId, plotName) {
+    var hidden = arguments.length > 3 && arguments[3] !== void 0 ? arguments[3] : false;
+    var plotList = document.getElementById("plot-list-".concat(tabId));
+    var listItem = document.createElement("li");
+    listItem.innerHTML = '<input type="checkbox" id="checkbox-'.concat(plotId, '" alt="show/hide" ').concat(hidden ? "" : "checked", '><label for="checkbox-').concat(plotId, '">').concat(plotName, "</label>");
+    plotList.appendChild(listItem);
+}
+function addPlotElement(tabId, plotId) {
+    var hidden = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : false;
+    var _tabContent_querySelector;
+    var tabContent = document.querySelector('[data-content="'.concat(tabId, '"]'));
+    var plotBox = document.createElement("div");
+    plotBox.className = "plot-box";
+    plotBox.innerHTML = '\n        <div id="'.concat(plotId, '" class="plot-medium"></div>\n        <div class="button-bar">\n            <button>Customize...</button>\n            <button>Export as...</button>   \n            <label for="checkbox-').concat(plotId, '">Hide</label>\n        </div>\n    ');
+    (_tabContent_querySelector = tabContent.querySelector(".plot-outer")) === null || _tabContent_querySelector === void 0 ? void 0 : _tabContent_querySelector.appendChild(plotBox);
+    if (hidden) {
+        plotBox.style.display = "none";
+    }
+    return plotBox.querySelector("#".concat(plotId));
+}
+function plot(traces, tabId, title, xTitle, yTitle) {
+    var xAxisExtras = arguments.length > 5 && arguments[5] !== void 0 ? arguments[5] : {}, yAxisExtras = arguments.length > 6 && arguments[6] !== void 0 ? arguments[6] : {}, layoutExtras = arguments.length > 7 && arguments[7] !== void 0 ? arguments[7] : {}, hidden = arguments.length > 8 && arguments[8] !== void 0 ? arguments[8] : false;
+    var _document_getElementById;
+    var plotSettings = {
+        plotGlPixelRatio: 2,
+        // For better clarity on high-DPI screens
+        legend: {
+            "orientation": "h",
+            "y": -0.2,
+            "yanchor": "top"
+        },
+        plot_bgcolor: "#fafbfc",
+        paper_bgcolor: "#fff",
+        staticPlot: false,
+        // Enable interactivity
+        dragmode: "pan",
+        showAxisDragHandles: true,
+        showAxisRangeEntryBoxes: true,
+        axisDragOnHover: true,
+        tightenLats: true,
+        font: {
+            family: "'Newsreader', Georgia, 'Times New Roman', Times, serif"
+        },
+        margin: {
+            t: 80,
+            r: 65,
+            b: 70,
+            l: 65
+        }
+    };
+    var layout = _object_spread({
+        title: title,
+        xaxis: _object_spread({
+            title: xTitle,
+            gridcolor: "#e1e4e8"
+        }, xAxisExtras),
+        yaxis: _object_spread({
+            title: yTitle,
+            gridcolor: "#e1e4e8",
+            automargin: true
+        }, yAxisExtras)
+    }, layoutExtras, plotSettings);
+    var plotId = "plot-".concat(tabId, "-").concat(title.toLowerCase().replace(/\s+/g, "-"));
+    var element = addPlotElement(tabId, plotId, hidden);
+    window.Plotly.newPlot(element, traces, layout, {
+        responsive: true
+    });
+    addPlotToList(tabId, plotId, title, hidden);
+    (_document_getElementById = document.getElementById("checkbox-".concat(plotId))) === null || _document_getElementById === void 0 ? void 0 : _document_getElementById.addEventListener("change", function(e) {
+        var box = document.getElementById("".concat(plotId)).parentElement;
+        box.setAttribute("style", e.target.checked ? "display: block;" : "display: none;");
+        window.dispatchEvent(new Event("resize"));
+    });
+    console.log("Plotted ".concat(title, " in tab ").concat(tabId));
 }
 // src/farina.ts
 var Farina = /*#__PURE__*/ function() {
@@ -1959,87 +2055,210 @@ var Farina = /*#__PURE__*/ function() {
             key: "window",
             value: function window1(signal, at, length) {
                 var size = Math.floor(length * this.fs);
-                var window2 = getSelectedWindow("hanning", size);
-                var sig = this.deconvolution(signal);
-                var si = sig.slice(at - size / 2, at + size / 2);
+                var window2 = getSelectedWindow("rectangular", size, false);
+                var si = signal.ir.slice(at - size / 2, at + size / 2);
                 var w = Float32Array.from({
                     length: size
                 }, function() {
                     return 0;
                 });
-                return si;
                 if (si.length === window2.length) {
                     for(var i = 0; i < window2.length; i++){
                         w[i] = window2[i] * si[i];
                     }
-                    return w;
-                } else {
-                    return Float32Array.from({
-                        length: window2.length
-                    }, function() {
-                        return 0;
-                    });
                 }
+                var ir_complex = Float32Array.from({
+                    length: w.length * 2
+                }, function() {
+                    return 0;
+                });
+                for(var i1 = 0; i1 < w.length; i1++){
+                    ir_complex[2 * i1] = w[i1];
+                    ir_complex[2 * i1 + 1] = 0;
+                }
+                return {
+                    ir: w,
+                    ir_complex: ir_complex,
+                    t: linspace((-size - 1) / 2 / this.fs, (size - 1) / 2 / this.fs, size),
+                    peakAt: at,
+                    sampleRate: this.fs,
+                    fftSize: w.length
+                };
             }
         },
         {
             key: "deconvolution",
             value: function deconvolution(signal) {
                 var _this = this;
-                var customLength = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : 5.5;
                 var n = linspace(0, this.stimulus.length - 1, this.stimulus.length);
+                var ell = this.ell();
                 var k = n.map(function(v) {
-                    return Math.exp(v / _this.ell() / _this.fs);
+                    return Math.exp(v / ell / _this.fs);
                 });
                 var inv_stimulus = this.stimulus.slice().reverse().map(function(v, i) {
                     return v / k[i];
                 });
-                var deconvolved = fftConvolve(signal, inv_stimulus, "same").slice().reverse();
+                var deconvolved = fftConvolve(signal, inv_stimulus, "same").slice();
                 var norm = max(fftConvolve(this.stimulus, inv_stimulus, "same").map(function(v) {
                     return Math.abs(v);
                 }));
-                this.deconvolved = deconvolved;
-                return deconvolved.map(function(v) {
+                this.deconvolved = deconvolved.map(function(v) {
                     return v / norm;
                 });
+                return this.deconvolved;
+            }
+        },
+        {
+            key: "deconvolvedResponse",
+            value: function deconvolvedResponse(signal) {
+                var ir = this.deconvolution(signal);
+                var peakAt = this.instant();
+                var ir_complex = Float32Array.from({
+                    length: ir.length * 2
+                }, function() {
+                    return 0;
+                });
+                for(var i = 0; i < ir.length; i++){
+                    ir_complex[2 * i] = ir[i];
+                    ir_complex[2 * i + 1] = 0;
+                }
+                return {
+                    ir: ir,
+                    ir_complex: ir_complex,
+                    t: linspace(-peakAt / this.fs, (-peakAt + ir.length - 1) / this.fs, ir.length),
+                    peakAt: peakAt,
+                    sampleRate: this.fs,
+                    fftSize: ir.length
+                };
+            }
+        },
+        {
+            key: "harmonics",
+            value: function harmonics(windowSize, harmonicsCount) {
+                var results = [];
+                for(var n = 0; n <= harmonicsCount; n++){
+                    var at = Math.round(this.instant() - this.lag_of_harmonic(n + 1) * this.fs);
+                    var w = this.window({
+                        ir: this.deconvolved,
+                        ir_complex: Float32Array.from([]),
+                        t: Float32Array.from([]),
+                        peakAt: at,
+                        sampleRate: this.fs,
+                        fftSize: this.deconvolved.length
+                    }, at, windowSize);
+                    results.push(w);
+                }
+                return results;
             }
         }
     ]);
     return Farina;
 }();
-function FarinaImpulseResponse(y, x) {
-    var customLength = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : 5.5;
-    var farina = new Farina(x, 2, 2e4, 48e3);
-    var measurementResponse = farina.deconvolution(y, customLength);
-    console.log(farina.max_safe_harmonic(0.1));
-    var peakAt = farina.instant();
-    console.log("peakAt", peakAt);
-    var s = farina.window(y, peakAt, 0.1);
-    var ir = Float32Array.from({
-        length: s.length
-    }, function() {
-        return 0;
-    });
-    for(var i = 0; i < s.length; i++){
-        ir[i] = s[i];
-    }
-    var ir_complex = Float32Array.from({
-        length: s.length * 2
-    }, function() {
-        return 0;
-    });
-    for(var i1 = 0; i1 < s.length; i1++){
-        ir_complex[2 * i1] = s[i1];
-        ir_complex[2 * i1 + 1] = 0;
-    }
-    return {
-        ir: ir,
-        ir_complex: ir_complex,
-        t: linspace((-measurementResponse.length - 1) / 2 / 48e3, (measurementResponse.length - 1) / 2 / 48e3, measurementResponse.length),
-        peakAt: peakAt,
-        sampleRate: 48e3,
-        fftSize: measurementResponse.length
+function plotDistortion(farina, windowSize, maxHarmonics, tabId) {
+    var _loop = function(n) {
+        var color = COLORS[n % COLORS.length];
+        var response = harmonicsFFT[n];
+        var smoothedResponse = smoothedHarmonicsFFT[n];
+        if (n === 0) {
+            traces.push({
+                x: response.frequency.map(function(f) {
+                    return f / (n + 1);
+                }),
+                y: db(response.magnitude),
+                type: "scatter",
+                mode: "lines",
+                name: n === 0 ? "Fundamental" : "Harmonic ".concat(n + 1),
+                line: {
+                    width: 0.75,
+                    color: color + "33"
+                },
+                showlegend: n === 0
+            });
+        }
+        traces.push({
+            x: smoothedResponse.frequency.map(function(f) {
+                return f / (n + 1);
+            }),
+            y: db(smoothedResponse.magnitude),
+            type: "scatter",
+            mode: "lines",
+            name: (n === 0 ? "Fundamental" : "Harmonic ".concat(n + 1)) + " (Smoothed)",
+            line: {
+                width: 1.5,
+                color: color
+            }
+        });
     };
+    var harmonics = farina.harmonics(windowSize, maxHarmonics);
+    var harmonicsFFT = harmonics.map(function(h, n) {
+        return computeFFTFromIR(h, 1e3, 1 / (n + 1));
+    });
+    var smoothedHarmonicsFFT = harmonicsFFT.map(function(hf) {
+        return smoothFFT(hf, 1 / 6, 1 / 96);
+    });
+    var traces = [];
+    for(var n = 0; n < smoothedHarmonicsFFT.length; n++)_loop(n);
+    plot(traces, tabId, "Fundamental and Harmonic Distortion", "Frequency (Hz)", "Amplitude (dBFS)", {
+        type: "log",
+        range: [
+            Math.log10(20),
+            Math.log10(2e4)
+        ]
+    }, {
+        range: [
+            -85,
+            5
+        ]
+    }, {}, false);
+}
+function plotTHD(farina, windowSize, maxHarmonics, tabId) {
+    var harmonics = farina.harmonics(windowSize, maxHarmonics);
+    var harmonicsFFT = harmonics.map(function(h, n) {
+        return computeFFTFromIR(h, 1e3, 1 / (n + 1));
+    });
+    var smoothedHarmonicsFFT = harmonicsFFT.map(function(hf) {
+        return smoothFFT(hf, 1 / 6, 1 / 96);
+    });
+    var fundamental = smoothedHarmonicsFFT[0];
+    var traces = [];
+    var thd = Float32Array.from({
+        length: fundamental.magnitude.length
+    }, function() {
+        return 0;
+    });
+    for(var i = 0; i < fundamental.magnitude.length; i++){
+        var sumSquares = 0;
+        for(var n = 1; n < smoothedHarmonicsFFT.length; n++){
+            sumSquares += Math.pow(smoothedHarmonicsFFT[n].magnitude[i], 2);
+        }
+        thd[i] = Math.sqrt(sumSquares) / fundamental.magnitude[i];
+    }
+    traces.push({
+        x: fundamental.frequency,
+        y: thd.map(function(v) {
+            return v * 100;
+        }),
+        // Convert to percentage
+        type: "scatter",
+        mode: "lines",
+        name: "Total Harmonic Distortion (THD)",
+        line: {
+            width: 1.5,
+            color: COLORS[0]
+        }
+    });
+    plot(traces, tabId, "Total Harmonic Distortion", "Frequency (Hz)", "THD (%)", {
+        type: "log",
+        range: [
+            Math.log10(20),
+            Math.log10(2e4)
+        ]
+    }, {
+        range: [
+            0,
+            5
+        ]
+    }, {}, false);
 }
 // src/storage.ts
 function openIDB() {
@@ -3199,84 +3418,8 @@ analyzeBtn.addEventListener("click", function() {
         });
     })();
 });
-function addPlotToList(tabId, plotId, plotName) {
-    var hidden = arguments.length > 3 && arguments[3] !== void 0 ? arguments[3] : false;
-    var plotList = document.getElementById("plot-list-".concat(tabId));
-    var listItem = document.createElement("li");
-    listItem.innerHTML = '<input type="checkbox" id="checkbox-'.concat(plotId, '" alt="show/hide" ').concat(hidden ? "" : "checked", '><label for="checkbox-').concat(plotId, '">').concat(plotName, "</label>");
-    plotList.appendChild(listItem);
-}
-function addPlotElement(tabId, plotId) {
-    var hidden = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : false;
-    var _tabContent_querySelector;
-    var tabContent = document.querySelector('[data-content="'.concat(tabId, '"]'));
-    var plotBox = document.createElement("div");
-    plotBox.className = "plot-box";
-    plotBox.innerHTML = '\n        <div id="'.concat(plotId, '" class="plot-medium"></div>\n        <div class="button-bar">\n            <button>Customize...</button>\n            <button>Export as...</button>\n            <label for="checkbox-').concat(plotId, '">Hide</label>\n        </div>\n    ');
-    (_tabContent_querySelector = tabContent.querySelector(".plot-outer")) === null || _tabContent_querySelector === void 0 ? void 0 : _tabContent_querySelector.appendChild(plotBox);
-    if (hidden) {
-        plotBox.style.display = "none";
-    }
-    return plotBox.querySelector("#".concat(plotId));
-}
-function plot(traces, tabId, title, xTitle, yTitle) {
-    var xAxisExtras = arguments.length > 5 && arguments[5] !== void 0 ? arguments[5] : {}, yAxisExtras = arguments.length > 6 && arguments[6] !== void 0 ? arguments[6] : {}, layoutExtras = arguments.length > 7 && arguments[7] !== void 0 ? arguments[7] : {}, hidden = arguments.length > 8 && arguments[8] !== void 0 ? arguments[8] : false;
-    var _document_getElementById;
-    var plotSettings = {
-        plotGlPixelRatio: 2,
-        // For better clarity on high-DPI screens
-        legend: {
-            "orientation": "h",
-            "y": -0.2,
-            "yanchor": "top"
-        },
-        plot_bgcolor: "#fafbfc",
-        paper_bgcolor: "#fff",
-        staticPlot: false,
-        // Enable interactivity
-        dragmode: "pan",
-        showAxisDragHandles: true,
-        showAxisRangeEntryBoxes: true,
-        axisDragOnHover: true,
-        tightenLats: true,
-        font: {
-            family: "'Newsreader', Georgia, 'Times New Roman', Times, serif"
-        },
-        margin: {
-            t: 80,
-            r: 65,
-            b: 70,
-            l: 65
-        }
-    };
-    var layout = _object_spread({
-        title: title,
-        xaxis: _object_spread({
-            title: xTitle,
-            gridcolor: "#e1e4e8",
-            tickformat: ".0f"
-        }, xAxisExtras),
-        yaxis: _object_spread({
-            title: yTitle,
-            gridcolor: "#e1e4e8",
-            automargin: true
-        }, yAxisExtras)
-    }, layoutExtras, plotSettings);
-    var plotId = "plot-".concat(tabId, "-").concat(title.toLowerCase().replace(/\s+/g, "-"));
-    var element = addPlotElement(tabId, plotId, hidden);
-    window.Plotly.newPlot(element, traces, layout, {
-        responsive: true
-    });
-    addPlotToList(tabId, plotId, title, hidden);
-    (_document_getElementById = document.getElementById("checkbox-".concat(plotId))) === null || _document_getElementById === void 0 ? void 0 : _document_getElementById.addEventListener("change", function(e) {
-        var box = document.getElementById("".concat(plotId)).parentElement;
-        box.setAttribute("style", e.target.checked ? "display: block;" : "display: none;");
-        window.dispatchEvent(new Event("resize"));
-    });
-    console.log("Plotted ".concat(title, " in tab ").concat(tabId));
-}
 function createAnalysisTab(responseData, referenceData, filename, referenceFilename) {
-    var _document_getElementById, _document_getElementById1, _document_getElementById2, _document_getElementById3;
+    var _document_getElementById;
     tabCounter++;
     var tabId = "analysis-".concat(tabCounter);
     var shortName = filename.length > 20 ? filename.substring(0, 17) + "..." : filename;
@@ -3295,15 +3438,9 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
     content.innerHTML = '\n    <!-- nav class="tab-menu-bar">\n                <div>\n                    <label for="smoothing-'.concat(tabId, '">Smoothing</label>\n                    <select id="smoothing-').concat(tabId, '" class="smoothing-select" aria-label="Smoothing factor">\n                        <option value="0">None</option>\n                        <option value="1/3">1/3 octave</option>\n                        <option value="1/6" selected>1/6 octave</option>\n                        <option value="1/12">1/12 octave</option>\n                        <option value="1/24">1/24 octave</option>\n                        <option value="1/48">1/48 octave</option>\n                    </select>\n                </div>\n            </nav> <h5 class="text-xs italic text-gray-600">Frequency Response Analysis of ').concat(filename).concat(referenceFilename ? " / " + referenceFilename : "", '</h5 -->\n        <button class="sidecar-toggle" id="sidebar-toggle-').concat(tabId, '" title="Toggle Sidecar">Open settings pane</button>\n        <div class="flex h-full">\n            <div class="flex-none w-86 border-r border-[#ddd] p-2 relative sidecar" style="transition:50ms linear;">\n                <div class="section">\n                    <div class="title">Settings</div>\n                    <p><i>There are no settings for this analysis.</i></p>\n                </div>\n                <div class="section">\n                    <div class="title">Plots</div>\n                    <ul class="list" id="plot-list-').concat(tabId, '">\n                        <!--li><input type="checkbox" id="checkbox-magnitude-').concat(tabId, '" alt="show/hide" checked><label for="checkbox-magnitude-').concat(tabId, '">Magnitude</label></li>\n                        <li><input type="checkbox" id="checkbox-phase-').concat(tabId, '" alt="show/hide" checked><label for="checkbox-phase-').concat(tabId, '">Phase</label></li>\n                        <li><input type="checkbox" id="checkbox-ir-').concat(tabId, '" alt="show/hide" checked><label for="checkbox-ir-').concat(tabId, '">Impulse Response</label></li>\n                        <li><input type="checkbox" id="checkbox-ir-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-ir-').concat(tabId, '">Fundamental + Harmonic Distortion</label></li>\n                        <li><input type="checkbox" id="checkbox-distortion-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-distortion-').concat(tabId, '">Distortion</label></li>\n                        <li><input type="checkbox" id="checkbox-distortion-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-distortion-').concat(tabId, '">Sound Pressure Level</label></li>\n                        <li><input type="checkbox" id="checkbox-deconvoluted-ir-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-deconvoluted-ir-').concat(tabId, '">Deconvoluted Impulse Response</label></li>\n                        <li><input type="checkbox" id="checkbox-stimulus-waveform-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-stimulus-waveform-').concat(tabId, '">Stimulus Waveform</label></li>\n                        <li><input type="checkbox" id="checkbox-recorded-waveform-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-recorded-waveform-').concat(tabId, '">Recorded Waveform</label></li>\n                        <li><input type="checkbox" id="checkbox-recorded-noise-floor-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-recorded-noise-floor-').concat(tabId, '">Recorded Noise Floor</label></li>\n                        <li><input type="checkbox" id="checkbox-target-curve-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-target-curve-').concat(tabId, '">Target Curve<button class="float-right text-xs cursor-pointer" style="color: #bbb; padding-top: 3px">Set</button></label></li-->\n                    </ul>\n                </div>\n                <div class="section">\n                    <div class="title">Properties</div>\n                    <p><i>There are no properties for this analysis.</i></p>\n                </div>\n                <div id="resize-handle" class="resize-handle"></div>\n            </div>\n            <div class="flex-1 main-content">\n                <div class="grid grid-cols-6 gap-[1px] bg-[#ddd] border-b border-[#ddd] plot-outer">\n                </div>\n            </div>\n        </div>\n       \n        \n    ');
     tabContents.appendChild(content);
     switchTab(tabId);
-    console.log("Analyzing response file:", filename);
-    console.log("Response audio data:", responseData);
     var responseSamples = responseData.getChannelData(0);
     var responseFFT = computeFFT(responseSamples);
     var smoothedResponseFFT = smoothFFT(responseFFT, 1 / 6, 1 / 48);
-    var tracesPhase = [];
-    var tracesPhaseSecondary = [];
-    var tracesIR = [];
-    var irPeakAt = 0;
     var referenceSamples = Float32Array.from([]);
     plot([
         {
@@ -3312,19 +3449,19 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
             name: "Recorded signal",
             line: {
                 color: "#0366d666",
-                width: 1
+                width: 0.75
             }
         },
         {
             x: smoothedResponseFFT.frequency,
-            y: smoothedResponseFFT.magnitude,
+            y: db(smoothedResponseFFT.magnitude),
             name: "Recorded signal (Smoothed)",
             line: {
                 color: "#0366d6",
-                width: 2
+                width: 1.5
             }
         }
-    ], tabId, "Recorded Spectrogram", "Frequency", "Amplitude (dBFS)", {
+    ], tabId, "Recorded Spectrum", "Frequency (Hz)", "Amplitude (dBFS)", {
         type: "log",
         range: [
             Math.log10(20),
@@ -3343,7 +3480,7 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
             name: "Recorded signal",
             line: {
                 color: "#0366d6ff",
-                width: 1
+                width: 0.75
             }
         }
     ], tabId, "Recorded Waveform", "Time (s)", "Amplitude", {}, {}, {}, true);
@@ -3358,19 +3495,19 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
                 name: "Stimulus signal",
                 line: {
                     color: "#0366d666",
-                    width: 1
+                    width: 0.75
                 }
             },
             {
                 x: smoothedReferenceFFT.frequency,
-                y: smoothedReferenceFFT.magnitude,
+                y: db(smoothedReferenceFFT.magnitude),
                 name: "Stimulus signal (Smoothed)",
                 line: {
                     color: "#0366d6",
-                    width: 2
+                    width: 1.5
                 }
             }
-        ], tabId, "Stimulus Spectrogram", "Frequency", "Amplitude (dBFS)", {
+        ], tabId, "Stimulus Spectrum", "Frequency (Hz)", "Amplitude (dBFS)", {
             type: "log",
             range: [
                 Math.log10(20),
@@ -3389,29 +3526,335 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
                 name: "Stimulus signal",
                 line: {
                     color: "#0366d6ff",
-                    width: 1
+                    width: 0.75
                 }
             }
         ], tabId, "Stimulus Waveform", "Time (s)", "Amplitude", {}, {}, {}, true);
         var ir = twoChannelImpulseResponse(responseSamples, referenceSamples);
-        var farina_ir = FarinaImpulseResponse(responseSamples, referenceSamples);
-        console.log("Impulse response peak at", ir.peakAt);
-        irPeakAt = ir.peakAt;
-        tracesIR.push({
-            x: ir.t,
-            y: ir.ir,
-            type: "scatter",
-            mode: "lines",
-            name: "Dual-FFT Impulse Response",
-            line: {
-                color: "#d73a49",
-                width: 1
+        var farina = new Farina(referenceSamples, 20, 2e4, 48e3);
+        var farina_ir = farina.deconvolvedResponse(responseSamples);
+        plotDistortion(farina, 0.1, 5, tabId);
+        plotTHD(farina, 0.1, 5, tabId);
+        console.log("Impulse response peak at", farina.lag_of_harmonic(2));
+        plot([
+            {
+                x: ir.t,
+                y: ir.ir,
+                type: "scatter",
+                mode: "lines",
+                name: "Dual-FFT Impulse Response",
+                line: {
+                    color: COLORS[0],
+                    width: 0.75
+                }
             }
-        });
+        ], tabId, "Impulse Response", "Time (s)", "Amplitude", {}, {}, {}, false);
+        plot([
+            {
+                x: [
+                    -max(farina_ir.t),
+                    max(farina_ir.t)
+                ],
+                y: [
+                    -200,
+                    -200
+                ],
+                showlegend: false
+            },
+            {
+                x: farina_ir.t,
+                y: db(farina_ir.ir.map(function(x) {
+                    return Math.abs(x);
+                })),
+                type: "scatter",
+                mode: "lines",
+                fill: "tonexty",
+                name: "Farina Impulse Response",
+                line: {
+                    color: COLORS[0],
+                    width: 0.75
+                },
+                fillcolor: COLORS[0]
+            },
+            {
+                x: [
+                    -0.05,
+                    -0.05
+                ],
+                y: [
+                    -999,
+                    999
+                ],
+                type: "scatter",
+                mode: "lines",
+                name: "Fundamental window start",
+                line: {
+                    color: "#00000033",
+                    width: 0.75
+                },
+                hoverinfo: "skip",
+                showlegend: false
+            },
+            {
+                x: [
+                    0.05,
+                    0.05
+                ],
+                y: [
+                    -999,
+                    999
+                ],
+                type: "scatter",
+                mode: "lines",
+                name: "Fundamental window end",
+                line: {
+                    color: "#00000033",
+                    width: 0.75
+                },
+                hoverinfo: "skip",
+                showlegend: false
+            },
+            {
+                x: [
+                    -farina.lag_of_harmonic(2) - 0.05,
+                    -farina.lag_of_harmonic(2) - 0.05
+                ],
+                y: [
+                    -999,
+                    999
+                ],
+                type: "scatter",
+                mode: "lines",
+                name: "H2 window start",
+                line: {
+                    color: "#00000033",
+                    width: 0.75
+                },
+                hoverinfo: "skip",
+                showlegend: false
+            },
+            {
+                x: [
+                    -farina.lag_of_harmonic(2) + 0.05,
+                    -farina.lag_of_harmonic(2) + 0.05
+                ],
+                y: [
+                    -999,
+                    999
+                ],
+                type: "scatter",
+                mode: "lines",
+                name: "H2 window end",
+                line: {
+                    color: "#00000033",
+                    width: 0.75
+                },
+                hoverinfo: "skip",
+                showlegend: false
+            },
+            {
+                x: [
+                    -farina.lag_of_harmonic(3) - 0.05,
+                    -farina.lag_of_harmonic(3) - 0.05
+                ],
+                y: [
+                    -999,
+                    999
+                ],
+                type: "scatter",
+                mode: "lines",
+                name: "H3 window start",
+                line: {
+                    color: "#00000033",
+                    width: 0.75
+                },
+                hoverinfo: "skip",
+                showlegend: false
+            },
+            {
+                x: [
+                    -farina.lag_of_harmonic(3) + 0.05,
+                    -farina.lag_of_harmonic(3) + 0.05
+                ],
+                y: [
+                    -999,
+                    999
+                ],
+                type: "scatter",
+                mode: "lines",
+                name: "H3 window end",
+                line: {
+                    color: "#00000033",
+                    width: 0.75
+                },
+                hoverinfo: "skip",
+                showlegend: false
+            },
+            {
+                x: [
+                    -farina.lag_of_harmonic(4) - 0.05,
+                    -farina.lag_of_harmonic(4) - 0.05
+                ],
+                y: [
+                    -999,
+                    999
+                ],
+                type: "scatter",
+                mode: "lines",
+                name: "H4 window start",
+                line: {
+                    color: "#00000033",
+                    width: 0.75
+                },
+                hoverinfo: "skip",
+                showlegend: false
+            },
+            {
+                x: [
+                    -farina.lag_of_harmonic(4) + 0.05,
+                    -farina.lag_of_harmonic(4) + 0.05
+                ],
+                y: [
+                    -999,
+                    999
+                ],
+                type: "scatter",
+                mode: "lines",
+                name: "H4 window end",
+                line: {
+                    color: "#00000033",
+                    width: 0.75
+                },
+                hoverinfo: "skip",
+                showlegend: false
+            },
+            {
+                x: [
+                    -farina.lag_of_harmonic(5) - 0.05,
+                    -farina.lag_of_harmonic(5) - 0.05
+                ],
+                y: [
+                    -999,
+                    999
+                ],
+                type: "scatter",
+                mode: "lines",
+                name: "H5 window start",
+                line: {
+                    color: "#00000033",
+                    width: 0.75
+                },
+                hoverinfo: "skip",
+                showlegend: false
+            },
+            {
+                x: [
+                    -farina.lag_of_harmonic(5) + 0.05,
+                    -farina.lag_of_harmonic(5) + 0.05
+                ],
+                y: [
+                    -999,
+                    999
+                ],
+                type: "scatter",
+                mode: "lines",
+                name: "H5 window end",
+                line: {
+                    color: "#00000033",
+                    width: 0.75
+                },
+                hoverinfo: "skip",
+                showlegend: false
+            },
+            {
+                x: [
+                    -farina.lag_of_harmonic(6) - 0.05,
+                    -farina.lag_of_harmonic(6) - 0.05
+                ],
+                y: [
+                    -999,
+                    999
+                ],
+                type: "scatter",
+                mode: "lines",
+                name: "H6 window start",
+                line: {
+                    color: "#00000033",
+                    width: 0.75
+                },
+                hoverinfo: "skip",
+                showlegend: false
+            },
+            {
+                x: [
+                    -farina.lag_of_harmonic(6) + 0.05,
+                    -farina.lag_of_harmonic(6) + 0.05
+                ],
+                y: [
+                    -999,
+                    999
+                ],
+                type: "scatter",
+                mode: "lines",
+                name: "H6 window end",
+                line: {
+                    color: "#00000033",
+                    width: 0.75
+                },
+                hoverinfo: "skip",
+                showlegend: false
+            },
+            {
+                x: [
+                    -farina.lag_of_harmonic(7) - 0.05,
+                    -farina.lag_of_harmonic(7) - 0.05
+                ],
+                y: [
+                    -999,
+                    999
+                ],
+                type: "scatter",
+                mode: "lines",
+                name: "H7 window start",
+                line: {
+                    color: "#00000033",
+                    width: 0.75
+                },
+                hoverinfo: "skip",
+                showlegend: false
+            },
+            {
+                x: [
+                    -farina.lag_of_harmonic(7) + 0.05,
+                    -farina.lag_of_harmonic(7) + 0.05
+                ],
+                y: [
+                    -999,
+                    999
+                ],
+                type: "scatter",
+                mode: "lines",
+                name: "H7 window end",
+                line: {
+                    color: "#00000033",
+                    width: 0.75
+                },
+                hoverinfo: "skip",
+                showlegend: false
+            }
+        ], tabId, "Deconvolved Response", "Time (s)", "Amplitude", {
+            range: [
+                -1,
+                1
+            ]
+        }, {
+            range: [
+                -150,
+                10
+            ]
+        }, {}, false);
         var transferFunction = computeFFTFromIR(ir);
-        var transferFunctionFarina = computeFFTFromIR(farina_ir);
         var smoothedFreqResponse = smoothFFT(transferFunction, 1 / 6, 1 / 48);
-        var smoothedFreqResponseFarina = smoothFFT(transferFunctionFarina, 1 / 6, 1 / 48);
         var gd = groupDelays(transferFunction, 1e3);
         plot([
             {
@@ -3420,50 +3863,19 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
                 name: "Magnitude",
                 line: {
                     color: "#0366d666",
-                    width: 1
+                    width: 0.75
                 }
             },
             {
                 x: smoothedFreqResponse.frequency,
-                y: smoothedFreqResponse.magnitude,
+                y: db(smoothedFreqResponse.magnitude),
                 name: "Magnitude (Smoothed)",
                 line: {
                     color: "#0366d6",
-                    width: 2
+                    width: 1.5
                 }
             }
-        ], tabId, "Transfer Function", "Frequency", "Amplitude (dBFS)", {
-            type: "log",
-            range: [
-                Math.log10(20),
-                Math.log10(2e4)
-            ]
-        }, {
-            range: [
-                -85,
-                5
-            ]
-        }, {}, false);
-        plot([
-            {
-                x: transferFunctionFarina.frequency,
-                y: db(transferFunctionFarina.magnitude),
-                name: "Fundamental",
-                line: {
-                    color: "#0366d666",
-                    width: 1
-                }
-            },
-            {
-                x: smoothedFreqResponseFarina.frequency,
-                y: smoothedFreqResponseFarina.magnitude,
-                name: "Fundamental (Smoothed)",
-                line: {
-                    color: "#0366d6",
-                    width: 2
-                }
-            }
-        ], tabId, "Fundamental and Harmonic Distortion", "Frequency", "Amplitude (dBFS)", {
+        ], tabId, "Transfer Function", "Frequency (Hz)", "Amplitude (dBFS)", {
             type: "log",
             range: [
                 Math.log10(20),
@@ -3482,7 +3894,7 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
                 name: "Phase",
                 line: {
                     color: "#0366d666",
-                    width: 1
+                    width: 0.75
                 }
             },
             {
@@ -3491,10 +3903,10 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
                 name: "Phase (Smoothed)",
                 line: {
                     color: "#0366d6",
-                    width: 2
+                    width: 1.5
                 }
             }
-        ], tabId, "Phase", "Frequency", "Amplitude (dBFS)", {
+        ], tabId, "Phase", "Frequency (Hz)", "Amplitude (dBFS)", {
             type: "log",
             range: [
                 Math.log10(20),
@@ -3508,16 +3920,16 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
         }, {}, false);
         plot([
             {
-                x: transferFunctionFarina.frequency,
+                x: transferFunction.frequency,
                 y: gd,
                 name: "Group Delay",
                 line: {
-                    color: "#d73a49",
-                    width: 2,
+                    color: COLORS[0],
+                    width: 1.5,
                     dash: "dot"
                 }
             }
-        ], tabId, "Group Delay", "Frequency", "Group Delay (ms)", {
+        ], tabId, "Group Delay", "Frequency (Hz)", "Group Delay (ms)", {
             type: "log",
             range: [
                 Math.log10(20),
@@ -3529,6 +3941,74 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
                 20
             ]
         }, {}, false);
+        (function() {
+            var _ref, _responseData_sampleRate;
+            var sr = (_ref = (_responseData_sampleRate = responseData.sampleRate) !== null && _responseData_sampleRate !== void 0 ? _responseData_sampleRate : referenceData === null || referenceData === void 0 ? void 0 : referenceData.sampleRate) !== null && _ref !== void 0 ? _ref : 48e3;
+            var n = responseSamples.length;
+            if (n < 4096) return;
+            var windowSize = 2048;
+            var targetFrames = 320;
+            var minHop = 256;
+            var rawFrames = Math.max(1, Math.floor((n - windowSize) / minHop) + 1);
+            var hop = rawFrames > targetFrames ? Math.max(minHop, Math.ceil((n - windowSize) / targetFrames)) : minHop;
+            var frames = Math.max(1, Math.floor((n - windowSize) / hop) + 1);
+            var win = new Float32Array(windowSize);
+            for(var i = 0; i < windowSize; i++){
+                win[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / (windowSize - 1)));
+            }
+            var firstFrame = new Float32Array(windowSize);
+            firstFrame.set(responseSamples.subarray(0, windowSize));
+            for(var i1 = 0; i1 < windowSize; i1++)firstFrame[i1] *= win[i1];
+            var firstFFT = computeFFT(firstFrame);
+            var freqs = Array.from(firstFFT.frequency);
+            var bins = freqs.length;
+            var z = Array.from({
+                length: bins
+            }, function() {
+                return [];
+            });
+            var times = [];
+            for(var frame = 0; frame < frames; frame++){
+                var start = frame * hop;
+                var slice = responseSamples.subarray(start, start + windowSize);
+                var windowed = new Float32Array(windowSize);
+                windowed.set(slice);
+                for(var i2 = 0; i2 < windowSize; i2++)windowed[i2] *= win[i2];
+                var fft = computeFFT(windowed);
+                var magDb = db(fft.magnitude);
+                for(var k = 0; k < bins; k++){
+                    z[k].push(magDb[k]);
+                }
+                times.push((start + windowSize / 2) / sr);
+            }
+            plot([
+                {
+                    type: "heatmap",
+                    x: times,
+                    y: freqs,
+                    z: z,
+                    colorscale: "Electric",
+                    zmin: -120,
+                    zmax: 0,
+                    colorbar: {
+                        title: "dBFS"
+                    }
+                }
+            ], tabId, "Recorded Spectrogram", "Time (s)", "Frequency (Hz)", {}, {
+                type: "log",
+                range: [
+                    Math.log10(20),
+                    Math.log10(2e4)
+                ]
+            }, {
+                margin: {
+                    l: 60,
+                    r: 20,
+                    t: 40,
+                    b: 50
+                }
+            }, false);
+        })();
     }
     saveState();
     storage.setItem("".concat(tabId), JSON.stringify({
@@ -3563,19 +4043,6 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
         document.body.style.cursor = "default";
     }
     (_document_getElementById = document.getElementById("resize-handle")) === null || _document_getElementById === void 0 ? void 0 : _document_getElementById.addEventListener("mousedown", initResize, false);
-    (_document_getElementById1 = document.getElementById("checkbox-magnitude-".concat(tabId))) === null || _document_getElementById1 === void 0 ? void 0 : _document_getElementById1.addEventListener("change", function(e) {
-        console.log("Toggling magnitude plot visibility");
-        var box = document.getElementById("plot-".concat(tabId, "-magnitude")).parentElement;
-        box.setAttribute("style", e.target.checked ? "display: block;" : "display: none;");
-    });
-    (_document_getElementById2 = document.getElementById("checkbox-phase-".concat(tabId))) === null || _document_getElementById2 === void 0 ? void 0 : _document_getElementById2.addEventListener("change", function(e) {
-        var box = document.getElementById("plot-".concat(tabId, "-phase")).parentElement;
-        box.setAttribute("style", e.target.checked ? "display: block;" : "display: none;");
-    });
-    (_document_getElementById3 = document.getElementById("checkbox-ir-".concat(tabId))) === null || _document_getElementById3 === void 0 ? void 0 : _document_getElementById3.addEventListener("change", function(e) {
-        var box = document.getElementById("plot-".concat(tabId, "-ir")).parentElement;
-        box.setAttribute("style", e.target.checked ? "display: block;" : "display: none;");
-    });
 }
 function saveState() {
     var tabs = Array.from(document.querySelectorAll(".tab[data-tab]")).map(function(tab) {

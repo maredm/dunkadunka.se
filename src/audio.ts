@@ -46,8 +46,14 @@ export const smoothingFactor = (timeConstant: number, sampleRate: number): numbe
     return 1 - Math.exp(-1 / (sampleRate * timeConstant));
 }
 
-export function dbToLinear(db: number): number {
-    return Math.pow(10, db / 20);
+export function dbToLinear(value: Float32Array): Float32Array;
+export function dbToLinear(value: number): number;
+export function dbToLinear(value: Float32Array | number): Float32Array | number {
+    if (value instanceof Float32Array) {
+        return value.map(v => Math.pow(10, v / 20));
+    } else {
+        return Math.pow(10, value / 20);
+    }
 }
 
 export function getExponentialSmoothingFactor(timeConstant: number, sampleRate: number): number {
@@ -381,7 +387,7 @@ export function smoothFFT(fftData: FFTResult, fraction: number, resolution: numb
     const fractionalFrequencies = getFractionalOctaveFrequencies(resolution, 20, 24000, fftSize);
 
     // Apply fractional octave smoothing
-    const smoothed = fractionalOctaveSmoothing(db(magnitude), fraction, fractionalFrequencies);
+    const smoothed = dbToLinear(fractionalOctaveSmoothing(db(magnitude), fraction, fractionalFrequencies));
     const smoothedPhase = fractionalOctaveSmoothing(phase, fraction, fractionalFrequencies);
 
     return {
@@ -739,7 +745,7 @@ export function twoChannelFFT(dataArray: Float32Array | Float32Array, reference:
     };
 }
 
-export function computeFFTFromIR(ir: ImpulseResponseResult, f_phase_wrap: number = 1000): FFTResult {
+export function computeFFTFromIR(ir: ImpulseResponseResult, f_phase_wrap: number = 1000, frequency_multiplier: number = 1): FFTResult {
     const fftSize = nextPow2(ir.ir.length);
     console.log(`Computing FFT from IR with size ${fftSize}`);
     

@@ -28,7 +28,6 @@ export function getFractionalOctaveFrequencies(fraction: number, f_low: number =
 
 export function fractionalOctaveSmoothing(frequencyData: Float32Array, fraction: number, frequencies: Float32Array): Float32Array {
     const frequenciesAll = linspace(0, 48000 / 2, frequencyData.length);
-    const frequency_resolution = 48000 / frequencyData.length;
     const smoothedData = new Float32Array(frequencies.length);
     const n = frequencyData.length;
     const factor = Math.pow(2, (0.5 * fraction)) - Math.pow(0.5, (0.5 * fraction));

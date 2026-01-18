@@ -65,7 +65,7 @@ function rectangularWindow(length: number): Float32Array {
     return window;
 }
 
-export function getSelectedWindow(windowType: WindowType, length: number): Float32Array {
+export function getSelectedWindow(windowType: WindowType, length: number, correct: boolean = true): Float32Array {
     const type = windowType;
     let window = new Float32Array(length);
     let wcf = 1; // Window correction factor
@@ -73,7 +73,9 @@ export function getSelectedWindow(windowType: WindowType, length: number): Float
     if (type === 'hamming') { window = hammingWindow(length); wcf = 1.852; }
     if (type === 'blackman') { window = blackmanWindow(length); wcf = 2.381; }
     if (type === 'rectangular') { window = rectangularWindow(length); wcf = 1.000; }
-    window = window.map(v => v / wcf); // Scale to max 2 for better visualization
+    if (correct) {
+        window = window.map(v => v / wcf); // Scale to max 2 for better visualization
+    }
 
     return window;
 }

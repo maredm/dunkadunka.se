@@ -1,10 +1,10 @@
 import { Audio, computeFFT, computeFFTFromIR, db, FFTResult, groupDelays, ImpulseResponseResult, rms, smoothFFT, twoChannelImpulseResponse } from "./audio";
-import { FarinaImpulseResponse } from "./farina";
+import { Farina, plotDistortion, plotTHD } from "./farina";
 import { storage } from "./storage";
 import { audio } from "./audio";
-import { createWaveformEditor, WaveformEditor } from "./waveform_editor";
 import "./device-settings";
-import { linspace } from "./math";
+import { linspace, max } from "./math";
+import { COLORS, plot } from "./plotting";
 
 console.debug("App module loaded");
 
@@ -467,93 +467,6 @@ analyzeBtn.addEventListener('click', async () => {
     }
 });
 
-function addPlotToList(tabId: string, plotId: string, plotName: string, hidden: boolean = false): void {
-    const plotList = document.getElementById(`plot-list-${tabId}`) as HTMLElement;
-    const listItem = document.createElement('li');
-    listItem.innerHTML = `<input type="checkbox" id="checkbox-${plotId}" alt="show/hide" ${hidden ? '' : 'checked'}><label for="checkbox-${plotId}">${plotName}</label>`;
-    plotList.appendChild(listItem);
-}
-
-function addPlotElement(tabId: string, plotId: string, hidden: boolean = false): HTMLElement {
-    const tabContent = document.querySelector(`[data-content="${tabId}"]`) as HTMLElement;
-    const plotBox = document.createElement('div');
-    plotBox.className = 'plot-box';
-    plotBox.innerHTML = `
-        <div id="${plotId}" class="plot-medium"></div>
-        <div class="button-bar">
-            <button>Customize...</button>
-            <button>Export as...</button>
-            <label for="checkbox-${plotId}">Hide</label>
-        </div>
-    `;
-    tabContent.querySelector('.plot-outer')?.appendChild(plotBox);
-    if (hidden) {
-        plotBox.style.display = 'none';
-    }
-    return plotBox.querySelector(`#${plotId}`) as HTMLElement;
-}
-
-function plot(
-    traces: any[], 
-    tabId: string,
-    title: string, 
-    xTitle: string, 
-    yTitle: string, 
-    xAxisExtras: any = {},
-    yAxisExtras: any = {},
-    layoutExtras: any = {},
-    hidden: boolean = false,
-): void {
-    const plotSettings: {[key: string]: any} = {
-        plotGlPixelRatio: 2, // For better clarity on high-DPI screens
-        legend: {"orientation": "h", "y": -0.2, "yanchor": "top"},
-        plot_bgcolor: '#fafbfc',
-        paper_bgcolor: '#fff',
-        staticPlot: false, // Enable interactivity
-        dragmode: 'pan',
-        showAxisDragHandles: true,
-        showAxisRangeEntryBoxes: true,
-        axisDragOnHover: true,
-        tightenLats: true,
-        font: {
-            family: "'Newsreader', Georgia, 'Times New Roman', Times, serif",
-        },
-        margin: { t: 80, r: 65, b: 70, l: 65 }
-    };
-
-    const layout = {
-        title: title,
-        xaxis: { 
-            title: xTitle,
-            gridcolor: '#e1e4e8',
-            tickformat: '.0f',
-            ...xAxisExtras
-        },
-        yaxis: { 
-            title: yTitle,
-            gridcolor: '#e1e4e8',
-            automargin: true,
-            ...yAxisExtras
-        },
-        ...layoutExtras,
-        ...plotSettings
-    };
-
-    const plotId = `plot-${tabId}-${title.toLowerCase().replace(/\s+/g, '-')}`;
-
-    const element = addPlotElement(tabId, plotId, hidden);
-    (window as any).Plotly.newPlot(element, traces, layout, {responsive: true});
-    addPlotToList(tabId, plotId, title, hidden);
-
-    document.getElementById(`checkbox-${plotId}`)?.addEventListener('change', (e) => {
-        const box = document.getElementById(`${plotId}`)!.parentElement!;
-        box.setAttribute('style', (e.target as HTMLInputElement).checked ? 'display: block;' : 'display: none;');
-        window.dispatchEvent(new Event('resize'));
-    });
-
-    console.log(`Plotted ${title} in tab ${tabId}`);
-}
-
 
 /**
  * Creates a new analysis tab in the UI and renders magnitude, phase and impulse-response plots for the provided audio.
@@ -650,28 +563,21 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
     switchTab(tabId);
 
     // Compute and plot FFTs
-    console.log('Analyzing response file:', filename);
-    console.log('Response audio data:', responseData);
     const responseSamples = responseData.getChannelData(0);
     
     const responseFFT = computeFFT(responseSamples);
     const smoothedResponseFFT = smoothFFT(responseFFT, 1/6, 1/48);
-    const tracesPhase: any[] = [];
-    const tracesPhaseSecondary: any[] = [];
-    const tracesIR: any[] = [];
-
-    let irPeakAt = 0;
 
     let referenceSamples = Float32Array.from([]);
 
     plot(
         [
-            {x: responseFFT.frequency, y: db(responseFFT.magnitude), name: 'Recorded signal', line: { color: '#0366d666', width: 1 }},
-            {x: smoothedResponseFFT.frequency, y: smoothedResponseFFT.magnitude, name: 'Recorded signal (Smoothed)', line: { color: '#0366d6', width: 2 }}
+            {x: responseFFT.frequency, y: db(responseFFT.magnitude), name: 'Recorded signal', line: { color: '#0366d666', width: 0.75}},
+            {x: smoothedResponseFFT.frequency, y: db(smoothedResponseFFT.magnitude), name: 'Recorded signal (Smoothed)', line: { color: '#0366d6', width: 1.5 }}
         ], 
         tabId, 
-        'Recorded Spectrogram', 
-        'Frequency', 
+        'Recorded Spectrum', 
+        'Frequency (Hz)', 
         'Amplitude (dBFS)',
         {type: 'log', range: [Math.log10(20), Math.log10(20000)]}, 
         {range: [-85, 5]},
@@ -680,7 +586,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
     );
     plot(
         [
-            {x: linspace(0, responseSamples.length/48000, responseSamples.length), y: responseSamples, name: 'Recorded signal', line: { color: '#0366d6ff', width: 1 }}
+            {x: linspace(0, responseSamples.length/48000, responseSamples.length), y: responseSamples, name: 'Recorded signal', line: { color: '#0366d6ff', width: 0.75}}
         ],
         tabId, 
         'Recorded Waveform', 
@@ -698,12 +604,12 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
         const smoothedReferenceFFT = smoothFFT(referenceFFT, 1/6, 1/48);
         plot(
             [
-                {x: referenceFFT.frequency, y: db(referenceFFT.magnitude), name: 'Stimulus signal', line: { color: '#0366d666', width: 1 }},
-                {x: smoothedReferenceFFT.frequency, y: smoothedReferenceFFT.magnitude, name: 'Stimulus signal (Smoothed)', line: { color: '#0366d6', width: 2 }}
+                {x: referenceFFT.frequency, y: db(referenceFFT.magnitude), name: 'Stimulus signal', line: { color: '#0366d666', width: 0.75}},
+                {x: smoothedReferenceFFT.frequency, y: db(smoothedReferenceFFT.magnitude), name: 'Stimulus signal (Smoothed)', line: { color: '#0366d6', width: 1.5 }}
             ], 
             tabId, 
-            'Stimulus Spectrogram', 
-            'Frequency', 
+            'Stimulus Spectrum', 
+            'Frequency (Hz)', 
             'Amplitude (dBFS)',
             {type: 'log', range: [Math.log10(20), Math.log10(20000)]}, 
             {range: [-85, 5]},
@@ -712,7 +618,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
         );
         plot(
             [
-                {x: linspace(0, referenceSamples.length/48000, referenceSamples.length), y: referenceSamples, name: 'Stimulus signal', line: { color: '#0366d6ff', width: 1 }}
+                {x: linspace(0, referenceSamples.length/48000, referenceSamples.length), y: referenceSamples, name: 'Stimulus signal', line: { color: '#0366d6ff', width: 0.75}}
             ],
             tabId, 
             'Stimulus Waveform', 
@@ -724,62 +630,86 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             true
         );
         const ir: ImpulseResponseResult = twoChannelImpulseResponse(responseSamples, referenceSamples);
-        const farina_ir: ImpulseResponseResult = FarinaImpulseResponse(responseSamples, referenceSamples);
+        const farina = new Farina(referenceSamples, 20, 20000, 48000);
+        const farina_ir: ImpulseResponseResult = farina.deconvolvedResponse(responseSamples);
 
-        console.log('Impulse response peak at', ir.peakAt);
-        irPeakAt = ir.peakAt;
+        plotDistortion(farina, 0.1, 5, tabId);
+        plotTHD(farina, 0.1, 5, tabId);
+            
+        console.log('Impulse response peak at', farina.lag_of_harmonic(2));
 
-        tracesIR.push({
-            x: ir.t,
-            y:ir.ir,        
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Dual-FFT Impulse Response',
-            line: { color: '#d73a49', width: 1 }
-        });
+        plot(
+            [
+                {x: ir.t, y:ir.ir, type: 'scatter', mode: 'lines', name: 'Dual-FFT Impulse Response', line: { color: COLORS[0], width: 0.75}}
+            ],
+            tabId,
+            'Impulse Response',
+            'Time (s)',
+            'Amplitude',
+            {},
+            {},
+            {},
+            false
+        );
+
+        plot(
+            [   
+                {x: [-max(farina_ir.t), max(farina_ir.t)], y: [-200, -200], showlegend: false},
+                {x: farina_ir.t, y:db(farina_ir.ir.map(x => Math.abs(x))), type: 'scatter', mode: 'lines', fill: 'tonexty', name: 'Farina Impulse Response', line: { color: COLORS[0], width: 0.75}, fillcolor: COLORS[0]},
+                {x: [- 0.05, - 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'Fundamental window start', line: { color: '#00000033', width: 0.75}, hoverinfo: 'skip', showlegend: false},
+                {x: [0.05, 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'Fundamental window end', line: { color: '#00000033', width: 0.75}, hoverinfo: 'skip', showlegend: false},
+                {x: [-farina.lag_of_harmonic(2) - 0.05, -farina.lag_of_harmonic(2) - 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H2 window start', line: { color: '#00000033', width: 0.75}, hoverinfo: 'skip', showlegend: false},
+                {x: [-farina.lag_of_harmonic(2) + 0.05, -farina.lag_of_harmonic(2) + 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H2 window end', line: { color: '#00000033', width: 0.75}, hoverinfo: 'skip', showlegend: false},
+                {x: [-farina.lag_of_harmonic(3) - 0.05, -farina.lag_of_harmonic(3) - 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H3 window start', line: { color: '#00000033', width: 0.75}, hoverinfo: 'skip', showlegend: false},
+                {x: [-farina.lag_of_harmonic(3) + 0.05, -farina.lag_of_harmonic(3) + 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H3 window end', line: { color: '#00000033', width: 0.75}, hoverinfo: 'skip', showlegend: false},
+                {x: [-farina.lag_of_harmonic(4) - 0.05, -farina.lag_of_harmonic(4) - 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H4 window start', line: { color: '#00000033', width: 0.75}, hoverinfo: 'skip', showlegend: false},
+                {x: [-farina.lag_of_harmonic(4) + 0.05, -farina.lag_of_harmonic(4) + 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H4 window end', line: { color: '#00000033', width: 0.75}, hoverinfo: 'skip', showlegend: false},
+                {x: [-farina.lag_of_harmonic(5) - 0.05, -farina.lag_of_harmonic(5) - 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H5 window start', line: { color: '#00000033', width: 0.75}, hoverinfo: 'skip', showlegend: false},
+                {x: [-farina.lag_of_harmonic(5) + 0.05, -farina.lag_of_harmonic(5) + 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H5 window end', line: { color: '#00000033', width: 0.75}, hoverinfo: 'skip', showlegend: false},
+                {x: [-farina.lag_of_harmonic(6) - 0.05, -farina.lag_of_harmonic(6) - 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H6 window start', line: { color: '#00000033', width: 0.75}, hoverinfo: 'skip', showlegend: false},
+                {x: [-farina.lag_of_harmonic(6) + 0.05, -farina.lag_of_harmonic(6) + 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H6 window end', line: { color: '#00000033', width: 0.75}, hoverinfo: 'skip', showlegend: false},
+                {x: [-farina.lag_of_harmonic(7) - 0.05, -farina.lag_of_harmonic(7) - 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H7 window start', line: { color: '#00000033', width: 0.75}, hoverinfo: 'skip', showlegend: false},
+                {x: [-farina.lag_of_harmonic(7) + 0.05, -farina.lag_of_harmonic(7) + 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H7 window end', line: { color: '#00000033', width: 0.75}, hoverinfo: 'skip', showlegend: false},
+                
+            ],
+            tabId,
+            'Deconvolved Response',
+            'Time (s)',
+            'Amplitude',
+            { range: [-1, 1]},
+            { range: [-150, 10]},
+            {},
+            false
+        );
         const transferFunction = computeFFTFromIR(ir);
-        const transferFunctionFarina = computeFFTFromIR(farina_ir);
         // const dreferenceFFT = twoChannelFFT(responseData.data, referenceSamples, nextPow2(referenceSamples.length), -5627);
         const smoothedFreqResponse = smoothFFT(transferFunction, 1/6, 1/48);
-        const smoothedFreqResponseFarina = smoothFFT(transferFunctionFarina, 1/6, 1/48);
+        
         const gd = groupDelays(transferFunction, 1000);
 
         plot(
             [
-                {x: transferFunction.frequency, y: db(transferFunction.magnitude), name: 'Magnitude', line: { color: '#0366d666', width: 1 }},
-                {x: smoothedFreqResponse.frequency, y: smoothedFreqResponse.magnitude, name: 'Magnitude (Smoothed)', line: { color: '#0366d6', width: 2 }}
+                {x: transferFunction.frequency, y: db(transferFunction.magnitude), name: 'Magnitude', line: { color: '#0366d666', width: 0.75}},
+                {x: smoothedFreqResponse.frequency, y: db(smoothedFreqResponse.magnitude), name: 'Magnitude (Smoothed)', line: { color: '#0366d6', width: 1.5 }}
             ], 
             tabId, 
             'Transfer Function', 
-            'Frequency', 
+            'Frequency (Hz)', 
             'Amplitude (dBFS)',
             {type: 'log', range: [Math.log10(20), Math.log10(20000)]}, 
             {range: [-85, 5]},
             {}, 
             false
         );
+        
         plot(
             [
-                {x: transferFunctionFarina.frequency, y: db(transferFunctionFarina.magnitude), name: 'Fundamental', line: { color: '#0366d666', width: 1 }},
-                {x: smoothedFreqResponseFarina.frequency, y: smoothedFreqResponseFarina.magnitude, name: 'Fundamental (Smoothed)', line: { color: '#0366d6', width: 2 }}
-            ], 
-            tabId, 
-            'Fundamental and Harmonic Distortion', 
-            'Frequency', 
-            'Amplitude (dBFS)',
-            {type: 'log', range: [Math.log10(20), Math.log10(20000)]}, 
-            {range: [-85, 5]},
-            {}, 
-            false
-        );
-        plot(
-            [
-                {x: transferFunction.frequency, y: transferFunction.phase, name: 'Phase', line: { color: '#0366d666', width: 1 }},
-                {x: smoothedFreqResponse.frequency, y: smoothedFreqResponse.phase, name: 'Phase (Smoothed)', line: { color: '#0366d6', width: 2 }}
+                {x: transferFunction.frequency, y: transferFunction.phase, name: 'Phase', line: { color: '#0366d666', width: 0.75}},
+                {x: smoothedFreqResponse.frequency, y: smoothedFreqResponse.phase, name: 'Phase (Smoothed)', line: { color: '#0366d6', width: 1.5 }}
             ], 
             tabId, 
             'Phase', 
-            'Frequency', 
+            'Frequency (Hz)', 
             'Amplitude (dBFS)',
             {type: 'log', range: [Math.log10(20), Math.log10(20000)]}, 
             {range: [-720, 720]}, 
@@ -788,17 +718,101 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
         );
         plot(
             [
-                {x: transferFunctionFarina.frequency, y: gd, name: 'Group Delay', line: { color: '#d73a49', width: 2, dash: 'dot' }}
+                {x: transferFunction.frequency, y: gd, name: 'Group Delay', line: { color: COLORS[0], width: 1.5, dash: 'dot' }}
             ], 
             tabId, 
             'Group Delay', 
-            'Frequency', 
+            'Frequency (Hz)', 
             'Group Delay (ms)',
             {type: 'log', range: [Math.log10(20), Math.log10(20000)]}, 
             {range: [-20, 20]}, 
             {}, 
             false
         );
+
+        // --- Colormap / Spectrogram (Plotly heatmap) ---
+        (() => {
+            const sr =
+                (responseData as any).sampleRate ??
+                (referenceData as any)?.sampleRate ??
+                48000;
+
+            const n = responseSamples.length;
+            if (n < 4096) return;
+
+            const windowSize = 2048;
+            const targetFrames = 320;
+            const minHop = 256;
+
+            const rawFrames = Math.max(1, Math.floor((n - windowSize) / minHop) + 1);
+            const hop =
+                rawFrames > targetFrames
+                    ? Math.max(minHop, Math.ceil((n - windowSize) / targetFrames))
+                    : minHop;
+
+            const frames = Math.max(1, Math.floor((n - windowSize) / hop) + 1);
+
+            // Hann window
+            const win = new Float32Array(windowSize);
+            for (let i = 0; i < windowSize; i++) {
+                win[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (windowSize - 1)));
+            }
+
+            // Determine frequency bins from first frame
+            const firstFrame = new Float32Array(windowSize);
+            firstFrame.set(responseSamples.subarray(0, windowSize));
+            for (let i = 0; i < windowSize; i++) firstFrame[i] *= win[i];
+
+            const firstFFT = computeFFT(firstFrame);
+            const freqs = Array.from(firstFFT.frequency);
+            const bins = freqs.length;
+
+            // z[freqIndex][timeIndex]
+            const z: number[][] = Array.from({ length: bins }, () => []);
+
+            const times: number[] = [];
+            for (let frame = 0; frame < frames; frame++) {
+                const start = frame * hop;
+                const slice = responseSamples.subarray(start, start + windowSize);
+
+                const windowed = new Float32Array(windowSize);
+                windowed.set(slice);
+                for (let i = 0; i < windowSize; i++) windowed[i] *= win[i];
+
+                const fft = computeFFT(windowed);
+                const magDb = db(fft.magnitude);
+
+                for (let k = 0; k < bins; k++) {
+                    z[k].push(magDb[k]);
+                }
+
+                // Use center-of-window time for x axis
+                times.push((start + windowSize / 2) / sr);
+            }
+
+            plot(
+                [
+                    {
+                        type: 'heatmap',
+                        x: times,
+                        y: freqs,
+                        z,
+                        colorscale: 'Electric',
+                        zmin: -120,
+                        zmax: 0,
+                        colorbar: { title: 'dBFS' }
+                    } as any
+                ],
+                tabId,
+                'Recorded Spectrogram',
+                'Time (s)',
+                'Frequency (Hz)',
+                {},
+                { type: 'log', range: [Math.log10(20), Math.log10(20000)] },
+                { margin: { l: 60, r: 20, t: 40, b: 50 } },
+                false
+            );
+        })();
     }
 
     saveState();
@@ -811,49 +825,32 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
         referenceSamples: referenceSamples.length > 0 ? Array.from(referenceSamples) : null,
     })).catch(err => console.error('Failed to persist analysis:', err));
 
-function initResize(e: MouseEvent): void {
-    e.preventDefault();
-    window.addEventListener('mousemove', resize, false);
-    window.addEventListener('mouseup', stopResize, false);
-    console.log('Init resize');
-    document.body.style.cursor = 'col-resize';
-}
-
-function resize(e: MouseEvent): void {
-    const container = content.querySelector<HTMLElement>('.flex')!;
-    const handle = document.getElementById('resize-handle')?.parentElement!;
-    const rect = container.getBoundingClientRect();
-    const newWidth = e.clientX - rect.left;
-    if (newWidth > 150 && newWidth < rect.width - 150) {
-        handle.style.width = `${newWidth}px`;
+    function initResize(e: MouseEvent): void {
+        e.preventDefault();
+        window.addEventListener('mousemove', resize, false);
+        window.addEventListener('mouseup', stopResize, false);
+        console.log('Init resize');
+        document.body.style.cursor = 'col-resize';
     }
-}
 
-function stopResize(): void {
-    window.removeEventListener('mousemove', resize, false);
-    window.removeEventListener('mouseup', stopResize, false);
-    window.dispatchEvent(new Event('resize'));
-    document.body.style.cursor = 'default';
-}       
+    function resize(e: MouseEvent): void {
+        const container = content.querySelector<HTMLElement>('.flex')!;
+        const handle = document.getElementById('resize-handle')?.parentElement!;
+        const rect = container.getBoundingClientRect();
+        const newWidth = e.clientX - rect.left;
+        if (newWidth > 150 && newWidth < rect.width - 150) {
+            handle.style.width = `${newWidth}px`;
+        }
+    }
+
+    function stopResize(): void {
+        window.removeEventListener('mousemove', resize, false);
+        window.removeEventListener('mouseup', stopResize, false);
+        window.dispatchEvent(new Event('resize'));
+        document.body.style.cursor = 'default';
+    }       
 
     document.getElementById('resize-handle')?.addEventListener('mousedown', initResize, false);
-
-        // Add event listeners for checkbox visibility toggles
-    document.getElementById(`checkbox-magnitude-${tabId}`)?.addEventListener('change', (e) => {
-        console.log('Toggling magnitude plot visibility');
-        const box = document.getElementById(`plot-${tabId}-magnitude`)!.parentElement!;
-        box.setAttribute('style', (e.target as HTMLInputElement).checked ? 'display: block;' : 'display: none;');
-    });
-
-    document.getElementById(`checkbox-phase-${tabId}`)?.addEventListener('change', (e) => {
-        const box = document.getElementById(`plot-${tabId}-phase`)!.parentElement!;
-        box.setAttribute('style', (e.target as HTMLInputElement).checked ? 'display: block;' : 'display: none;');
-    });
-
-    document.getElementById(`checkbox-ir-${tabId}`)?.addEventListener('change', (e) => {
-        const box = document.getElementById(`plot-${tabId}-ir`)!.parentElement!;
-        box.setAttribute('style', (e.target as HTMLInputElement).checked ? 'display: block;' : 'display: none;');
-    });
 }
 
 // Save and load state from sessionStorage
@@ -891,7 +888,3 @@ async function loadState(): Promise<void> {
 
 // Load state on page load
 loadState();
-
-function max(arg0: Float32Array<ArrayBuffer>): any {
-    throw new Error("Function not implemented.");
-}
