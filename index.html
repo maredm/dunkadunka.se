@@ -22,6 +22,9 @@
         <button class="tab active" data-tab="upload">
             Upload
         </button>
+        <button class="tab" data-tab="upload-polar">
+            Upload (Polar)
+        </button>
         <button class="tab" data-tab="acquisition">
             <span class="tab-icon-recording"></span>Acquisition
         </button>
@@ -30,6 +33,28 @@
 
     <div id="tab-contents">
         <div class="tab-content active" data-content="upload">
+            <div class="tab-inner-content">
+                <div class="loose-container">
+                    <h2>Waveform Frequency Response Analyzer</h2>
+                    <p class="info">Upload an audio file to analyze its frequency content and optionally compare it to a reference/stimulus file.</p>
+                    
+                    <div class="upload-section">
+                        <h3>Response Waveform *</h3>
+                        <input type="file" id="responseFile" accept="audio/*,.wav,.mp3,.flac,.ogg">
+                        <p class="info">Required: The waveform to analyze</p>
+                    </div>
+
+                    <div class="upload-section">
+                        <h3>Reference/Stimulus File</h3>
+                        <input type="file" id="referenceFile" accept="audio/*,.wav,.mp3,.flac,.ogg">
+                        <p class="info">Optional: Reference signal for frequency response calculation</p>
+                    </div>
+
+                    <button id="analyzeBtn" class="button-custom button-custom-primary" disabled>Analyze Frequency Response</button>
+                </div>
+            </div>
+        </div>
+        <div class="tab-content active" data-content="upload-polar">
             <div class="tab-inner-content">
                 <div class="loose-container">
                     <h2>Waveform Frequency Response Analyzer</h2>

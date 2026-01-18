@@ -341,8 +341,10 @@ analyzeRecordingBtn.addEventListener('click', async () => {
             recordedAudio.applyGain(1 / 16384),
             referenceAudio.applyGain(1 / 16384),
             recordingName,
-            `${startFreq}-${endFreq}Hz`
+            `${startFreq}-${endFreq}Hz`,
         );
+        // 
+        
     } catch (error) {
         console.error('Error analyzing recording:', error);
         alert('Error analyzing recording: ' + (error as Error).message);
@@ -851,6 +853,94 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
     }       
 
     document.getElementById('resize-handle')?.addEventListener('mousedown', initResize, false);
+}
+
+
+function createDirectivityPlotTab(responseDatas: Audio[], referenceData: Audio): void {
+    if (responseDatas.length === 0 || referenceData.length === 0) return;
+
+    tabCounter++;
+    const directivityTabId = `directivity-${tabCounter}`;
+    const shortName = `Directivity (${responseDatas.length})`;
+
+    const tab = document.createElement('button');
+    tab.className = 'tab tab-closable';
+    tab.dataset.tab = directivityTabId;
+    tab.innerHTML = `<span class="tab-icon-analysis"></span>${shortName} <span class="tab-close">✕</span>`;
+    tabsInnerContainer.appendChild(tab);
+
+    const content = document.createElement('div');
+    content.className = 'tab-content';
+    content.dataset.content = directivityTabId;
+    content.innerHTML = `
+        <div class="flex h-full">
+        <div class="flex-1 main-content">
+            <div class="grid grid-cols-6 gap-[1px] bg-[#ddd] border-b border-[#ddd] plot-outer"></div>
+        </div>
+        </div>
+    `;
+    tabContents.appendChild(content);
+
+    switchTab(directivityTabId);
+
+    const angles = responseDatas.map((_, i) => (360 * i) / responseDatas.length);
+
+    const referenceSamples = Float32Array.from(referenceData.getChannelData(0));
+
+    const transfers: FFTResult[] = responseDatas.map((resp) => {
+        const len = Math.min(resp.getChannelData(0).length, referenceSamples.length);
+        const ir: ImpulseResponseResult = twoChannelImpulseResponse(
+        resp.getChannelData(0).subarray(0, len),
+        referenceSamples.subarray(0, len)
+        );
+        return computeFFTFromIR(ir);
+    });
+
+    const baseFreq = transfers[0]?.frequency;
+    if (!baseFreq || baseFreq.length === 0) return;
+
+    const normHz = 1000;
+    let normIdx = 0;
+    let best = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < baseFreq.length; i++) {
+        const d = Math.abs(baseFreq[i] - normHz);
+        if (d < best) {
+        best = d;
+        normIdx = i;
+        }
+    }
+    transfers.push(transfers[0]); // close the circle
+    angles.push(360); // close the circle
+
+    // z[angleIndex][freqIndex]
+    const z: Float32Array[][] = transfers.map((tf) => {
+        const magDb = db(tf.magnitude);
+        const ref = magDb[normIdx] ?? 0;
+        return magDb.map((v) => v - ref);
+    });
+
+    plot(
+        [
+        {
+            type: 'heatmap',
+            x: Array.from(baseFreq),
+            y: angles,
+            z,
+            colorscale: 'Electric',
+            zmin: -40,
+            zmax: 5,
+            colorbar: { title: 'dB (norm @ 1 kHz)' }
+        } as any
+        ],
+        directivityTabId,
+        'Directivity Map',
+        'Frequency (Hz)',
+        'Angle (deg)',
+        { type: 'log', range: [Math.log10(20), Math.log10(20000)] },
+        { range: [0, 360] },
+        { margin: { l: 60, r: 20, t: 40, b: 50 } },
+        false
+    );
 }
 
 // Save and load state from sessionStorage
