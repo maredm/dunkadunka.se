@@ -5,6 +5,7 @@ import { audio } from "./audio";
 import "./device-settings";
 import { linspace, max } from "./math";
 import { COLORS, plot } from "./plotting";
+import { AudioRecorder } from "./recorder";
 
 console.debug("App module loaded");
 
@@ -16,14 +17,100 @@ let tabCounter = 0;
 const tabsContainer = document.getElementById('tabs-outer') as HTMLElement;
 const tabsInnerContainer = document.getElementById('tabs') as HTMLElement;
 const tabContents = document.getElementById('tab-contents') as HTMLElement;
-const responseFileInput = document.getElementById('responseFile') as HTMLInputElement;
-const referenceFileInput = document.getElementById('referenceFile') as HTMLInputElement;
-const analyzeBtn = document.getElementById('analyzeBtn') as HTMLButtonElement;
+const responseFileUploadInput = document.getElementById('responseFileUpload') as HTMLInputElement;
+const referenceFileUploadInput = document.getElementById('referenceFileUpload') as HTMLInputElement;
+const analyzeUploadBtn = document.getElementById('analyzeUploadBtn') as HTMLButtonElement;
+
+// Polar upload controls
+const polarReferenceFileInput = document.getElementById('polarReferenceFile') as HTMLInputElement;
+const polarMeasurementsEl = document.getElementById('polarMeasurements') as HTMLElement;
+const addPolarMeasurementBtn = document.getElementById('addPolarMeasurementBtn') as HTMLButtonElement;
+const analyzePolarBtn = document.getElementById('analyzePolarBtn') as HTMLButtonElement;
+const polarStatusEl = document.getElementById('polarStatus') as HTMLElement;
 
 // Enable analyze button when response file is selected
-responseFileInput.addEventListener('change', () => {
-    analyzeBtn.disabled = !responseFileInput.files?.length;
+responseFileUploadInput.addEventListener('change', () => {
+    analyzeUploadBtn.disabled = !responseFileUploadInput.files?.length;
 });
+
+type PolarMeasurement = { angleDeg: number; file: File };
+
+function normalizeAngleDeg(angleDeg: number): number {
+    let a = angleDeg % 360;
+    if (a < 0) a += 360;
+    return a;
+}
+
+function getPolarMeasurements(): PolarMeasurement[] {
+    const rows = Array.from(polarMeasurementsEl.querySelectorAll<HTMLElement>('.polar-measurement-row'));
+    const out: PolarMeasurement[] = [];
+    for (const row of rows) {
+        const angleInput = row.querySelector<HTMLInputElement>('.polar-angle');
+        const fileInput = row.querySelector<HTMLInputElement>('.polar-response-file');
+        if (!angleInput || !fileInput) continue;
+
+        const file = fileInput.files?.[0];
+        if (!file) continue;
+
+        const parsed = parseFloat(angleInput.value);
+        const angleDeg = Number.isFinite(parsed) ? normalizeAngleDeg(parsed) : 0;
+        out.push({ angleDeg, file });
+    }
+    return out;
+}
+
+function updatePolarAnalyzeEnabled(): void {
+    const hasReference = !!polarReferenceFileInput.files?.length;
+    const hasAnyMeasurement = getPolarMeasurements().length > 0;
+    analyzePolarBtn.disabled = !(hasReference && hasAnyMeasurement);
+
+    if (!hasReference) {
+        polarStatusEl.textContent = 'Select a reference/stimulus file.';
+    } else if (!hasAnyMeasurement) {
+        polarStatusEl.textContent = 'Add at least one measurement (angle + file).';
+    } else {
+        polarStatusEl.textContent = '';
+    }
+}
+
+function addPolarMeasurementRow(initialAngleDeg: number = 0): void {
+    const row = document.createElement('div');
+    row.className = 'param-row polar-measurement-row';
+    row.innerHTML = `
+        <label>Angle (deg):</label>
+        <input type="number" class="param-input polar-angle" value="${initialAngleDeg}" step="1" min="0" max="360">
+        <input type="file" class="polar-response-file" accept="audio/*,.wav,.mp3,.flac,.ogg">
+        <button class="button-custom button-custom-secondary polar-remove" type="button">Remove</button>
+    `;
+    polarMeasurementsEl.appendChild(row);
+}
+
+// Polar UI wiring
+polarReferenceFileInput.addEventListener('change', updatePolarAnalyzeEnabled);
+addPolarMeasurementBtn.addEventListener('click', () => {
+    addPolarMeasurementRow(0);
+    updatePolarAnalyzeEnabled();
+});
+polarMeasurementsEl.addEventListener('input', (e) => {
+    const t = e.target as HTMLElement;
+    if (t.classList.contains('polar-angle')) updatePolarAnalyzeEnabled();
+});
+polarMeasurementsEl.addEventListener('change', (e) => {
+    const t = e.target as HTMLElement;
+    if (t.classList.contains('polar-response-file')) updatePolarAnalyzeEnabled();
+});
+polarMeasurementsEl.addEventListener('click', (e) => {
+    const t = e.target as HTMLElement;
+    if (!t.classList.contains('polar-remove')) return;
+    const row = t.closest('.polar-measurement-row');
+    row?.remove();
+    if (polarMeasurementsEl.querySelectorAll('.polar-measurement-row').length === 0) {
+        addPolarMeasurementRow(0);
+    }
+    updatePolarAnalyzeEnabled();
+});
+
+updatePolarAnalyzeEnabled();
 
 // ============================================================================
 // Acquisition Tab Functionality
@@ -122,8 +209,15 @@ tabsContainer.addEventListener('click', (e: MouseEvent) => {
     }
 });
 
+let recorded = Float32Array.from([]);
+
 async function startRecordingAndPlayback(): Promise<void> {
     try {
+        const saudioBuffer = Float32Array.from({ length: 48000*7.5 }, () => 0);
+        let buffercounter = 0;
+        let finished = false;
+
+
         // Initialize audio context and get microphone stream
         const audioContext = await initializeAudioContext();
         const stream = await navigator.mediaDevices.getUserMedia({ 
@@ -133,23 +227,6 @@ async function startRecordingAndPlayback(): Promise<void> {
                 autoGainControl: false 
             } 
         });
-        
-        // Create media recorder
-        acquisitionState.recordedChunks = [];
-        acquisitionState.mediaRecorder = new MediaRecorder(stream);
-        acquisitionState.isRecording = true;
-
-        acquisitionState.mediaRecorder.ondataavailable = (e: BlobEvent) => {
-            acquisitionState.recordedChunks.push(e.data);
-        };
-
-        acquisitionState.mediaRecorder.onstop = async () => {
-            const recordedBlob = new Blob(acquisitionState.recordedChunks, { type: 'audio/wav' });
-            const url = URL.createObjectURL(recordedBlob);
-            recordedAudioEl.src = url;
-            recordedAudioContainer.style.display = 'block';
-            recordingVisualizationEl.style.display = 'none';
-        };
 
         // Generate and play sweep
         const startFreq = parseFloat(sweepStartFreqInput.value);
@@ -175,7 +252,6 @@ async function startRecordingAndPlayback(): Promise<void> {
         // Start recording
         recordingStatusEl.textContent = `Recording for ${totalRecordTime.toFixed(1)}s...`;
         recordingVisualizationEl.style.display = 'block';
-        acquisitionState.mediaRecorder.start();
 
         // Update UI
         startBtn.disabled = true;
@@ -193,6 +269,11 @@ async function startRecordingAndPlayback(): Promise<void> {
             sourceGain.connect(audioContext.destination);
             acquisitionState.playbackSource.start();
         }, preRecordTime * 1000);
+
+        AudioRecorder.record(audioContext, totalRecordTime).then((data) => {
+            stopRecording();
+            recorded = data;
+        });
 
         // Stop recording after total time (pre + sweep + post)
         setTimeout(() => {
@@ -250,20 +331,8 @@ async function playbackOnly(): Promise<void> {
 }
 
 function stopRecording(): void {
-    if (acquisitionState.mediaRecorder && acquisitionState.isRecording) {
-        acquisitionState.mediaRecorder.stop();
-        acquisitionState.isRecording = false;
-
-        // Stop microphone stream
-        acquisitionState.mediaRecorder.stream.getTracks().forEach(track => track.stop());
-
-        recordingStatusEl.textContent = 'Recording complete. Ready to analyze.';
-        recordingStatusEl.style.color = '#28a745';
-    }
-
-    if (acquisitionState.playbackSource) {
-        acquisitionState.playbackSource.stop();
-    }
+    recordingStatusEl.textContent = 'Recording complete. Ready to analyze.';
+    recordingStatusEl.style.color = '#28a745';
 
     // Update UI
     startBtn.disabled = false;
@@ -272,6 +341,8 @@ function stopRecording(): void {
     sweepStartFreqInput.disabled = false;
     sweepEndFreqInput.disabled = false;
     sweepDurationInput.disabled = false;
+
+    recordedAudioContainer.style.display = 'block';
 }
 
 function stopPlayback(): void {
@@ -295,34 +366,17 @@ playBtn.addEventListener('click', playbackOnly);
 stopPlayBtn.addEventListener('click', stopPlayback);
 
 analyzeRecordingBtn.addEventListener('click', async () => {
-    if (!recordedAudioEl.src) return;
+    console.log('Analyzing recording...');
 
-    try {
-        const audioContext = await initializeAudioContext();
-        const response = await fetch(recordedAudioEl.src);
-        const arrayBuffer = await response.arrayBuffer();
-        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-        
-        // Extract the selected channel
-        const selectedChannel = parseInt(channelSelect.value, 10);
-        let recordedAudio: Audio;
-        
-        if (audioBuffer.numberOfChannels > 1 && selectedChannel < audioBuffer.numberOfChannels) {
-            // Multi-channel recording: extract selected channel
-            const channelData = audioBuffer.getChannelData(selectedChannel);
-            recordedAudio = Audio.fromSamples(channelData, audioBuffer.sampleRate);
-        } else {
-            // Single channel or default to first channel
-            recordedAudio = Audio.fromAudioBuffer(audioBuffer);
-        }
-
+    try {        
+        const recordedAudio = Audio.fromSamples(recorded, 48000);
         // Generate the chirp sweep as reference data
         const startFreq = parseFloat(sweepStartFreqInput.value);
         const endFreq = parseFloat(sweepEndFreqInput.value);
         const duration = parseFloat(sweepDurationInput.value);
 
         const [sweepSignal] = audio.chirp(startFreq, endFreq, duration);
-        const referenceAudio = Audio.fromSamples(sweepSignal, audioContext.sampleRate);
+        const referenceAudio = Audio.fromSamples(sweepSignal, 48000);
 
         // Add timestamp to recording name
         const now = new Date();
@@ -348,54 +402,6 @@ analyzeRecordingBtn.addEventListener('click', async () => {
     } catch (error) {
         console.error('Error analyzing recording:', error);
         alert('Error analyzing recording: ' + (error as Error).message);
-    }
-});
-
-viewWaveformBtn.addEventListener('click', async () => {
-    if (!recordedAudioEl.src) return;
-
-    try {
-        const audioContext = await initializeAudioContext();
-        const response = await fetch(recordedAudioEl.src);
-        const arrayBuffer = await response.arrayBuffer();
-        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-        
-        // Extract the selected channel
-        const selectedChannel = parseInt(channelSelect.value, 10);
-        let recordedAudio: Audio;
-        
-        if (audioBuffer.numberOfChannels > 1 && selectedChannel < audioBuffer.numberOfChannels) {
-            // Multi-channel recording: extract selected channel
-            const channelData = audioBuffer.getChannelData(selectedChannel);
-            recordedAudio = Audio.fromSamples(channelData, audioBuffer.sampleRate);
-        } else {
-            // Single channel or default to first channel
-            recordedAudio = Audio.fromAudioBuffer(audioBuffer);
-        }
-
-        // Add timestamp to tab name
-        const now = new Date();
-        const dateTime = now.toLocaleString('sv-SE', { 
-            year: '2-digit', 
-            month: '2-digit', 
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: false
-        }).replace(',', '');
-        const recordingName = `${dateTime}`;
-
-        // Create analysis tab with only the recorded audio (no reference)
-        createAnalysisTab(
-            recordedAudio.applyGain(1 / 16384),
-            null,
-            recordingName,
-            'Waveform View'
-        );
-    } catch (error) {
-        console.error('Error viewing waveform:', error);
-        alert('Error viewing waveform: ' + (error as Error).message);
     }
 });
 
@@ -447,48 +453,70 @@ function switchTab(tabId: string): void {
     document.querySelector(`[data-content="${tabId}"]`)?.classList.add('active');
 }
 
-analyzeBtn.addEventListener('click', async () => {
-    const responseFile = responseFileInput.files?.[0];
-    const referenceFile = referenceFileInput.files?.[0];
+analyzeUploadBtn.addEventListener('click', async () => {
+    const responseFile = responseFileUploadInput.files?.[0];
+    const referenceFile = referenceFileUploadInput.files?.[0];
 
     if (!responseFile) return;
 
-    analyzeBtn.disabled = true;
-    analyzeBtn.textContent = 'Analyzing...';
+    analyzeUploadBtn.disabled = true;
+    analyzeUploadBtn.textContent = 'Analyzing...';
 
     try {
         const responseData = await audio.loadAudioFile(responseFile);
         const referenceData = referenceFile ? await audio.loadAudioFile(referenceFile) : null;
 
-       createAnalysisTab(responseData.applyGain(1 / 16384), referenceData ? referenceData.applyGain(1 / 16384) : null, responseFile.name, referenceFile?.name || null);
+        createAnalysisTab(
+            responseData.applyGain(1 / 16384),
+            referenceData ? referenceData.applyGain(1 / 16384) : null,
+            responseFile.name,
+            referenceFile?.name || null
+        );
     } catch (error) {
         alert('Error analyzing files: ' + (error as Error).message);
     } finally {
-        analyzeBtn.disabled = false;
-        analyzeBtn.textContent = 'Analyze Frequency Response';
+        analyzeUploadBtn.disabled = false;
+        analyzeUploadBtn.textContent = 'Analyze Frequency Response';
     }
 });
 
+analyzePolarBtn.addEventListener('click', async () => {
+    const referenceFile = polarReferenceFileInput.files?.[0];
+    if (!referenceFile) return;
 
-/**
- * Creates a new analysis tab in the UI and renders magnitude, phase and impulse-response plots for the provided audio.
- *
- * Description:
- * - Performs spectral and time-domain analysis: computes the FFT of the response, computes an impulse response (two-channel) and derives an FFT from that IR for reference comparison.
- * - Plots: Magnitude (dB) with raw and smoothed reference traces, Phase (degrees) with raw and smoothed traces, and the time-domain impulse response.
- * - Smoothing: applies smoothFFT to the reference frequency response using the smoothing parameters 1/6 and 1/48 (producing "Magnitude (Smoothed)" and "Phase (Smoothed)").
- *
- * Side effects:
- * - Mutates DOM by adding a closable tab button and corresponding tab content elements.
- * - Renders plots using Plotly into the created tab content.
- * - Persists analysis state to storage (IndexedDB/sessionStorage mirror).
- *
- * @param responseData - Audio buffer for the response file to analyze (Float32Array samples in Audio.data).
- * @param referenceData - Optional Audio buffer for the reference file; when provided, reference magnitude/phase and smoothed curves are computed and plotted.
- * @param filename - Display name for the response file (used in tab title and header).
- * @param referenceFilename - Optional display name for the reference file (appended to tab title when present).
- * @returns void
- */
+    const measurements = getPolarMeasurements();
+    if (measurements.length === 0) {
+        alert('Please add at least one measurement (angle + file).');
+        return;
+    }
+
+    const oldText = analyzePolarBtn.textContent || 'Analyze Polar Directivity';
+    analyzePolarBtn.disabled = true;
+    analyzePolarBtn.textContent = 'Analyzing...';
+
+    try {
+        const referenceData = (await audio.loadAudioFile(referenceFile)).applyGain(1 / 16384);
+
+        const loaded = await Promise.all(
+            measurements.map(async (m) => ({
+                angleDeg: m.angleDeg,
+                audio: (await audio.loadAudioFile(m.file)).applyGain(1 / 16384),
+            }))
+        );
+
+        loaded.sort((a, b) => a.angleDeg - b.angleDeg);
+        const responseAudios = loaded.map((x) => x.audio);
+        const anglesDeg = loaded.map((x) => x.angleDeg);
+
+        createDirectivityPlotTab(responseAudios, referenceData, anglesDeg);
+    } catch (error) {
+        alert('Error analyzing polar files: ' + (error as Error).message);
+    } finally {
+        analyzePolarBtn.textContent = oldText;
+        updatePolarAnalyzeEnabled();
+    }
+});
+
 function createAnalysisTab(responseData: Audio, referenceData: Audio | null, filename: string, referenceFilename: string | null): void {
     tabCounter++;
     const tabId = `analysis-${tabCounter}`;
@@ -856,7 +884,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
 }
 
 
-function createDirectivityPlotTab(responseDatas: Audio[], referenceData: Audio): void {
+function createDirectivityPlotTab(responseDatas: Audio[], referenceData: Audio, anglesDeg?: number[]): void {
     if (responseDatas.length === 0 || referenceData.length === 0) return;
 
     tabCounter++;
@@ -883,7 +911,10 @@ function createDirectivityPlotTab(responseDatas: Audio[], referenceData: Audio):
 
     switchTab(directivityTabId);
 
-    const angles = responseDatas.map((_, i) => (360 * i) / responseDatas.length);
+    const useCustomAngles = !!anglesDeg && anglesDeg.length === responseDatas.length;
+    const angles = useCustomAngles
+        ? anglesDeg!.map(normalizeAngleDeg)
+        : responseDatas.map((_, i) => (360 * i) / responseDatas.length);
 
     const referenceSamples = Float32Array.from(referenceData.getChannelData(0));
 
@@ -893,7 +924,7 @@ function createDirectivityPlotTab(responseDatas: Audio[], referenceData: Audio):
         resp.getChannelData(0).subarray(0, len),
         referenceSamples.subarray(0, len)
         );
-        return computeFFTFromIR(ir);
+        return smoothFFT(computeFFTFromIR(ir), 1/3, 1/48);
     });
 
     const baseFreq = transfers[0]?.frequency;
@@ -926,9 +957,9 @@ function createDirectivityPlotTab(responseDatas: Audio[], referenceData: Audio):
             x: Array.from(baseFreq),
             y: angles,
             z,
-            colorscale: 'Electric',
-            zmin: -40,
-            zmax: 5,
+            colorscale: 'Jet',
+            zmin: -50,
+            zmax: 0,
             colorbar: { title: 'dB (norm @ 1 kHz)' }
         } as any
         ],

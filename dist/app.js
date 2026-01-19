@@ -2788,6 +2788,66 @@ window.openDeviceSettings = openDeviceSettings;
 window.closeDeviceSettings = closeDeviceSettings;
 window.refreshAudioDeviceList = refreshAudioDeviceList;
 window.saveDeviceSelections = saveDeviceSelections;
+// src/recorder.ts
+var AudioRecorder = /*#__PURE__*/ function() {
+    function AudioRecorder() {
+        _class_call_check(this, AudioRecorder);
+    }
+    _create_class(AudioRecorder, null, [
+        {
+            key: "recordWithBufferingProcessor",
+            value: // Record using buffering processor worklet.
+            function recordWithBufferingProcessor(audioContext, durationSec) {
+                return _async_to_generator(function() {
+                    var bufferingNode;
+                    return _ts_generator(this, function(_state) {
+                        switch(_state.label){
+                            case 0:
+                                return [
+                                    4,
+                                    audioContext.audioWorklet.addModule("static/buffering-processor.worklet.js")
+                                ];
+                            case 1:
+                                _state.sent();
+                                bufferingNode = new AudioWorkletNode(audioContext, "buffering-processor", {
+                                    numberOfInputs: 1,
+                                    parameterData: {
+                                        isRecording: 1,
+                                        recordingLength: durationSec * audioContext.sampleRate
+                                    }
+                                });
+                                return [
+                                    2,
+                                    new Promise(function(resolve) {
+                                        bufferingNode.port.onmessage = function(event) {
+                                            if (event.data.recording) {
+                                                resolve(Float32Array.from(event.data.recording));
+                                            }
+                                        };
+                                    })
+                                ];
+                        }
+                    });
+                })();
+            }
+        },
+        {
+            key: "record",
+            value: // Convenience record function that delegates to recordWithBufferingProcessor.
+            function record(audioContext, durationSec) {
+                return _async_to_generator(function() {
+                    return _ts_generator(this, function(_state) {
+                        return [
+                            2,
+                            this.recordWithBufferingProcessor(audioContext, durationSec)
+                        ];
+                    });
+                }).call(this);
+            }
+        }
+    ]);
+    return AudioRecorder;
+}();
 // src/app.ts
 console.debug("App module loaded");
 var root = document.documentElement;
@@ -2797,13 +2857,103 @@ var tabCounter = 0;
 var tabsContainer = document.getElementById("tabs-outer");
 var tabsInnerContainer = document.getElementById("tabs");
 var tabContents = document.getElementById("tab-contents");
-var responseFileInput = document.getElementById("responseFile");
-var referenceFileInput = document.getElementById("referenceFile");
-var analyzeBtn = document.getElementById("analyzeBtn");
-responseFileInput.addEventListener("change", function() {
-    var _responseFileInput_files;
-    analyzeBtn.disabled = !((_responseFileInput_files = responseFileInput.files) === null || _responseFileInput_files === void 0 ? void 0 : _responseFileInput_files.length);
+var responseFileUploadInput = document.getElementById("responseFileUpload");
+var referenceFileUploadInput = document.getElementById("referenceFileUpload");
+var analyzeUploadBtn = document.getElementById("analyzeUploadBtn");
+var polarReferenceFileInput = document.getElementById("polarReferenceFile");
+var polarMeasurementsEl = document.getElementById("polarMeasurements");
+var addPolarMeasurementBtn = document.getElementById("addPolarMeasurementBtn");
+var analyzePolarBtn = document.getElementById("analyzePolarBtn");
+var polarStatusEl = document.getElementById("polarStatus");
+responseFileUploadInput.addEventListener("change", function() {
+    var _responseFileUploadInput_files;
+    analyzeUploadBtn.disabled = !((_responseFileUploadInput_files = responseFileUploadInput.files) === null || _responseFileUploadInput_files === void 0 ? void 0 : _responseFileUploadInput_files.length);
 });
+function normalizeAngleDeg(angleDeg) {
+    var a = angleDeg % 360;
+    if (a < 0) a += 360;
+    return a;
+}
+function getPolarMeasurements() {
+    var rows = Array.from(polarMeasurementsEl.querySelectorAll(".polar-measurement-row"));
+    var out = [];
+    var _iteratorNormalCompletion = true, _didIteratorError = false, _iteratorError = undefined;
+    try {
+        for(var _iterator = rows[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true){
+            var row = _step.value;
+            var _fileInput_files;
+            var angleInput = row.querySelector(".polar-angle");
+            var fileInput = row.querySelector(".polar-response-file");
+            if (!angleInput || !fileInput) continue;
+            var file = (_fileInput_files = fileInput.files) === null || _fileInput_files === void 0 ? void 0 : _fileInput_files[0];
+            if (!file) continue;
+            var parsed = parseFloat(angleInput.value);
+            var angleDeg = Number.isFinite(parsed) ? normalizeAngleDeg(parsed) : 0;
+            out.push({
+                angleDeg: angleDeg,
+                file: file
+            });
+        }
+    } catch (err) {
+        _didIteratorError = true;
+        _iteratorError = err;
+    } finally{
+        try {
+            if (!_iteratorNormalCompletion && _iterator.return != null) {
+                _iterator.return();
+            }
+        } finally{
+            if (_didIteratorError) {
+                throw _iteratorError;
+            }
+        }
+    }
+    return out;
+}
+function updatePolarAnalyzeEnabled() {
+    var _polarReferenceFileInput_files;
+    var hasReference = !!((_polarReferenceFileInput_files = polarReferenceFileInput.files) === null || _polarReferenceFileInput_files === void 0 ? void 0 : _polarReferenceFileInput_files.length);
+    var hasAnyMeasurement = getPolarMeasurements().length > 0;
+    analyzePolarBtn.disabled = !(hasReference && hasAnyMeasurement);
+    if (!hasReference) {
+        polarStatusEl.textContent = "Select a reference/stimulus file.";
+    } else if (!hasAnyMeasurement) {
+        polarStatusEl.textContent = "Add at least one measurement (angle + file).";
+    } else {
+        polarStatusEl.textContent = "";
+    }
+}
+function addPolarMeasurementRow() {
+    var initialAngleDeg = arguments.length > 0 && arguments[0] !== void 0 ? arguments[0] : 0;
+    var row = document.createElement("div");
+    row.className = "param-row polar-measurement-row";
+    row.innerHTML = '\n        <label>Angle (deg):</label>\n        <input type="number" class="param-input polar-angle" value="'.concat(initialAngleDeg, '" step="1" min="0" max="360">\n        <input type="file" class="polar-response-file" accept="audio/*,.wav,.mp3,.flac,.ogg">\n        <button class="button-custom button-custom-secondary polar-remove" type="button">Remove</button>\n    ');
+    polarMeasurementsEl.appendChild(row);
+}
+polarReferenceFileInput.addEventListener("change", updatePolarAnalyzeEnabled);
+addPolarMeasurementBtn.addEventListener("click", function() {
+    addPolarMeasurementRow(0);
+    updatePolarAnalyzeEnabled();
+});
+polarMeasurementsEl.addEventListener("input", function(e) {
+    var t = e.target;
+    if (t.classList.contains("polar-angle")) updatePolarAnalyzeEnabled();
+});
+polarMeasurementsEl.addEventListener("change", function(e) {
+    var t = e.target;
+    if (t.classList.contains("polar-response-file")) updatePolarAnalyzeEnabled();
+});
+polarMeasurementsEl.addEventListener("click", function(e) {
+    var t = e.target;
+    if (!t.classList.contains("polar-remove")) return;
+    var row = t.closest(".polar-measurement-row");
+    row === null || row === void 0 ? void 0 : row.remove();
+    if (polarMeasurementsEl.querySelectorAll(".polar-measurement-row").length === 0) {
+        addPolarMeasurementRow(0);
+    }
+    updatePolarAnalyzeEnabled();
+});
+updatePolarAnalyzeEnabled();
 var acquisitionState = {
     audioContext: null,
     mediaRecorder: null,
@@ -2939,9 +3089,10 @@ tabsContainer.addEventListener("click", function(e) {
         detectAndSetupChannels();
     }
 });
+var recorded = Float32Array.from([]);
 function startRecordingAndPlayback() {
     return _async_to_generator(function() {
-        var audioContext, stream, startFreq, endFreq, duration, preRecordTime, postRecordTime, totalRecordTime, _audio_chirp, sweepSignal, audioBuffer, channelData, sourceGain, error;
+        var saudioBuffer, buffercounter, finished, audioContext, stream, startFreq, endFreq, duration, preRecordTime, postRecordTime, totalRecordTime, _audio_chirp, sweepSignal, audioBuffer, channelData, sourceGain, error;
         return _ts_generator(this, function(_state) {
             switch(_state.label){
                 case 0:
@@ -2951,6 +3102,13 @@ function startRecordingAndPlayback() {
                         ,
                         4
                     ]);
+                    saudioBuffer = Float32Array.from({
+                        length: 48e3 * 7.5
+                    }, function() {
+                        return 0;
+                    });
+                    buffercounter = 0;
+                    finished = false;
                     return [
                         4,
                         initializeAudioContext()
@@ -2969,29 +3127,6 @@ function startRecordingAndPlayback() {
                     ];
                 case 2:
                     stream = _state.sent();
-                    acquisitionState.recordedChunks = [];
-                    acquisitionState.mediaRecorder = new MediaRecorder(stream);
-                    acquisitionState.isRecording = true;
-                    acquisitionState.mediaRecorder.ondataavailable = function(e) {
-                        acquisitionState.recordedChunks.push(e.data);
-                    };
-                    acquisitionState.mediaRecorder.onstop = function() {
-                        return _async_to_generator(function() {
-                            var recordedBlob, url;
-                            return _ts_generator(this, function(_state) {
-                                recordedBlob = new Blob(acquisitionState.recordedChunks, {
-                                    type: "audio/wav"
-                                });
-                                url = URL.createObjectURL(recordedBlob);
-                                recordedAudioEl.src = url;
-                                recordedAudioContainer.style.display = "block";
-                                recordingVisualizationEl.style.display = "none";
-                                return [
-                                    2
-                                ];
-                            });
-                        })();
-                    };
                     startFreq = parseFloat(sweepStartFreqInput.value);
                     endFreq = parseFloat(sweepEndFreqInput.value);
                     duration = parseFloat(sweepDurationInput.value);
@@ -3006,7 +3141,6 @@ function startRecordingAndPlayback() {
                     sourceGain.gain.value = 0.5;
                     recordingStatusEl.textContent = "Recording for ".concat(totalRecordTime.toFixed(1), "s...");
                     recordingVisualizationEl.style.display = "block";
-                    acquisitionState.mediaRecorder.start();
                     startBtn.disabled = true;
                     stopBtn.disabled = false;
                     playBtn.disabled = true;
@@ -3020,6 +3154,10 @@ function startRecordingAndPlayback() {
                         sourceGain.connect(audioContext.destination);
                         acquisitionState.playbackSource.start();
                     }, preRecordTime * 1e3);
+                    AudioRecorder.record(audioContext, totalRecordTime).then(function(data) {
+                        stopRecording();
+                        recorded = data;
+                    });
                     setTimeout(function() {
                         stopRecording();
                     }, totalRecordTime * 1e3);
@@ -3105,24 +3243,15 @@ function playbackOnly() {
     })();
 }
 function stopRecording() {
-    if (acquisitionState.mediaRecorder && acquisitionState.isRecording) {
-        acquisitionState.mediaRecorder.stop();
-        acquisitionState.isRecording = false;
-        acquisitionState.mediaRecorder.stream.getTracks().forEach(function(track) {
-            return track.stop();
-        });
-        recordingStatusEl.textContent = "Recording complete. Ready to analyze.";
-        recordingStatusEl.style.color = "#28a745";
-    }
-    if (acquisitionState.playbackSource) {
-        acquisitionState.playbackSource.stop();
-    }
+    recordingStatusEl.textContent = "Recording complete. Ready to analyze.";
+    recordingStatusEl.style.color = "#28a745";
     startBtn.disabled = false;
     stopBtn.disabled = true;
     playBtn.disabled = false;
     sweepStartFreqInput.disabled = false;
     sweepEndFreqInput.disabled = false;
     sweepDurationInput.disabled = false;
+    recordedAudioContainer.style.display = "block";
 }
 function stopPlayback() {
     if (acquisitionState.playbackSource) {
@@ -3140,166 +3269,35 @@ playBtn.addEventListener("click", playbackOnly);
 stopPlayBtn.addEventListener("click", stopPlayback);
 analyzeRecordingBtn.addEventListener("click", function() {
     return _async_to_generator(function() {
-        var audioContext, response, arrayBuffer, audioBuffer, selectedChannel, recordedAudio, channelData, startFreq, endFreq, duration, _audio_chirp, sweepSignal, referenceAudio, now, dateTime, recordingName, error;
+        var recordedAudio, startFreq, endFreq, duration, _audio_chirp, sweepSignal, referenceAudio, now, dateTime, recordingName;
         return _ts_generator(this, function(_state) {
-            switch(_state.label){
-                case 0:
-                    if (!recordedAudioEl.src) return [
-                        2
-                    ];
-                    _state.label = 1;
-                case 1:
-                    _state.trys.push([
-                        1,
-                        6,
-                        ,
-                        7
-                    ]);
-                    return [
-                        4,
-                        initializeAudioContext()
-                    ];
-                case 2:
-                    audioContext = _state.sent();
-                    return [
-                        4,
-                        fetch(recordedAudioEl.src)
-                    ];
-                case 3:
-                    response = _state.sent();
-                    return [
-                        4,
-                        response.arrayBuffer()
-                    ];
-                case 4:
-                    arrayBuffer = _state.sent();
-                    return [
-                        4,
-                        audioContext.decodeAudioData(arrayBuffer)
-                    ];
-                case 5:
-                    audioBuffer = _state.sent();
-                    selectedChannel = parseInt(channelSelect.value, 10);
-                    if (audioBuffer.numberOfChannels > 1 && selectedChannel < audioBuffer.numberOfChannels) {
-                        channelData = audioBuffer.getChannelData(selectedChannel);
-                        recordedAudio = Audio.fromSamples(channelData, audioBuffer.sampleRate);
-                    } else {
-                        recordedAudio = Audio.fromAudioBuffer(audioBuffer);
-                    }
-                    startFreq = parseFloat(sweepStartFreqInput.value);
-                    endFreq = parseFloat(sweepEndFreqInput.value);
-                    duration = parseFloat(sweepDurationInput.value);
-                    _audio_chirp = _sliced_to_array(audio.chirp(startFreq, endFreq, duration), 1), sweepSignal = _audio_chirp[0];
-                    referenceAudio = Audio.fromSamples(sweepSignal, audioContext.sampleRate);
-                    now = /* @__PURE__ */ new Date();
-                    dateTime = now.toLocaleString("sv-SE", {
-                        year: "2-digit",
-                        month: "2-digit",
-                        day: "2-digit",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        second: "2-digit",
-                        hour12: false
-                    }).replace(",", "");
-                    recordingName = "".concat(dateTime);
-                    createAnalysisTab(recordedAudio.applyGain(1 / 16384), referenceAudio.applyGain(1 / 16384), recordingName, "".concat(startFreq, "-").concat(endFreq, "Hz"));
-                    return [
-                        3,
-                        7
-                    ];
-                case 6:
-                    error = _state.sent();
-                    console.error("Error analyzing recording:", error);
-                    alert("Error analyzing recording: " + error.message);
-                    return [
-                        3,
-                        7
-                    ];
-                case 7:
-                    return [
-                        2
-                    ];
+            console.log("Analyzing recording...");
+            try {
+                recordedAudio = Audio.fromSamples(recorded, 48e3);
+                startFreq = parseFloat(sweepStartFreqInput.value);
+                endFreq = parseFloat(sweepEndFreqInput.value);
+                duration = parseFloat(sweepDurationInput.value);
+                _audio_chirp = _sliced_to_array(audio.chirp(startFreq, endFreq, duration), 1), sweepSignal = _audio_chirp[0];
+                referenceAudio = Audio.fromSamples(sweepSignal, 48e3);
+                now = /* @__PURE__ */ new Date();
+                dateTime = now.toLocaleString("sv-SE", {
+                    year: "2-digit",
+                    month: "2-digit",
+                    day: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                    hour12: false
+                }).replace(",", "");
+                recordingName = "".concat(dateTime);
+                createAnalysisTab(recordedAudio.applyGain(1 / 16384), referenceAudio.applyGain(1 / 16384), recordingName, "".concat(startFreq, "-").concat(endFreq, "Hz"));
+            } catch (error) {
+                console.error("Error analyzing recording:", error);
+                alert("Error analyzing recording: " + error.message);
             }
-        });
-    })();
-});
-viewWaveformBtn.addEventListener("click", function() {
-    return _async_to_generator(function() {
-        var audioContext, response, arrayBuffer, audioBuffer, selectedChannel, recordedAudio, channelData, now, dateTime, recordingName, error;
-        return _ts_generator(this, function(_state) {
-            switch(_state.label){
-                case 0:
-                    if (!recordedAudioEl.src) return [
-                        2
-                    ];
-                    _state.label = 1;
-                case 1:
-                    _state.trys.push([
-                        1,
-                        6,
-                        ,
-                        7
-                    ]);
-                    return [
-                        4,
-                        initializeAudioContext()
-                    ];
-                case 2:
-                    audioContext = _state.sent();
-                    return [
-                        4,
-                        fetch(recordedAudioEl.src)
-                    ];
-                case 3:
-                    response = _state.sent();
-                    return [
-                        4,
-                        response.arrayBuffer()
-                    ];
-                case 4:
-                    arrayBuffer = _state.sent();
-                    return [
-                        4,
-                        audioContext.decodeAudioData(arrayBuffer)
-                    ];
-                case 5:
-                    audioBuffer = _state.sent();
-                    selectedChannel = parseInt(channelSelect.value, 10);
-                    if (audioBuffer.numberOfChannels > 1 && selectedChannel < audioBuffer.numberOfChannels) {
-                        channelData = audioBuffer.getChannelData(selectedChannel);
-                        recordedAudio = Audio.fromSamples(channelData, audioBuffer.sampleRate);
-                    } else {
-                        recordedAudio = Audio.fromAudioBuffer(audioBuffer);
-                    }
-                    now = /* @__PURE__ */ new Date();
-                    dateTime = now.toLocaleString("sv-SE", {
-                        year: "2-digit",
-                        month: "2-digit",
-                        day: "2-digit",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        second: "2-digit",
-                        hour12: false
-                    }).replace(",", "");
-                    recordingName = "".concat(dateTime);
-                    createAnalysisTab(recordedAudio.applyGain(1 / 16384), null, recordingName, "Waveform View");
-                    return [
-                        3,
-                        7
-                    ];
-                case 6:
-                    error = _state.sent();
-                    console.error("Error viewing waveform:", error);
-                    alert("Error viewing waveform: " + error.message);
-                    return [
-                        3,
-                        7
-                    ];
-                case 7:
-                    return [
-                        2
-                    ];
-            }
+            return [
+                2
+            ];
         });
     })();
 });
@@ -3346,19 +3344,19 @@ function switchTab(tabId) {
     (_document_querySelector = document.querySelector('[data-tab="'.concat(tabId, '"]'))) === null || _document_querySelector === void 0 ? void 0 : _document_querySelector.classList.add("active");
     (_document_querySelector1 = document.querySelector('[data-content="'.concat(tabId, '"]'))) === null || _document_querySelector1 === void 0 ? void 0 : _document_querySelector1.classList.add("active");
 }
-analyzeBtn.addEventListener("click", function() {
+analyzeUploadBtn.addEventListener("click", function() {
     return _async_to_generator(function() {
-        var _responseFileInput_files, _referenceFileInput_files, responseFile, referenceFile, responseData, referenceData, _tmp, error;
+        var _responseFileUploadInput_files, _referenceFileUploadInput_files, responseFile, referenceFile, responseData, referenceData, _tmp, error;
         return _ts_generator(this, function(_state) {
             switch(_state.label){
                 case 0:
-                    responseFile = (_responseFileInput_files = responseFileInput.files) === null || _responseFileInput_files === void 0 ? void 0 : _responseFileInput_files[0];
-                    referenceFile = (_referenceFileInput_files = referenceFileInput.files) === null || _referenceFileInput_files === void 0 ? void 0 : _referenceFileInput_files[0];
+                    responseFile = (_responseFileUploadInput_files = responseFileUploadInput.files) === null || _responseFileUploadInput_files === void 0 ? void 0 : _responseFileUploadInput_files[0];
+                    referenceFile = (_referenceFileUploadInput_files = referenceFileUploadInput.files) === null || _referenceFileUploadInput_files === void 0 ? void 0 : _referenceFileUploadInput_files[0];
                     if (!responseFile) return [
                         2
                     ];
-                    analyzeBtn.disabled = true;
-                    analyzeBtn.textContent = "Analyzing...";
+                    analyzeUploadBtn.disabled = true;
+                    analyzeUploadBtn.textContent = "Analyzing...";
                     _state.label = 1;
                 case 1:
                     _state.trys.push([
@@ -3405,12 +3403,108 @@ analyzeBtn.addEventListener("click", function() {
                         8
                     ];
                 case 7:
-                    analyzeBtn.disabled = false;
-                    analyzeBtn.textContent = "Analyze Frequency Response";
+                    analyzeUploadBtn.disabled = false;
+                    analyzeUploadBtn.textContent = "Analyze Frequency Response";
                     return [
                         7
                     ];
                 case 8:
+                    return [
+                        2
+                    ];
+            }
+        });
+    })();
+});
+analyzePolarBtn.addEventListener("click", function() {
+    return _async_to_generator(function() {
+        var _polarReferenceFileInput_files, referenceFile, measurements, oldText, referenceData, loaded, responseAudios, anglesDeg, error;
+        return _ts_generator(this, function(_state) {
+            switch(_state.label){
+                case 0:
+                    referenceFile = (_polarReferenceFileInput_files = polarReferenceFileInput.files) === null || _polarReferenceFileInput_files === void 0 ? void 0 : _polarReferenceFileInput_files[0];
+                    if (!referenceFile) return [
+                        2
+                    ];
+                    measurements = getPolarMeasurements();
+                    if (measurements.length === 0) {
+                        alert("Please add at least one measurement (angle + file).");
+                        return [
+                            2
+                        ];
+                    }
+                    oldText = analyzePolarBtn.textContent || "Analyze Polar Directivity";
+                    analyzePolarBtn.disabled = true;
+                    analyzePolarBtn.textContent = "Analyzing...";
+                    _state.label = 1;
+                case 1:
+                    _state.trys.push([
+                        1,
+                        4,
+                        5,
+                        6
+                    ]);
+                    return [
+                        4,
+                        audio.loadAudioFile(referenceFile)
+                    ];
+                case 2:
+                    referenceData = _state.sent().applyGain(1 / 16384);
+                    return [
+                        4,
+                        Promise.all(measurements.map(function(m) {
+                            return _async_to_generator(function() {
+                                var _tmp;
+                                return _ts_generator(this, function(_state) {
+                                    switch(_state.label){
+                                        case 0:
+                                            _tmp = {
+                                                angleDeg: m.angleDeg
+                                            };
+                                            return [
+                                                4,
+                                                audio.loadAudioFile(m.file)
+                                            ];
+                                        case 1:
+                                            return [
+                                                2,
+                                                (_tmp.audio = _state.sent().applyGain(1 / 16384), _tmp)
+                                            ];
+                                    }
+                                });
+                            })();
+                        }))
+                    ];
+                case 3:
+                    loaded = _state.sent();
+                    loaded.sort(function(a, b) {
+                        return a.angleDeg - b.angleDeg;
+                    });
+                    responseAudios = loaded.map(function(x) {
+                        return x.audio;
+                    });
+                    anglesDeg = loaded.map(function(x) {
+                        return x.angleDeg;
+                    });
+                    createDirectivityPlotTab(responseAudios, referenceData, anglesDeg);
+                    return [
+                        3,
+                        6
+                    ];
+                case 4:
+                    error = _state.sent();
+                    alert("Error analyzing polar files: " + error.message);
+                    return [
+                        3,
+                        6
+                    ];
+                case 5:
+                    analyzePolarBtn.textContent = oldText;
+                    updatePolarAnalyzeEnabled();
+                    return [
+                        7
+                    ];
+                case 6:
                     return [
                         2
                     ];
@@ -4043,6 +4137,88 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
         document.body.style.cursor = "default";
     }
     (_document_getElementById = document.getElementById("resize-handle")) === null || _document_getElementById === void 0 ? void 0 : _document_getElementById.addEventListener("mousedown", initResize, false);
+}
+function createDirectivityPlotTab(responseDatas, referenceData, anglesDeg) {
+    var _transfers_;
+    if (responseDatas.length === 0 || referenceData.length === 0) return;
+    tabCounter++;
+    var directivityTabId = "directivity-".concat(tabCounter);
+    var shortName = "Directivity (".concat(responseDatas.length, ")");
+    var tab = document.createElement("button");
+    tab.className = "tab tab-closable";
+    tab.dataset.tab = directivityTabId;
+    tab.innerHTML = '<span class="tab-icon-analysis"></span>'.concat(shortName, ' <span class="tab-close">✕</span>');
+    tabsInnerContainer.appendChild(tab);
+    var content = document.createElement("div");
+    content.className = "tab-content";
+    content.dataset.content = directivityTabId;
+    content.innerHTML = '\n        <div class="flex h-full">\n        <div class="flex-1 main-content">\n            <div class="grid grid-cols-6 gap-[1px] bg-[#ddd] border-b border-[#ddd] plot-outer"></div>\n        </div>\n        </div>\n    ';
+    tabContents.appendChild(content);
+    switchTab(directivityTabId);
+    var useCustomAngles = !!anglesDeg && anglesDeg.length === responseDatas.length;
+    var angles = useCustomAngles ? anglesDeg.map(normalizeAngleDeg) : responseDatas.map(function(_, i) {
+        return 360 * i / responseDatas.length;
+    });
+    var referenceSamples = Float32Array.from(referenceData.getChannelData(0));
+    var transfers = responseDatas.map(function(resp) {
+        var len = Math.min(resp.getChannelData(0).length, referenceSamples.length);
+        var ir = twoChannelImpulseResponse(resp.getChannelData(0).subarray(0, len), referenceSamples.subarray(0, len));
+        return smoothFFT(computeFFTFromIR(ir), 1 / 3, 1 / 48);
+    });
+    var baseFreq = (_transfers_ = transfers[0]) === null || _transfers_ === void 0 ? void 0 : _transfers_.frequency;
+    if (!baseFreq || baseFreq.length === 0) return;
+    var normHz = 1e3;
+    var normIdx = 0;
+    var best = Number.POSITIVE_INFINITY;
+    for(var i = 0; i < baseFreq.length; i++){
+        var d = Math.abs(baseFreq[i] - normHz);
+        if (d < best) {
+            best = d;
+            normIdx = i;
+        }
+    }
+    transfers.push(transfers[0]);
+    angles.push(360);
+    var z = transfers.map(function(tf) {
+        var _magDb_normIdx;
+        var magDb = db(tf.magnitude);
+        var ref = (_magDb_normIdx = magDb[normIdx]) !== null && _magDb_normIdx !== void 0 ? _magDb_normIdx : 0;
+        return magDb.map(function(v) {
+            return v - ref;
+        });
+    });
+    plot([
+        {
+            type: "heatmap",
+            x: Array.from(baseFreq),
+            y: angles,
+            z: z,
+            colorscale: "Jet",
+            zmin: -50,
+            zmax: 0,
+            colorbar: {
+                title: "dB (norm @ 1 kHz)"
+            }
+        }
+    ], directivityTabId, "Directivity Map", "Frequency (Hz)", "Angle (deg)", {
+        type: "log",
+        range: [
+            Math.log10(20),
+            Math.log10(2e4)
+        ]
+    }, {
+        range: [
+            0,
+            360
+        ]
+    }, {
+        margin: {
+            l: 60,
+            r: 20,
+            t: 40,
+            b: 50
+        }
+    }, false);
 }
 function saveState() {
     var tabs = Array.from(document.querySelectorAll(".tab[data-tab]")).map(function(tab) {

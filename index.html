@@ -40,39 +40,48 @@
                     
                     <div class="upload-section">
                         <h3>Response Waveform *</h3>
-                        <input type="file" id="responseFile" accept="audio/*,.wav,.mp3,.flac,.ogg">
+                        <input type="file" id="responseFileUpload" accept="audio/*,.wav,.mp3,.flac,.ogg">
                         <p class="info">Required: The waveform to analyze</p>
                     </div>
 
                     <div class="upload-section">
                         <h3>Reference/Stimulus File</h3>
-                        <input type="file" id="referenceFile" accept="audio/*,.wav,.mp3,.flac,.ogg">
+                        <input type="file" id="referenceFileUpload" accept="audio/*,.wav,.mp3,.flac,.ogg">
                         <p class="info">Optional: Reference signal for frequency response calculation</p>
                     </div>
 
-                    <button id="analyzeBtn" class="button-custom button-custom-primary" disabled>Analyze Frequency Response</button>
+                    <button id="analyzeUploadBtn" class="button-custom button-custom-primary" disabled>Analyze Frequency Response</button>
                 </div>
             </div>
         </div>
-        <div class="tab-content active" data-content="upload-polar">
+        <div class="tab-content" data-content="upload-polar">
             <div class="tab-inner-content">
                 <div class="loose-container">
-                    <h2>Waveform Frequency Response Analyzer</h2>
-                    <p class="info">Upload an audio file to analyze its frequency content and optionally compare it to a reference/stimulus file.</p>
-                    
+                    <h2>Polar Directivity Upload</h2>
+                    <p class="info">Upload a reference/stimulus file and multiple recorded responses with angles (degrees).</p>
+
                     <div class="upload-section">
-                        <h3>Response Waveform *</h3>
-                        <input type="file" id="responseFile" accept="audio/*,.wav,.mp3,.flac,.ogg">
-                        <p class="info">Required: The waveform to analyze</p>
+                        <h3>Reference/Stimulus File *</h3>
+                        <input type="file" id="polarReferenceFile" accept="audio/*,.wav,.mp3,.flac,.ogg">
+                        <p class="info">Required: the stimulus used for all measurements</p>
                     </div>
 
                     <div class="upload-section">
-                        <h3>Reference/Stimulus File</h3>
-                        <input type="file" id="referenceFile" accept="audio/*,.wav,.mp3,.flac,.ogg">
-                        <p class="info">Optional: Reference signal for frequency response calculation</p>
+                        <h3>Measurements</h3>
+                        <div id="polarMeasurements">
+                            <div class="param-row polar-measurement-row">
+                                <label>Angle (deg):</label>
+                                <input type="number" class="param-input polar-angle" value="0" step="1" min="0" max="360">
+                                <input type="file" class="polar-response-file" accept="audio/*,.wav,.mp3,.flac,.ogg">
+                                <button class="button-custom button-custom-secondary polar-remove" type="button">Remove</button>
+                            </div>
+                        </div>
+                        <div class="controls-group" style="margin-top: 12px;">
+                            <button id="addPolarMeasurementBtn" class="button-custom button-custom-secondary" type="button">Add measurement</button>
+                            <button id="analyzePolarBtn" class="button-custom button-custom-primary" type="button" disabled>Analyze Polar Directivity</button>
+                        </div>
+                        <p class="info" id="polarStatus"></p>
                     </div>
-
-                    <button id="analyzeBtn" class="button-custom button-custom-primary" disabled>Analyze Frequency Response</button>
                 </div>
             </div>
         </div>
