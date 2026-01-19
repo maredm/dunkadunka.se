@@ -1,6 +1,7 @@
 import { abs, average, closest, linspace, mod, nextPow2 } from './math';
 import { FFT } from './fft';
-import { fractionalOctaveSmoothing, getFractionalOctaveFrequencies } from './fractional_octave_smoothing';;
+import { fractionalOctaveSmoothing, getFractionalOctaveFrequencies } from './fractional_octave_smoothing';
+import { read } from './wave';
 
 console.debug("Audio module loaded");
 
@@ -73,7 +74,62 @@ async function loadAudioFile(file: File): Promise<Audio> {
     const headerBuffer = await file.slice(0, 256 * 1024).arrayBuffer();
 
     function getExt(name: string) {
-        return (name.split('.').pop() || '').toLowerCase();
+        const ext = (name.split('.').pop() || '').toLowerCase();
+
+        // Attempt to detect and decode embedded iXML chunk from the headerBuffer.
+        try {
+            const dvh = new DataView(headerBuffer);
+            const readStr = (off: number, len: number) => {
+            let s = '';
+            for (let i = 0; i < len; i++) s += String.fromCharCode(dvh.getUint8(off + i));
+            return s;
+            };
+
+            let offset = 12; // Skip RIFF/WAVE header region where chunks start
+            while (offset + 8 <= dvh.byteLength) {
+            const id = readStr(offset, 4);
+            const size = dvh.getUint32(offset + 4, true);
+            if (id === 'iXML') {
+                const start = offset + 8;
+                const end = Math.min(start + size, dvh.byteLength);
+                const xmlBytes = new Uint8Array(headerBuffer.slice(start, end));
+                const xmlString = new TextDecoder().decode(xmlBytes);
+
+                // Attach raw iXML to the File object for later use
+                (file as any).__iXMLraw = xmlString;
+
+                // Try to convert iXML to an object using available converter:
+                // prefer convertiXMLtoObject exported by ./wave (if available on imported read)
+                // or a global window.wave.convertiXMLtoObject if provided by user's environment.
+                try {
+                const converter =
+                    (read as any)?.convertiXMLtoObject ||
+                    (window as any)?.wave?.convertiXMLtoObject;
+                if (typeof converter === 'function') {
+                    try {
+                    const obj = converter(xmlString);
+                    (file as any).__iXML = obj;
+                    console.log('iXML converted to object', obj);
+                    } catch (convErr) {
+                    console.warn('convertiXMLtoObject failed:', convErr);
+                    (file as any).__iXMLError = String(convErr);
+                    }
+                } else {
+                    console.debug('No convertiXMLtoObject available; raw iXML attached to file.__iXMLraw');
+                }
+                } catch (e) {
+                console.warn('iXML conversion attempt failed:', e);
+                }
+
+                break; // stop after first iXML chunk found
+            }
+            offset += 8 + size + (size % 2);
+            }
+        } catch (e) {
+            console.warn('Failed to scan header for iXML chunk:', e);
+        }
+
+        return ext;
     }
 
     function parseWav(buf: ArrayBuffer) {
@@ -201,6 +257,20 @@ async function loadAudioFile(file: File): Promise<Audio> {
     const mime = file.type || 'unknown';
     let metadata: {[Key: string]: string | number | null} = {};
 
+    // Basic file info
+    metadata.filename = file.name;
+    metadata.size = file.size;
+    metadata.mime = mime;
+    metadata.ext = ext;
+
+    // Attach any iXML data discovered during header scan.
+    // Prefer the converted object if available, otherwise include raw iXML string.
+    const ixmlObj = (file as any).__iXML;
+    const ixmlRaw = (file as any).__iXMLraw;
+    const ixmlErr = (file as any).__iXMLError;
+    metadata.iXMLdata = ixmlRaw;
+    if (ixmlErr) metadata.iXMLError = String(ixmlErr);
+
     const wavInfo = parseWav(headerBuffer);
     if (wavInfo) {
         metadata.format = 'wav';
@@ -223,9 +293,9 @@ async function loadAudioFile(file: File): Promise<Audio> {
 }
 
 export class Audio extends AudioBuffer {
-    metadata?: {[Key: string]: string | number | null};
+    metadata?: { [Key: string]: string | number | null; };
 
-    static fromAudioBuffer(buffer: AudioBuffer, metadata?: {[Key: string]: string | number | null}): Audio {
+    static fromAudioBuffer(buffer: AudioBuffer, metadata?: { [Key: string]: string | number | null; }): Audio {
         const audio = new Audio({
             length: buffer.length,
             numberOfChannels: buffer.numberOfChannels,
@@ -238,7 +308,7 @@ export class Audio extends AudioBuffer {
         return audio;
     }
 
-    static fromSamples(samples: Float32Array, sampleRate: number = 48000, metadata?: {[Key: string]: string | number | null}): Audio {
+    static fromSamples(samples: Float32Array, sampleRate: number = 48000, metadata?: { [Key: string]: string | number | null; }): Audio {
         if (!samples || samples.length == 0) return new Audio({ length: 0, numberOfChannels: 1, sampleRate: sampleRate });
         const audio = new Audio({
             length: samples.length,

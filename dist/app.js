@@ -7,6 +7,9 @@ function _array_like_to_array(arr, len) {
 function _array_with_holes(arr) {
     if (Array.isArray(arr)) return arr;
 }
+function _array_without_holes(arr) {
+    if (Array.isArray(arr)) return _array_like_to_array(arr);
+}
 function _assert_this_initialized(self) {
     if (self === void 0) {
         throw new ReferenceError("this hasn't been initialised - super() hasn't been called");
@@ -124,6 +127,9 @@ function _instanceof(left, right) {
 function _is_native_function(fn) {
     return Function.toString.call(fn).indexOf("[native code]") !== -1;
 }
+function _iterable_to_array(iter) {
+    if (typeof Symbol !== "undefined" && iter[Symbol.iterator] != null || iter["@@iterator"] != null) return Array.from(iter);
+}
 function _iterable_to_array_limit(arr, i) {
     var _i = arr == null ? null : typeof Symbol !== "undefined" && arr[Symbol.iterator] || arr["@@iterator"];
     if (_i == null) return;
@@ -150,6 +156,9 @@ function _iterable_to_array_limit(arr, i) {
 }
 function _non_iterable_rest() {
     throw new TypeError("Invalid attempt to destructure non-iterable instance.\\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method.");
+}
+function _non_iterable_spread() {
+    throw new TypeError("Invalid attempt to spread non-iterable instance.\\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method.");
 }
 function _object_spread(target) {
     for(var i = 1; i < arguments.length; i++){
@@ -181,6 +190,9 @@ function _set_prototype_of(o, p) {
 }
 function _sliced_to_array(arr, i) {
     return _array_with_holes(arr) || _iterable_to_array_limit(arr, i) || _unsupported_iterable_to_array(arr, i) || _non_iterable_rest();
+}
+function _to_consumable_array(arr) {
+    return _array_without_holes(arr) || _iterable_to_array(arr) || _unsupported_iterable_to_array(arr) || _non_iterable_spread();
 }
 function _type_of(obj) {
     "@swc/helpers - typeof";
@@ -852,6 +864,427 @@ function fractionalOctaveSmoothing(frequencyData, fraction, frequencies) {
     }
     return smoothedData;
 }
+// src/wave.ts
+function download(samples) {
+    var sampleRate = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : 48e3, name = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : "output", bext = arguments.length > 3 ? arguments[3] : void 0, ixml = arguments.length > 4 ? arguments[4] : void 0;
+    var channels = 1;
+    var bytesPerSample = 2;
+    var blockAlign = channels * bytesPerSample;
+    var byteRate = sampleRate * blockAlign;
+    var dataSize = samples.length * bytesPerSample;
+    var bextDataSize = 0;
+    var bextPayload = null;
+    if (bext) {
+        var description = bext.description || "";
+        var originator = bext.originator || "";
+        var originatorReference = bext.originatorReference || "";
+        var originationDate = bext.originationDate || "";
+        var originationTime = bext.originationTime || "";
+        var codingHistory = bext.codingHistory || "";
+        var version = typeof bext.version === "number" ? bext.version : 1;
+        var umidBytes = bext.umid && bext.umid.length ? bext.umid : null;
+        var baseLen = 602;
+        var codingLen = codingHistory ? codingHistory.length + 1 : 0;
+        bextDataSize = baseLen + codingLen;
+        if (bextDataSize % 2 === 1) bextDataSize++;
+        bextPayload = new Uint8Array(bextDataSize);
+        var p = 0;
+        var writeFixed = function(str, len) {
+            for(var i = 0; i < len; i++){
+                var code = i < str.length ? str.charCodeAt(i) & 255 : 0;
+                bextPayload[p++] = code;
+            }
+        };
+        writeFixed(description, 256);
+        writeFixed(originator, 32);
+        writeFixed(originatorReference, 32);
+        writeFixed(originationDate, 10);
+        writeFixed(originationTime, 8);
+        var timeRefLow = 0;
+        var timeRefHigh = 0;
+        try {
+            var tr = bext.timeReference || "0";
+            var BigIntFn = globalThis.BigInt;
+            if (typeof BigIntFn === "function") {
+                var t = BigIntFn(tr);
+                var mask = BigIntFn(4294967295);
+                timeRefLow = Number(t & mask);
+                timeRefHigh = Number(t >> BigIntFn(32) & mask);
+            } else {
+                var n = Number(tr || 0);
+                timeRefLow = Math.floor(n % 4294967296);
+                timeRefHigh = Math.floor(n / 4294967296);
+            }
+        } catch (unused) {
+            timeRefLow = 0;
+            timeRefHigh = 0;
+        }
+        bextPayload[p++] = timeRefLow & 255;
+        bextPayload[p++] = timeRefLow >>> 8 & 255;
+        bextPayload[p++] = timeRefLow >>> 16 & 255;
+        bextPayload[p++] = timeRefLow >>> 24 & 255;
+        bextPayload[p++] = timeRefHigh & 255;
+        bextPayload[p++] = timeRefHigh >>> 8 & 255;
+        bextPayload[p++] = timeRefHigh >>> 16 & 255;
+        bextPayload[p++] = timeRefHigh >>> 24 & 255;
+        bextPayload[p++] = version & 255;
+        bextPayload[p++] = version >>> 8 & 255;
+        if (version > 0) {
+            if (umidBytes) {
+                for(var i = 0; i < 64; i++)bextPayload[p++] = i < umidBytes.length ? umidBytes[i] : 0;
+            } else {
+                for(var i1 = 0; i1 < 64; i1++)bextPayload[p++] = 0;
+            }
+        } else {
+            for(var i2 = 0; i2 < 64; i2++)bextPayload[p++] = 0;
+        }
+        for(var i3 = 0; i3 < 190; i3++)bextPayload[p++] = 0;
+        if (codingHistory) {
+            for(var i4 = 0; i4 < codingHistory.length; i4++)bextPayload[p++] = codingHistory.charCodeAt(i4) & 255;
+            bextPayload[p++] = 0;
+        }
+        while(p < bextDataSize)bextPayload[p++] = 0;
+    }
+    var ixmlDataSize = 0;
+    var ixmlPayload = null;
+    if (ixml) {
+        var enc = globalThis.TextEncoder ? new TextEncoder() : null;
+        if (enc) ixmlPayload = enc.encode(ixml);
+        else {
+            var arr = new Uint8Array(ixml.length);
+            for(var i5 = 0; i5 < ixml.length; i5++)arr[i5] = ixml.charCodeAt(i5) & 255;
+            ixmlPayload = arr;
+        }
+        ixmlDataSize = ixmlPayload.length;
+        if (ixmlDataSize % 2 === 1) ixmlDataSize++;
+    }
+    var fmtChunkSize = 8 + 16;
+    var bextChunkSize = bextPayload ? 8 + bextDataSize : 0;
+    var ixmlChunkSize = ixmlPayload ? 8 + ixmlDataSize : 0;
+    var dataChunkSize = 8 + dataSize + (dataSize % 2 === 1 ? 1 : 0);
+    var riffBodySize = 4 + fmtChunkSize + bextChunkSize + ixmlChunkSize + dataChunkSize;
+    var totalSize = 8 + riffBodySize;
+    var buffer = new ArrayBuffer(totalSize);
+    var view = new DataView(buffer);
+    function writeString(offset, str) {
+        for(var i = 0; i < str.length; i++)view.setUint8(offset + i, str.charCodeAt(i));
+    }
+    writeString(0, "RIFF");
+    view.setUint32(4, riffBodySize, true);
+    writeString(8, "WAVE");
+    var ptr = 12;
+    writeString(ptr, "fmt ");
+    view.setUint32(ptr + 4, 16, true);
+    view.setUint16(ptr + 8, 1, true);
+    view.setUint16(ptr + 10, channels, true);
+    view.setUint32(ptr + 12, sampleRate, true);
+    view.setUint32(ptr + 16, byteRate, true);
+    view.setUint16(ptr + 20, blockAlign, true);
+    view.setUint16(ptr + 22, 16, true);
+    ptr += 8 + 16;
+    if (bextPayload) {
+        writeString(ptr, "bext");
+        view.setUint32(ptr + 4, bextDataSize, true);
+        ptr += 8;
+        new Uint8Array(buffer, ptr, bextDataSize).set(bextPayload);
+        ptr += bextDataSize;
+        if (bextDataSize % 2 === 1) {
+            view.setUint8(ptr, 0);
+            ptr++;
+        }
+    }
+    if (ixmlPayload) {
+        writeString(ptr, "iXML");
+        view.setUint32(ptr + 4, ixmlDataSize, true);
+        ptr += 8;
+        var dest = new Uint8Array(buffer, ptr, ixmlDataSize);
+        dest.set(ixmlPayload);
+        if (ixmlDataSize > ixmlPayload.length) {
+            for(var i6 = ixmlPayload.length; i6 < ixmlDataSize; i6++)dest[i6] = 0;
+        }
+        ptr += ixmlDataSize;
+        if (ixmlDataSize % 2 === 1) {
+            view.setUint8(ptr, 0);
+            ptr++;
+        }
+    }
+    writeString(ptr, "data");
+    view.setUint32(ptr + 4, dataSize, true);
+    ptr += 8;
+    var off = ptr;
+    for(var i7 = 0; i7 < samples.length; i7++, off += 2){
+        var s = Math.max(-1, Math.min(1, Number(samples[i7])));
+        view.setInt16(off, s < 0 ? s * 32768 : s * 32767, true);
+    }
+    if (dataSize % 2 === 1) {
+        view.setUint8(off, 0);
+        off++;
+    }
+    var blob = new Blob([
+        buffer
+    ], {
+        type: "audio/wav"
+    });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = name + ".wav";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+}
+function read(bufferOrBlob) {
+    return _async_to_generator(function() {
+        var _loop, buffer, tmp, view, readStr, offset, fmt, dataOffset, dataSize, bextChunk, ixmlChunk, readFixedString, audioFormat, channels, sampleRate, bitsPerSample, bytesPerSample, totalFrames, out, p, i, o, v, i1, o1, v1, i2, o2, b0, b1, b2, val, i3, o3, v2, i4, o4, i5, o5;
+        return _ts_generator(this, function(_state) {
+            switch(_state.label){
+                case 0:
+                    _loop = function() {
+                        var id = readStr(offset, 4);
+                        var size = view.getUint32(offset + 4, true);
+                        var chunkStart = offset + 8;
+                        if (id === "fmt ") {
+                            var audioFormat2 = view.getUint16(chunkStart, true);
+                            var channels2 = view.getUint16(chunkStart + 2, true);
+                            var sampleRate2 = view.getUint32(chunkStart + 4, true);
+                            var byteRate = view.getUint32(chunkStart + 8, true);
+                            var blockAlign = view.getUint16(chunkStart + 12, true);
+                            var bitsPerSample2 = view.getUint16(chunkStart + 14, true);
+                            fmt = {
+                                audioFormat: audioFormat2,
+                                channels: channels2,
+                                sampleRate: sampleRate2,
+                                byteRate: byteRate,
+                                blockAlign: blockAlign,
+                                bitsPerSample: bitsPerSample2
+                            };
+                        } else if (id === "data") {
+                            dataOffset = chunkStart;
+                            dataSize = size;
+                        } else if (id === "bext") {
+                            var p2 = chunkStart;
+                            var remaining = chunkStart + size - p2;
+                            var readLen = function(n) {
+                                return Math.max(0, Math.min(n, chunkStart + size - p2));
+                            };
+                            var safeRead = function(n) {
+                                var r = readLen(n);
+                                var s = readFixedString(p2, r);
+                                p2 += n;
+                                return s;
+                            };
+                            var description = readFixedString(p2, Math.min(256, chunkStart + size - p2));
+                            p2 += 256;
+                            var originator = readFixedString(p2, Math.min(32, chunkStart + size - p2));
+                            p2 += 32;
+                            var originatorReference = readFixedString(p2, Math.min(32, chunkStart + size - p2));
+                            p2 += 32;
+                            var originationDate = readFixedString(p2, Math.min(10, chunkStart + size - p2));
+                            p2 += 10;
+                            var originationTime = readFixedString(p2, Math.min(8, chunkStart + size - p2));
+                            p2 += 8;
+                            var timeRefLow = 0;
+                            var timeRefHigh = 0;
+                            if (p2 + 8 <= chunkStart + size) {
+                                timeRefLow = view.getUint32(p2, true);
+                                timeRefHigh = view.getUint32(p2 + 4, true);
+                            } else {
+                                if (p2 + 4 <= chunkStart + size) timeRefLow = view.getUint32(p2, true);
+                            }
+                            p2 += 8;
+                            var version = 0;
+                            if (p2 + 2 <= chunkStart + size) {
+                                version = view.getUint16(p2, true);
+                            }
+                            p2 += 2;
+                            var umid = null;
+                            if (version > 0 && p2 + 64 <= chunkStart + size) {
+                                umid = new Uint8Array(buffer.slice(p2, p2 + 64));
+                                p2 += 64;
+                            } else if (version > 0) {
+                                var avail = Math.max(0, chunkStart + size - p2);
+                                if (avail > 0) {
+                                    umid = new Uint8Array(buffer.slice(p2, p2 + avail));
+                                    p2 += avail;
+                                }
+                            }
+                            var reservedLen = 190;
+                            var skipReserved = Math.min(reservedLen, Math.max(0, chunkStart + size - p2));
+                            p2 += skipReserved;
+                            var codingHistory = "";
+                            if (p2 < chunkStart + size) {
+                                var bytes = new Uint8Array(buffer, p2, chunkStart + size - p2);
+                                var s = "";
+                                for(var i = 0; i < bytes.length; i++){
+                                    var c = bytes[i];
+                                    if (c === 0) break;
+                                    s += String.fromCharCode(c);
+                                }
+                                codingHistory = s;
+                            }
+                            var timeReferenceStr = "0";
+                            try {
+                                var BigIntFn = globalThis.BigInt;
+                                if (typeof BigIntFn === "function") {
+                                    var hi = BigIntFn(timeRefHigh);
+                                    var lo = BigIntFn(timeRefLow);
+                                    var combined = hi << BigIntFn(32) | lo;
+                                    timeReferenceStr = combined.toString();
+                                } else {
+                                    timeReferenceStr = (timeRefHigh * 4294967296 + timeRefLow).toString();
+                                }
+                            } catch (unused) {
+                                timeReferenceStr = (timeRefHigh * 4294967296 + timeRefLow).toString();
+                            }
+                            bextChunk = {
+                                description: description || void 0,
+                                originator: originator || void 0,
+                                originatorReference: originatorReference || void 0,
+                                originationDate: originationDate || void 0,
+                                originationTime: originationTime || void 0,
+                                timeReference: timeReferenceStr,
+                                version: version,
+                                umid: umid,
+                                codingHistory: codingHistory || void 0
+                            };
+                        } else if (id === "iXML" || id === "iXML") {
+                            var bytes1 = new Uint8Array(buffer, chunkStart, size);
+                            var s1 = "";
+                            for(var i1 = 0; i1 < bytes1.length; i1++){
+                                var c1 = bytes1[i1];
+                                if (c1 === 0) break;
+                                s1 += String.fromCharCode(c1);
+                            }
+                            ixmlChunk = s1;
+                        }
+                        offset = chunkStart + size;
+                        if (size % 2 === 1) offset++;
+                    };
+                    if (!_instanceof(bufferOrBlob, Blob)) return [
+                        3,
+                        2
+                    ];
+                    return [
+                        4,
+                        bufferOrBlob.arrayBuffer()
+                    ];
+                case 1:
+                    buffer = _state.sent();
+                    return [
+                        3,
+                        3
+                    ];
+                case 2:
+                    if (_instanceof(bufferOrBlob, ArrayBuffer)) buffer = bufferOrBlob;
+                    else if (_instanceof(bufferOrBlob, Uint8Array)) {
+                        tmp = new ArrayBuffer(bufferOrBlob.byteLength);
+                        new Uint8Array(tmp).set(bufferOrBlob);
+                        buffer = tmp;
+                    } else throw new TypeError("Expected Blob, ArrayBuffer or Uint8Array");
+                    _state.label = 3;
+                case 3:
+                    view = new DataView(buffer);
+                    readStr = function(off, len) {
+                        var s = "";
+                        for(var i = 0; i < len && off + i < view.byteLength; i++){
+                            var c = view.getUint8(off + i);
+                            if (c === 0) break;
+                            s += String.fromCharCode(c);
+                        }
+                        return s;
+                    };
+                    if (readStr(0, 4) !== "RIFF" || readStr(8, 4) !== "WAVE") throw new Error("Not a valid WAVE file");
+                    offset = 12;
+                    fmt = null;
+                    dataOffset = -1;
+                    dataSize = 0;
+                    bextChunk = null;
+                    ixmlChunk = null;
+                    readFixedString = function(off, len) {
+                        var _String;
+                        var bytes = [];
+                        for(var i = 0; i < len && off + i < view.byteLength; i++){
+                            bytes.push(view.getUint8(off + i));
+                        }
+                        var end = bytes.length;
+                        while(end > 0 && bytes[end - 1] === 0)end--;
+                        return (_String = String).fromCharCode.apply(_String, _to_consumable_array(bytes.slice(0, end)));
+                    };
+                    while(offset + 8 <= view.byteLength)_loop();
+                    if (!fmt) throw new Error('Missing "fmt " chunk');
+                    if (dataOffset < 0) throw new Error('Missing "data" chunk');
+                    audioFormat = fmt.audioFormat, channels = fmt.channels, sampleRate = fmt.sampleRate, bitsPerSample = fmt.bitsPerSample;
+                    bytesPerSample = bitsPerSample / 8;
+                    totalFrames = Math.floor(dataSize / (bytesPerSample * channels));
+                    out = new Float32Array(totalFrames * channels);
+                    p = dataOffset;
+                    if (audioFormat === 1) {
+                        if (bitsPerSample === 8) {
+                            for(i = 0, o = 0; i < totalFrames * channels; i++, o++){
+                                v = view.getUint8(p++);
+                                out[o] = (v - 128) / 128;
+                            }
+                        } else if (bitsPerSample === 16) {
+                            for(i1 = 0, o1 = 0; i1 < totalFrames * channels; i1++, o1++){
+                                v1 = view.getInt16(p, true);
+                                p += 2;
+                                out[o1] = v1 < 0 ? v1 / 32768 : v1 / 32767;
+                            }
+                        } else if (bitsPerSample === 24) {
+                            for(i2 = 0, o2 = 0; i2 < totalFrames * channels; i2++, o2++){
+                                b0 = view.getUint8(p++);
+                                b1 = view.getUint8(p++);
+                                b2 = view.getUint8(p++);
+                                val = b2 << 16 | b1 << 8 | b0;
+                                if (val & 8388608) val |= ~16777215;
+                                out[o2] = val / 8388608;
+                            }
+                        } else if (bitsPerSample === 32) {
+                            for(i3 = 0, o3 = 0; i3 < totalFrames * channels; i3++, o3++){
+                                v2 = view.getInt32(p, true);
+                                p += 4;
+                                out[o3] = v2 < 0 ? v2 / 2147483648 : v2 / 2147483647;
+                            }
+                        } else {
+                            throw new Error("Unsupported PCM bitsPerSample: " + bitsPerSample);
+                        }
+                    } else if (audioFormat === 3) {
+                        if (bitsPerSample !== 32 && bitsPerSample !== 64) throw new Error("Unsupported float bit depth: " + bitsPerSample);
+                        if (bitsPerSample === 32) {
+                            for(i4 = 0, o4 = 0; i4 < totalFrames * channels; i4++, o4++){
+                                out[o4] = view.getFloat32(p, true);
+                                p += 4;
+                            }
+                        } else {
+                            for(i5 = 0, o5 = 0; i5 < totalFrames * channels; i5++, o5++){
+                                out[o5] = view.getFloat64(p, true);
+                                p += 8;
+                            }
+                        }
+                    } else {
+                        throw new Error("Unsupported audio format: " + audioFormat);
+                    }
+                    return [
+                        2,
+                        {
+                            samples: out,
+                            sampleRate: sampleRate,
+                            channels: channels,
+                            bitsPerSample: bitsPerSample,
+                            format: audioFormat,
+                            frames: totalFrames,
+                            bext: bextChunk,
+                            ixml: ixmlChunk
+                        }
+                    ];
+            }
+        });
+    })();
+}
+function convertToIXML(xmlContent) {
+    return '<?xml version="1.0" encoding="UTF-8"?>\n<BWFXML>\n    <IXML_VERSION>3.01</IXML_VERSION>\n    <PROJECT>Converted Audio File</PROJECT>\n    <NOTE>Converted to iXML format.</NOTE>\n    <HISTORY></HISTORY>\n    <USER>'.concat(xmlContent, "</USER>\n</BWFXML>");
+}
 // src/audio.ts
 console.debug("Audio module loaded");
 window.FFT = FFT;
@@ -885,9 +1318,52 @@ function dbToLinear(value) {
 }
 function loadAudioFile(file) {
     return _async_to_generator(function() {
-        var headerBuffer, ext, mime, metadata, wavInfo, mp3Info, arrayBuffer, audioContext, audioBuffer;
+        var headerBuffer, ext, mime, metadata, ixmlObj, ixmlRaw, ixmlErr, wavInfo, mp3Info, arrayBuffer, audioContext, audioBuffer;
         function getExt(name) {
-            return (name.split(".").pop() || "").toLowerCase();
+            var ext2 = (name.split(".").pop() || "").toLowerCase();
+            try {
+                var dvh = new DataView(headerBuffer);
+                var readStr = function(off, len) {
+                    var s = "";
+                    for(var i = 0; i < len; i++)s += String.fromCharCode(dvh.getUint8(off + i));
+                    return s;
+                };
+                var offset = 12;
+                while(offset + 8 <= dvh.byteLength){
+                    var id = readStr(offset, 4);
+                    var size = dvh.getUint32(offset + 4, true);
+                    if (id === "iXML") {
+                        var start = offset + 8;
+                        var end = Math.min(start + size, dvh.byteLength);
+                        var xmlBytes = new Uint8Array(headerBuffer.slice(start, end));
+                        var xmlString = new TextDecoder().decode(xmlBytes);
+                        file.__iXMLraw = xmlString;
+                        try {
+                            var _window_wave, _window;
+                            var converter = (read === null || read === void 0 ? void 0 : read.convertiXMLtoObject) || ((_window = window) === null || _window === void 0 ? void 0 : (_window_wave = _window.wave) === null || _window_wave === void 0 ? void 0 : _window_wave.convertiXMLtoObject);
+                            if (typeof converter === "function") {
+                                try {
+                                    var obj = converter(xmlString);
+                                    file.__iXML = obj;
+                                    console.log("iXML converted to object", obj);
+                                } catch (convErr) {
+                                    console.warn("convertiXMLtoObject failed:", convErr);
+                                    file.__iXMLError = String(convErr);
+                                }
+                            } else {
+                                console.debug("No convertiXMLtoObject available; raw iXML attached to file.__iXMLraw");
+                            }
+                        } catch (e) {
+                            console.warn("iXML conversion attempt failed:", e);
+                        }
+                        break;
+                    }
+                    offset += 8 + size + size % 2;
+                }
+            } catch (e) {
+                console.warn("Failed to scan header for iXML chunk:", e);
+            }
+            return ext2;
         }
         function parseWav(buf) {
             var dv = new DataView(buf);
@@ -1105,6 +1581,15 @@ function loadAudioFile(file) {
                     ext = getExt(file.name);
                     mime = file.type || "unknown";
                     metadata = {};
+                    metadata.filename = file.name;
+                    metadata.size = file.size;
+                    metadata.mime = mime;
+                    metadata.ext = ext;
+                    ixmlObj = file.__iXML;
+                    ixmlRaw = file.__iXMLraw;
+                    ixmlErr = file.__iXMLError;
+                    metadata.iXMLdata = ixmlRaw;
+                    if (ixmlErr) metadata.iXMLError = String(ixmlErr);
                     wavInfo = parseWav(headerBuffer);
                     if (wavInfo) {
                         metadata.format = "wav";
@@ -2868,51 +3353,6 @@ var AudioRecorder = /*#__PURE__*/ function() {
     ]);
     return AudioRecorder;
 }();
-// src/wave.ts
-function download(samples) {
-    var sampleRate = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : 48e3, name = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : "output";
-    var channels = 1;
-    var bytesPerSample = 2;
-    var blockAlign = channels * bytesPerSample;
-    var byteRate = sampleRate * blockAlign;
-    var dataSize = samples.length * bytesPerSample;
-    var buffer = new ArrayBuffer(44 + dataSize);
-    var view = new DataView(buffer);
-    function writeString(offset2, str) {
-        for(var i = 0; i < str.length; i++)view.setUint8(offset2 + i, str.charCodeAt(i));
-    }
-    writeString(0, "RIFF");
-    view.setUint32(4, 36 + dataSize, true);
-    writeString(8, "WAVE");
-    writeString(12, "fmt ");
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true);
-    view.setUint16(22, channels, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, byteRate, true);
-    view.setUint16(32, blockAlign, true);
-    view.setUint16(34, 16, true);
-    writeString(36, "data");
-    view.setUint32(40, dataSize, true);
-    var offset = 44;
-    for(var i = 0; i < samples.length; i++, offset += 2){
-        var s = Math.max(-1, Math.min(1, Number(samples[i])));
-        view.setInt16(offset, s < 0 ? s * 32768 : s * 32767, true);
-    }
-    var blob = new Blob([
-        buffer
-    ], {
-        type: "audio/wav"
-    });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement("a");
-    a.href = url;
-    a.download = name + ".wav";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-}
 // src/app.ts
 console.debug("App module loaded");
 var root = document.documentElement;
@@ -3189,7 +3629,6 @@ function startRecordingAndPlayback() {
                     sourceGain = audioContext.createGain();
                     sourceGain.gain.value = 0.5;
                     recordingStatusEl.textContent = "Recording for ".concat(totalRecordTime.toFixed(1), "s...");
-                    recordingVisualizationEl.style.display = "block";
                     recorder = new AudioRecorder(audioContext);
                     recorder.record(totalRecordTime).then(function(recordingData) {
                         recorded = recordingData;
@@ -3313,6 +3752,18 @@ function stopPlayback() {
     playBtn.disabled = false;
     stopPlayBtn.disabled = true;
 }
+var measurementAngleInput = document.getElementById("measurementAngle");
+var measurementLocationInput = document.getElementById("measurementLocation");
+var measurementCommentInput = document.getElementById("measurementComment");
+var downloadRecordingBtn = document.getElementById("downloadRecordingBtn");
+downloadRecordingBtn === null || downloadRecordingBtn === void 0 ? void 0 : downloadRecordingBtn.addEventListener("click", function() {
+    try {
+        download(recorded[0], 48e3, "recorded_audio.wav", {}, convertToIXML("\n        <ANGLE>".concat(measurementAngleInput.value, "</ANGLE>\n        <LOCATION>").concat(measurementLocationInput.value, "</LOCATION>\n        <COMMENT>").concat(measurementCommentInput.value, "</COMMENT>\n        <STIMULUS>\n            <START>").concat(sweepStartFreqInput.value, "</START>\n            <END>").concat(sweepEndFreqInput.value, "</END>\n            <DURATION>").concat(sweepDurationInput.value, "</DURATION>\n        </STIMULUS>\n        <ORIGIN>Acquisition Module</ORIGIN>")));
+    } catch (err) {
+        console.error("Failed to create/download recording:", err);
+        alert("Failed to download recording: " + err.message);
+    }
+});
 startBtn.addEventListener("click", startRecordingAndPlayback);
 stopBtn.addEventListener("click", stopRecording);
 playBtn.addEventListener("click", playbackOnly);
@@ -3324,7 +3775,6 @@ analyzeRecordingBtn.addEventListener("click", function() {
             console.log("Analyzing recording...");
             try {
                 recordedAudio = Audio.fromSamples(recorded[0], 48e3);
-                download(recorded[0], 48e3, "recorded_audio.wav");
                 startFreq = parseFloat(sweepStartFreqInput.value);
                 endFreq = parseFloat(sweepEndFreqInput.value);
                 duration = parseFloat(sweepDurationInput.value);
@@ -3580,8 +4030,48 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
     var content = document.createElement("div");
     content.className = "tab-content";
     content.dataset.content = tabId;
-    content.innerHTML = '\n    <!-- nav class="tab-menu-bar">\n                <div>\n                    <label for="smoothing-'.concat(tabId, '">Smoothing</label>\n                    <select id="smoothing-').concat(tabId, '" class="smoothing-select" aria-label="Smoothing factor">\n                        <option value="0">None</option>\n                        <option value="1/3">1/3 octave</option>\n                        <option value="1/6" selected>1/6 octave</option>\n                        <option value="1/12">1/12 octave</option>\n                        <option value="1/24">1/24 octave</option>\n                        <option value="1/48">1/48 octave</option>\n                    </select>\n                </div>\n            </nav> <h5 class="text-xs italic text-gray-600">Frequency Response Analysis of ').concat(filename).concat(referenceFilename ? " / " + referenceFilename : "", '</h5 -->\n        <button class="sidecar-toggle" id="sidebar-toggle-').concat(tabId, '" title="Toggle Sidecar">Open settings pane</button>\n        <div class="flex h-full">\n            <div class="flex-none w-86 border-r border-[#ddd] p-2 relative sidecar" style="transition:50ms linear;">\n                <div class="section">\n                    <div class="title">Settings</div>\n                    <p><i>There are no settings for this analysis.</i></p>\n                </div>\n                <div class="section">\n                    <div class="title">Plots</div>\n                    <ul class="list" id="plot-list-').concat(tabId, '">\n                        <!--li><input type="checkbox" id="checkbox-magnitude-').concat(tabId, '" alt="show/hide" checked><label for="checkbox-magnitude-').concat(tabId, '">Magnitude</label></li>\n                        <li><input type="checkbox" id="checkbox-phase-').concat(tabId, '" alt="show/hide" checked><label for="checkbox-phase-').concat(tabId, '">Phase</label></li>\n                        <li><input type="checkbox" id="checkbox-ir-').concat(tabId, '" alt="show/hide" checked><label for="checkbox-ir-').concat(tabId, '">Impulse Response</label></li>\n                        <li><input type="checkbox" id="checkbox-ir-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-ir-').concat(tabId, '">Fundamental + Harmonic Distortion</label></li>\n                        <li><input type="checkbox" id="checkbox-distortion-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-distortion-').concat(tabId, '">Distortion</label></li>\n                        <li><input type="checkbox" id="checkbox-distortion-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-distortion-').concat(tabId, '">Sound Pressure Level</label></li>\n                        <li><input type="checkbox" id="checkbox-deconvoluted-ir-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-deconvoluted-ir-').concat(tabId, '">Deconvoluted Impulse Response</label></li>\n                        <li><input type="checkbox" id="checkbox-stimulus-waveform-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-stimulus-waveform-').concat(tabId, '">Stimulus Waveform</label></li>\n                        <li><input type="checkbox" id="checkbox-recorded-waveform-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-recorded-waveform-').concat(tabId, '">Recorded Waveform</label></li>\n                        <li><input type="checkbox" id="checkbox-recorded-noise-floor-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-recorded-noise-floor-').concat(tabId, '">Recorded Noise Floor</label></li>\n                        <li><input type="checkbox" id="checkbox-target-curve-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-target-curve-').concat(tabId, '">Target Curve<button class="float-right text-xs cursor-pointer" style="color: #bbb; padding-top: 3px">Set</button></label></li-->\n                    </ul>\n                </div>\n                <div class="section">\n                    <div class="title">Properties</div>\n                    <p><i>There are no properties for this analysis.</i></p>\n                </div>\n                <div id="resize-handle" class="resize-handle"></div>\n            </div>\n            <div class="flex-1 main-content">\n                <div class="grid grid-cols-6 gap-[1px] bg-[#ddd] border-b border-[#ddd] plot-outer">\n                </div>\n            </div>\n        </div>\n       \n        \n    ');
+    content.innerHTML = '\n    <!-- nav class="tab-menu-bar">\n                <div>\n                    <label for="smoothing-'.concat(tabId, '">Smoothing</label>\n                    <select id="smoothing-').concat(tabId, '" class="smoothing-select" aria-label="Smoothing factor">\n                        <option value="0">None</option>\n                        <option value="1/3">1/3 octave</option>\n                        <option value="1/6" selected>1/6 octave</option>\n                        <option value="1/12">1/12 octave</option>\n                        <option value="1/24">1/24 octave</option>\n                        <option value="1/48">1/48 octave</option>\n                    </select>\n                </div>\n            </nav> <h5 class="text-xs italic text-gray-600">Frequency Response Analysis of ').concat(filename).concat(referenceFilename ? " / " + referenceFilename : "", '</h5 -->\n        <button class="sidecar-toggle" id="sidebar-toggle-').concat(tabId, '" title="Toggle Sidecar">Open settings pane</button>\n        <div class="flex h-full">\n            <div class="flex-none w-86 border-r border-[#ddd] p-2 relative sidecar" style="transition:50ms linear;">\n                <div class="section">\n                    <div class="title">Settings</div>\n                    <p><i>There are no settings for this analysis.</i></p>\n                </div>\n                <div class="section">\n                    <div class="title">Plots</div>\n                    <ul class="list" id="plot-list-').concat(tabId, '">\n                        <!--li><input type="checkbox" id="checkbox-magnitude-').concat(tabId, '" alt="show/hide" checked><label for="checkbox-magnitude-').concat(tabId, '">Magnitude</label></li>\n                        <li><input type="checkbox" id="checkbox-phase-').concat(tabId, '" alt="show/hide" checked><label for="checkbox-phase-').concat(tabId, '">Phase</label></li>\n                        <li><input type="checkbox" id="checkbox-ir-').concat(tabId, '" alt="show/hide" checked><label for="checkbox-ir-').concat(tabId, '">Impulse Response</label></li>\n                        <li><input type="checkbox" id="checkbox-ir-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-ir-').concat(tabId, '">Fundamental + Harmonic Distortion</label></li>\n                        <li><input type="checkbox" id="checkbox-distortion-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-distortion-').concat(tabId, '">Distortion</label></li>\n                        <li><input type="checkbox" id="checkbox-distortion-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-distortion-').concat(tabId, '">Sound Pressure Level</label></li>\n                        <li><input type="checkbox" id="checkbox-deconvoluted-ir-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-deconvoluted-ir-').concat(tabId, '">Deconvoluted Impulse Response</label></li>\n                        <li><input type="checkbox" id="checkbox-stimulus-waveform-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-stimulus-waveform-').concat(tabId, '">Stimulus Waveform</label></li>\n                        <li><input type="checkbox" id="checkbox-recorded-waveform-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-recorded-waveform-').concat(tabId, '">Recorded Waveform</label></li>\n                        <li><input type="checkbox" id="checkbox-recorded-noise-floor-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-recorded-noise-floor-').concat(tabId, '">Recorded Noise Floor</label></li>\n                        <li><input type="checkbox" id="checkbox-target-curve-').concat(tabId, '" alt="show/hide" disabled><label for="checkbox-target-curve-').concat(tabId, '">Target Curve<button class="float-right text-xs cursor-pointer" style="color: #bbb; padding-top: 3px">Set</button></label></li-->\n                    </ul>\n                </div>\n                <div class="section">\n                    <div class="title">Properties</div>\n                    <p id="properties-').concat(tabId, '"><i>There are no properties for this analysis.</i></p>\n                </div>\n                <div id="resize-handle" class="resize-handle"></div>\n            </div>\n            <div class="flex-1 main-content">\n                <div class="grid grid-cols-6 gap-[1px] bg-[#ddd] border-b border-[#ddd] plot-outer">\n                </div>\n            </div>\n        </div>\n       \n        \n    ');
     tabContents.appendChild(content);
+    var propertiesElement = document.getElementById("properties-".concat(tabId));
+    if (propertiesElement) {
+        var _responseData_metadata;
+        propertiesElement.innerHTML = "\n            <b>Filename:</b> ".concat(filename, "<br>\n            ").concat(referenceFilename ? "<b>Reference Filename:</b> ".concat(referenceFilename, "<br>") : "", "\n            <b>Sample Rate:</b> ").concat(responseData.sampleRate, " Hz<br>\n            <b>Channels:</b> ").concat(responseData.numberOfChannels, "<br>\n            <b>Duration:</b> ").concat(responseData.duration.toFixed(2), " s<br>\n            <b>RMS Level:</b> ").concat(db(rms(responseData.getChannelData(0))), " dBFS<br>\n            <b>Peak Level:</b> ").concat(db(max(responseData.getChannelData(0))), " dBFS<br>\n            <iXML Metadata:</i><br>\n            <pre>").concat((((_responseData_metadata = responseData.metadata) === null || _responseData_metadata === void 0 ? void 0 : _responseData_metadata.iXMLdata) || "").replaceAll("<", "&lt;").replaceAll(">", "&gt;"), "</pre>\n            ");
+    }
+    var sidebarToggleBtn = document.getElementById("sidebar-toggle-".concat(tabId));
+    var sidecar = content.querySelector(".sidecar");
+    var resizeHandle = content.querySelector("#resize-handle");
+    sidebarToggleBtn.addEventListener("click", function() {
+        if (sidecar.style.width === "0px") {
+            sidecar.style.width = "21.5rem";
+            sidebarToggleBtn.title = "Close settings pane";
+        } else {
+            sidecar.style.width = "0px";
+            sidebarToggleBtn.title = "Open settings pane";
+        }
+    });
+    var isResizing = false;
+    var lastDownX = 0;
+    resizeHandle.addEventListener("mousedown", function(e) {
+        isResizing = true;
+        lastDownX = e.clientX;
+        document.body.style.cursor = "ew-resize";
+        e.preventDefault();
+    });
+    document.addEventListener("mousemove", function(e) {
+        if (!isResizing) return;
+        var offsetRight = tabsContainer.clientWidth - e.clientX;
+        var newWidth = tabsContainer.clientWidth - offsetRight;
+        if (newWidth >= 200 && newWidth <= 600) {
+            sidecar.style.width = "".concat(newWidth, "px");
+        }
+        e.preventDefault();
+    });
+    document.addEventListener("mouseup", function() {
+        if (isResizing) {
+            isResizing = false;
+            document.body.style.cursor = "default";
+        }
+    });
     switchTab(tabId);
     var responseSamples = responseData.getChannelData(0);
     var responseFFT = computeFFT(responseSamples);

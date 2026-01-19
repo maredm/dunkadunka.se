@@ -6,7 +6,7 @@ import "./device-settings";
 import { linspace, max } from "./math";
 import { COLORS, plot } from "./plotting";
 import { AudioRecorder } from "./recorder";
-import { download } from "./wave";
+import { download, BextChunk, convertToIXML } from "./wave";
 
 console.debug("App module loaded");
 
@@ -239,7 +239,6 @@ async function startRecordingAndPlayback(): Promise<void> {
 
         // Start recording
         recordingStatusEl.textContent = `Recording for ${totalRecordTime.toFixed(1)}s...`;
-        recordingVisualizationEl.style.display = 'block';
 
         const recorder = new AudioRecorder(audioContext);
         recorder.record(totalRecordTime).then((recordingData) => {
@@ -348,6 +347,30 @@ function stopPlayback(): void {
     stopPlayBtn.disabled = true;
 }
 
+const measurementAngleInput = document.getElementById('measurementAngle') as HTMLInputElement;
+const measurementLocationInput = document.getElementById('measurementLocation') as HTMLInputElement;
+const measurementCommentInput = document.getElementById('measurementComment') as HTMLInputElement;
+const downloadRecordingBtn = document.getElementById('downloadRecordingBtn') as HTMLButtonElement | null;
+
+downloadRecordingBtn?.addEventListener('click', () => {
+    try {
+        download(recorded[0], 48000, 'recorded_audio.wav',
+            {}, 
+            convertToIXML(`
+        <ANGLE>${measurementAngleInput.value}</ANGLE>
+        <LOCATION>${measurementLocationInput.value}</LOCATION>
+        <COMMENT>${measurementCommentInput.value}</COMMENT>
+        <STIMULUS>
+            <START>${sweepStartFreqInput.value}</START>
+            <END>${sweepEndFreqInput.value}</END>
+            <DURATION>${sweepDurationInput.value}</DURATION>
+        </STIMULUS>
+        <ORIGIN>Acquisition Module</ORIGIN>`));
+    } catch (err) {
+        console.error('Failed to create/download recording:', err);
+        alert('Failed to download recording: ' + (err as Error).message);
+    }
+});
 // Event listeners for acquisition controls
 startBtn.addEventListener('click', startRecordingAndPlayback);
 stopBtn.addEventListener('click', stopRecording);
@@ -359,7 +382,7 @@ analyzeRecordingBtn.addEventListener('click', async () => {
 
     try {        
         const recordedAudio = Audio.fromSamples(recorded[0], 48000);
-        download(recorded[0], 48000, 'recorded_audio.wav');
+
         // Generate the chirp sweep as reference data
         const startFreq = parseFloat(sweepStartFreqInput.value);
         const endFreq = parseFloat(sweepEndFreqInput.value);
@@ -565,7 +588,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
                 </div>
                 <div class="section">
                     <div class="title">Properties</div>
-                    <p><i>There are no properties for this analysis.</i></p>
+                    <p id="properties-${tabId}"><i>There are no properties for this analysis.</i></p>
                 </div>
                 <div id="resize-handle" class="resize-handle"></div>
             </div>
@@ -578,6 +601,62 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
         
     `;
     tabContents.appendChild(content);
+
+    const propertiesElement = document.getElementById(`properties-${tabId}`);
+    if (propertiesElement) {
+        propertiesElement.innerHTML = `
+            <b>Filename:</b> ${filename}<br>
+            ${referenceFilename ? `<b>Reference Filename:</b> ${referenceFilename}<br>` : ''}
+            <b>Sample Rate:</b> ${responseData.sampleRate} Hz<br>
+            <b>Channels:</b> ${responseData.numberOfChannels}<br>
+            <b>Duration:</b> ${responseData.duration.toFixed(2)} s<br>
+            <b>RMS Level:</b> ${db(rms(responseData.getChannelData(0)))} dBFS<br>
+            <b>Peak Level:</b> ${db(max(responseData.getChannelData(0)))} dBFS<br>
+            <iXML Metadata:</i><br>
+            <pre>${(responseData.metadata?.iXMLdata || "" as any).replaceAll("<", "&lt;").replaceAll(">", "&gt;")}</pre>
+            `;
+    }
+
+    const sidebarToggleBtn = document.getElementById(`sidebar-toggle-${tabId}`) as HTMLButtonElement;
+    const sidecar = content.querySelector('.sidecar') as HTMLElement;
+    const resizeHandle = content.querySelector('#resize-handle') as HTMLElement;
+
+    sidebarToggleBtn.addEventListener('click', () => {
+        if (sidecar.style.width === '0px') {
+            sidecar.style.width = '21.5rem';
+            sidebarToggleBtn.title = 'Close settings pane';
+        } else {
+            sidecar.style.width = '0px';
+            sidebarToggleBtn.title = 'Open settings pane';
+        }
+    });
+
+    let isResizing = false;
+    let lastDownX = 0;
+
+    resizeHandle.addEventListener('mousedown', (e: MouseEvent) => {
+        isResizing = true;
+        lastDownX = e.clientX;
+        document.body.style.cursor = 'ew-resize';
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e: MouseEvent) => {
+        if (!isResizing) return;
+        const offsetRight = tabsContainer.clientWidth - (e.clientX);
+        const newWidth = tabsContainer.clientWidth - offsetRight;
+        if (newWidth >= 200 && newWidth <= 600) {
+            sidecar.style.width = `${newWidth}px`;
+        }
+        e.preventDefault();
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (isResizing) {
+            isResizing = false;
+            document.body.style.cursor = 'default';
+        }
+    });
 
     // Switch to new tab
     switchTab(tabId);

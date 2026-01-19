@@ -125,17 +125,30 @@
                     </div>
 
                     <div class="upload-section">
-                        <h3>Recorded Audio</h3>
-                        <div id="recordingVisualization" style="margin-bottom: 12px; display: none;">
-                            <p class="info">Recording in progress...</p>
-                            <div id="recordingMeter" class="recording-meter"></div>
+                        <h3>Metadata</h3>
+                        <div class="grid grid-2-col gap-12px">
+                            <div class="param-row grid-col-span-1">
+                                <label for="measurementLocation">Measurement Location:</label>
+                                <input type="text" id="measurementLocation" class="param-input">
+                            </div>
+                            <div class="param-row grid-col-span-1">
+                                <label for="measurementAngle">Measurement Angle (degrees):</label>
+                                <input type="number" id="measurementAngle" min="0" max="360" value="0" class="param-input">
+                            </div>
+                            <div class="param-row grid-col-span-1">
+                                <label for="measurementComment">Comment:</label>
+                                <input type="text" id="measurementComment" class="param-input">
+                            </div>
                         </div>
+                    </div>
+
+                    <div class="upload-section">
                         <div id="recordedAudioContainer" style="display: none;">
+                            <h3>Recorded Audio</h3>
                             <p class="info">Recorded audio:</p>
-                            <audio id="recordedAudio" controls style="width: 100%; margin-bottom: 12px;"></audio>
                             <div class="controls-group">
-                                <button id="analyzeRecordingBtn" class="button-custom button-custom-primary">Analyze Recording</button>
-                                <button id="viewWaveformBtn" class="button-custom button-custom-secondary">View Waveform</button>
+                                <button id="downloadRecordingBtn" class="button-custom button-custom-primary">Download</button>
+                                <button id="analyzeRecordingBtn" class="button-custom button-custom-secondary">Analyze</button>
                             </div>
                         </div>
                     </div>
