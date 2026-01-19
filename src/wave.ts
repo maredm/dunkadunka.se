@@ -29,7 +29,7 @@ export function download(
   ixml?: string | null
 ): void {
   const channels = 1;
-  const bytesPerSample = 2;
+  const bytesPerSample = 4;
   const blockAlign = channels * bytesPerSample;
   const byteRate = sampleRate * blockAlign;
   const dataSize = samples.length * bytesPerSample;

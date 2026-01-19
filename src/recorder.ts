@@ -53,7 +53,7 @@ export class AudioRecorder {
                 streamSource.disconnect();
                 stream.getTracks().forEach(track => track.stop());
                 resolve(recording);
-            }, durationSec * 1500);
+            }, durationSec * 1000);
         });
     }
 }

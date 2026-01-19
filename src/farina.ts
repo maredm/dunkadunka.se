@@ -11,7 +11,7 @@ export class Farina {
         this.f_stop = f_stop;
         this.fs = fs;
         this.stimulus = stimulus;
-        this.duration = this.stimulus.length / this.fs;
+        this.duration = (this.stimulus.length - 528) / this.fs;
     }
 
     f_start: number;

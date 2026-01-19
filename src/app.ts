@@ -228,6 +228,8 @@ async function startRecordingAndPlayback(): Promise<void> {
 
         const [sweepSignal, , ] = audio.chirp(startFreq, endFreq, duration);
 
+        download(sweepSignal, 48000, 'sweep_signal.wav');
+
         // Create audio buffer from sweep signal
         const audioBuffer = audioContext.createBuffer(1, sweepSignal.length, audioContext.sampleRate);
         const channelData = audioBuffer.getChannelData(0);
@@ -361,9 +363,34 @@ downloadRecordingBtn?.addEventListener('click', () => {
         <LOCATION>${measurementLocationInput.value}</LOCATION>
         <COMMENT>${measurementCommentInput.value}</COMMENT>
         <STIMULUS>
+            <TYPE>chirp</TYPE>
             <START>${sweepStartFreqInput.value}</START>
             <END>${sweepEndFreqInput.value}</END>
+            <FADE>0.01</FADE>
             <DURATION>${sweepDurationInput.value}</DURATION>
+            <SAMPLE_RATE>48000</SAMPLE_RATE>
+        </STIMULUS>
+        <ORIGIN>Acquisition Module</ORIGIN>`));
+    } catch (err) {
+        console.error('Failed to create/download recording:', err);
+        alert('Failed to download recording: ' + (err as Error).message);
+    }
+});
+
+const downloadSweepBtn = document.getElementById('downloadSweepBtn') as HTMLButtonElement | null;
+
+downloadSweepBtn?.addEventListener('click', () => {
+    try {
+        download(recorded[0], 48000, 'reference_audio.wav',
+            {}, 
+            convertToIXML(`
+        <STIMULUS>
+            <TYPE>chirp</TYPE>
+            <START>${sweepStartFreqInput.value}</START>
+            <END>${sweepEndFreqInput.value}</END>
+            <FADE>0.01</FADE>
+            <DURATION>${sweepDurationInput.value}</DURATION>
+            <SAMPLE_RATE>48000</SAMPLE_RATE>
         </STIMULUS>
         <ORIGIN>Acquisition Module</ORIGIN>`));
     } catch (err) {

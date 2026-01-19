@@ -868,7 +868,7 @@ function fractionalOctaveSmoothing(frequencyData, fraction, frequencies) {
 function download(samples) {
     var sampleRate = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : 48e3, name = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : "output", bext = arguments.length > 3 ? arguments[3] : void 0, ixml = arguments.length > 4 ? arguments[4] : void 0;
     var channels = 1;
-    var bytesPerSample = 2;
+    var bytesPerSample = 4;
     var blockAlign = channels * bytesPerSample;
     var byteRate = sampleRate * blockAlign;
     var dataSize = samples.length * bytesPerSample;
@@ -2491,7 +2491,7 @@ var Farina = /*#__PURE__*/ function() {
         this.f_stop = f_stop;
         this.fs = fs;
         this.stimulus = stimulus;
-        this.duration = this.stimulus.length / this.fs;
+        this.duration = (this.stimulus.length - 528) / this.fs;
     }
     _create_class(Farina, [
         {
@@ -3342,7 +3342,7 @@ var AudioRecorder = /*#__PURE__*/ function() {
                                                 return track.stop();
                                             });
                                             resolve(recording);
-                                        }, durationSec * 1500);
+                                        }, durationSec * 1e3);
                                     })
                                 ];
                         }
@@ -3623,6 +3623,7 @@ function startRecordingAndPlayback() {
                     postRecordTime = 1;
                     totalRecordTime = preRecordTime + duration + postRecordTime;
                     _audio_chirp = _sliced_to_array(audio.chirp(startFreq, endFreq, duration), 2), sweepSignal = _audio_chirp[0];
+                    download(sweepSignal, 48e3, "sweep_signal.wav");
                     audioBuffer = audioContext.createBuffer(1, sweepSignal.length, audioContext.sampleRate);
                     channelData = audioBuffer.getChannelData(0);
                     channelData.set(sweepSignal);
@@ -3758,7 +3759,16 @@ var measurementCommentInput = document.getElementById("measurementComment");
 var downloadRecordingBtn = document.getElementById("downloadRecordingBtn");
 downloadRecordingBtn === null || downloadRecordingBtn === void 0 ? void 0 : downloadRecordingBtn.addEventListener("click", function() {
     try {
-        download(recorded[0], 48e3, "recorded_audio.wav", {}, convertToIXML("\n        <ANGLE>".concat(measurementAngleInput.value, "</ANGLE>\n        <LOCATION>").concat(measurementLocationInput.value, "</LOCATION>\n        <COMMENT>").concat(measurementCommentInput.value, "</COMMENT>\n        <STIMULUS>\n            <START>").concat(sweepStartFreqInput.value, "</START>\n            <END>").concat(sweepEndFreqInput.value, "</END>\n            <DURATION>").concat(sweepDurationInput.value, "</DURATION>\n        </STIMULUS>\n        <ORIGIN>Acquisition Module</ORIGIN>")));
+        download(recorded[0], 48e3, "recorded_audio.wav", {}, convertToIXML("\n        <ANGLE>".concat(measurementAngleInput.value, "</ANGLE>\n        <LOCATION>").concat(measurementLocationInput.value, "</LOCATION>\n        <COMMENT>").concat(measurementCommentInput.value, "</COMMENT>\n        <STIMULUS>\n            <TYPE>chirp</TYPE>\n            <START>").concat(sweepStartFreqInput.value, "</START>\n            <END>").concat(sweepEndFreqInput.value, "</END>\n            <FADE>0.01</FADE>\n            <DURATION>").concat(sweepDurationInput.value, "</DURATION>\n            <SAMPLE_RATE>48000</SAMPLE_RATE>\n        </STIMULUS>\n        <ORIGIN>Acquisition Module</ORIGIN>")));
+    } catch (err) {
+        console.error("Failed to create/download recording:", err);
+        alert("Failed to download recording: " + err.message);
+    }
+});
+var downloadSweepBtn = document.getElementById("downloadSweepBtn");
+downloadSweepBtn === null || downloadSweepBtn === void 0 ? void 0 : downloadSweepBtn.addEventListener("click", function() {
+    try {
+        download(recorded[0], 48e3, "reference_audio.wav", {}, convertToIXML("\n        <STIMULUS>\n            <TYPE>chirp</TYPE>\n            <START>".concat(sweepStartFreqInput.value, "</START>\n            <END>").concat(sweepEndFreqInput.value, "</END>\n            <FADE>0.01</FADE>\n            <DURATION>").concat(sweepDurationInput.value, "</DURATION>\n            <SAMPLE_RATE>48000</SAMPLE_RATE>\n        </STIMULUS>\n        <ORIGIN>Acquisition Module</ORIGIN>")));
     } catch (err) {
         console.error("Failed to create/download recording:", err);
         alert("Failed to download recording: " + err.message);
