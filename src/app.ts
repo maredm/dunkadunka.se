@@ -6,6 +6,7 @@ import "./device-settings";
 import { linspace, max } from "./math";
 import { COLORS, plot } from "./plotting";
 import { AudioRecorder } from "./recorder";
+import { download } from "./wave";
 
 console.debug("App module loaded");
 
@@ -209,24 +210,11 @@ tabsContainer.addEventListener('click', (e: MouseEvent) => {
     }
 });
 
-let recorded = Float32Array.from([]);
+let recorded = [Float32Array.from([]), Float32Array.from([])];
 
 async function startRecordingAndPlayback(): Promise<void> {
     try {
-        const saudioBuffer = Float32Array.from({ length: 48000*7.5 }, () => 0);
-        let buffercounter = 0;
-        let finished = false;
-
-
-        // Initialize audio context and get microphone stream
         const audioContext = await initializeAudioContext();
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-            audio: { 
-                echoCancellation: false, 
-                noiseSuppression: false, 
-                autoGainControl: false 
-            } 
-        });
 
         // Generate and play sweep
         const startFreq = parseFloat(sweepStartFreqInput.value);
@@ -253,6 +241,12 @@ async function startRecordingAndPlayback(): Promise<void> {
         recordingStatusEl.textContent = `Recording for ${totalRecordTime.toFixed(1)}s...`;
         recordingVisualizationEl.style.display = 'block';
 
+        const recorder = new AudioRecorder(audioContext);
+        recorder.record(totalRecordTime).then((recordingData) => {
+            recorded = recordingData;
+            stopRecording();
+        });
+
         // Update UI
         startBtn.disabled = true;
         stopBtn.disabled = false;
@@ -269,11 +263,6 @@ async function startRecordingAndPlayback(): Promise<void> {
             sourceGain.connect(audioContext.destination);
             acquisitionState.playbackSource.start();
         }, preRecordTime * 1000);
-
-        AudioRecorder.record(audioContext, totalRecordTime).then((data) => {
-            stopRecording();
-            recorded = data;
-        });
 
         // Stop recording after total time (pre + sweep + post)
         setTimeout(() => {
@@ -369,7 +358,8 @@ analyzeRecordingBtn.addEventListener('click', async () => {
     console.log('Analyzing recording...');
 
     try {        
-        const recordedAudio = Audio.fromSamples(recorded, 48000);
+        const recordedAudio = Audio.fromSamples(recorded[0], 48000);
+        download(recorded[0], 48000, 'recorded_audio.wav');
         // Generate the chirp sweep as reference data
         const startFreq = parseFloat(sweepStartFreqInput.value);
         const endFreq = parseFloat(sweepEndFreqInput.value);
@@ -944,7 +934,7 @@ function createDirectivityPlotTab(responseDatas: Audio[], referenceData: Audio, 
     angles.push(360); // close the circle
 
     // z[angleIndex][freqIndex]
-    const z: Float32Array[][] = transfers.map((tf) => {
+    const z: any = transfers.map((tf) => {
         const magDb = db(tf.magnitude);
         const ref = magDb[normIdx] ?? 0;
         return magDb.map((v) => v - ref);

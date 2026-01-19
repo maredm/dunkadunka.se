@@ -2790,57 +2790,77 @@ window.refreshAudioDeviceList = refreshAudioDeviceList;
 window.saveDeviceSelections = saveDeviceSelections;
 // src/recorder.ts
 var AudioRecorder = /*#__PURE__*/ function() {
-    function AudioRecorder() {
+    function AudioRecorder(audioContext) {
         _class_call_check(this, AudioRecorder);
+        this.audioContext = audioContext;
     }
-    _create_class(AudioRecorder, null, [
+    _create_class(AudioRecorder, [
         {
-            key: "recordWithBufferingProcessor",
-            value: // Record using buffering processor worklet.
-            function recordWithBufferingProcessor(audioContext, durationSec) {
+            key: "record",
+            value: function record(durationSec) {
                 return _async_to_generator(function() {
-                    var bufferingNode;
+                    var recording, pointer, stream, streamSource, worklet;
                     return _ts_generator(this, function(_state) {
                         switch(_state.label){
                             case 0:
+                                recording = [
+                                    new Float32Array(durationSec * this.audioContext.sampleRate),
+                                    new Float32Array(durationSec * this.audioContext.sampleRate)
+                                ];
+                                pointer = 0;
                                 return [
                                     4,
-                                    audioContext.audioWorklet.addModule("static/buffering-processor.worklet.js")
+                                    this.audioContext.audioWorklet.addModule("static/buffering-processor.worklet.js")
                                 ];
                             case 1:
                                 _state.sent();
-                                bufferingNode = new AudioWorkletNode(audioContext, "buffering-processor", {
+                                return [
+                                    4,
+                                    navigator.mediaDevices.getUserMedia({
+                                        audio: {
+                                            echoCancellation: false,
+                                            noiseSuppression: false,
+                                            autoGainControl: false
+                                        }
+                                    })
+                                ];
+                            case 2:
+                                stream = _state.sent();
+                                streamSource = this.audioContext.createMediaStreamSource(stream);
+                                worklet = new AudioWorkletNode(this.audioContext, "buffering-processor", {
                                     numberOfInputs: 1,
-                                    parameterData: {
-                                        isRecording: 1,
-                                        recordingLength: durationSec * audioContext.sampleRate
+                                    numberOfOutputs: 0,
+                                    processorOptions: {
+                                        buffer: null
                                     }
                                 });
+                                streamSource.connect(worklet);
+                                worklet.port.onmessage = function(event) {
+                                    if (pointer + event.data.buffer[0].length > recording[0].length) {
+                                        worklet.disconnect();
+                                        streamSource.disconnect();
+                                        return new Promise(function(resolve) {
+                                            resolve(recording);
+                                        });
+                                    }
+                                    recording[0].set(event.data.buffer[0], pointer);
+                                    recording[1].set(event.data.buffer[1], pointer);
+                                    pointer += event.data.buffer[0].length;
+                                };
                                 return [
                                     2,
                                     new Promise(function(resolve) {
-                                        bufferingNode.port.onmessage = function(event) {
-                                            if (event.data.recording) {
-                                                resolve(Float32Array.from(event.data.recording));
-                                            }
-                                        };
+                                        setTimeout(function() {
+                                            worklet.disconnect();
+                                            streamSource.disconnect();
+                                            stream.getTracks().forEach(function(track) {
+                                                return track.stop();
+                                            });
+                                            resolve(recording);
+                                        }, durationSec * 1500);
                                     })
                                 ];
                         }
-                    });
-                })();
-            }
-        },
-        {
-            key: "record",
-            value: // Convenience record function that delegates to recordWithBufferingProcessor.
-            function record(audioContext, durationSec) {
-                return _async_to_generator(function() {
-                    return _ts_generator(this, function(_state) {
-                        return [
-                            2,
-                            this.recordWithBufferingProcessor(audioContext, durationSec)
-                        ];
                     });
                 }).call(this);
             }
@@ -2848,6 +2868,51 @@ var AudioRecorder = /*#__PURE__*/ function() {
     ]);
     return AudioRecorder;
 }();
+// src/wave.ts
+function download(samples) {
+    var sampleRate = arguments.length > 1 && arguments[1] !== void 0 ? arguments[1] : 48e3, name = arguments.length > 2 && arguments[2] !== void 0 ? arguments[2] : "output";
+    var channels = 1;
+    var bytesPerSample = 2;
+    var blockAlign = channels * bytesPerSample;
+    var byteRate = sampleRate * blockAlign;
+    var dataSize = samples.length * bytesPerSample;
+    var buffer = new ArrayBuffer(44 + dataSize);
+    var view = new DataView(buffer);
+    function writeString(offset2, str) {
+        for(var i = 0; i < str.length; i++)view.setUint8(offset2 + i, str.charCodeAt(i));
+    }
+    writeString(0, "RIFF");
+    view.setUint32(4, 36 + dataSize, true);
+    writeString(8, "WAVE");
+    writeString(12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, channels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, byteRate, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, 16, true);
+    writeString(36, "data");
+    view.setUint32(40, dataSize, true);
+    var offset = 44;
+    for(var i = 0; i < samples.length; i++, offset += 2){
+        var s = Math.max(-1, Math.min(1, Number(samples[i])));
+        view.setInt16(offset, s < 0 ? s * 32768 : s * 32767, true);
+    }
+    var blob = new Blob([
+        buffer
+    ], {
+        type: "audio/wav"
+    });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = name + ".wav";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+}
 // src/app.ts
 console.debug("App module loaded");
 var root = document.documentElement;
@@ -3089,44 +3154,28 @@ tabsContainer.addEventListener("click", function(e) {
         detectAndSetupChannels();
     }
 });
-var recorded = Float32Array.from([]);
+var recorded = [
+    Float32Array.from([]),
+    Float32Array.from([])
+];
 function startRecordingAndPlayback() {
     return _async_to_generator(function() {
-        var saudioBuffer, buffercounter, finished, audioContext, stream, startFreq, endFreq, duration, preRecordTime, postRecordTime, totalRecordTime, _audio_chirp, sweepSignal, audioBuffer, channelData, sourceGain, error;
+        var audioContext, startFreq, endFreq, duration, preRecordTime, postRecordTime, totalRecordTime, _audio_chirp, sweepSignal, audioBuffer, channelData, sourceGain, recorder, error;
         return _ts_generator(this, function(_state) {
             switch(_state.label){
                 case 0:
                     _state.trys.push([
                         0,
-                        3,
+                        2,
                         ,
-                        4
+                        3
                     ]);
-                    saudioBuffer = Float32Array.from({
-                        length: 48e3 * 7.5
-                    }, function() {
-                        return 0;
-                    });
-                    buffercounter = 0;
-                    finished = false;
                     return [
                         4,
                         initializeAudioContext()
                     ];
                 case 1:
                     audioContext = _state.sent();
-                    return [
-                        4,
-                        navigator.mediaDevices.getUserMedia({
-                            audio: {
-                                echoCancellation: false,
-                                noiseSuppression: false,
-                                autoGainControl: false
-                            }
-                        })
-                    ];
-                case 2:
-                    stream = _state.sent();
                     startFreq = parseFloat(sweepStartFreqInput.value);
                     endFreq = parseFloat(sweepEndFreqInput.value);
                     duration = parseFloat(sweepDurationInput.value);
@@ -3141,6 +3190,11 @@ function startRecordingAndPlayback() {
                     sourceGain.gain.value = 0.5;
                     recordingStatusEl.textContent = "Recording for ".concat(totalRecordTime.toFixed(1), "s...");
                     recordingVisualizationEl.style.display = "block";
+                    recorder = new AudioRecorder(audioContext);
+                    recorder.record(totalRecordTime).then(function(recordingData) {
+                        recorded = recordingData;
+                        stopRecording();
+                    });
                     startBtn.disabled = true;
                     stopBtn.disabled = false;
                     playBtn.disabled = true;
@@ -3154,27 +3208,23 @@ function startRecordingAndPlayback() {
                         sourceGain.connect(audioContext.destination);
                         acquisitionState.playbackSource.start();
                     }, preRecordTime * 1e3);
-                    AudioRecorder.record(audioContext, totalRecordTime).then(function(data) {
-                        stopRecording();
-                        recorded = data;
-                    });
                     setTimeout(function() {
                         stopRecording();
                     }, totalRecordTime * 1e3);
                     return [
                         3,
-                        4
+                        3
                     ];
-                case 3:
+                case 2:
                     error = _state.sent();
                     console.error("Error starting recording:", error);
                     recordingStatusEl.textContent = "Error: ".concat(error.message);
                     recordingStatusEl.style.color = "#d73a49";
                     return [
                         3,
-                        4
+                        3
                     ];
-                case 4:
+                case 3:
                     return [
                         2
                     ];
@@ -3273,7 +3323,8 @@ analyzeRecordingBtn.addEventListener("click", function() {
         return _ts_generator(this, function(_state) {
             console.log("Analyzing recording...");
             try {
-                recordedAudio = Audio.fromSamples(recorded, 48e3);
+                recordedAudio = Audio.fromSamples(recorded[0], 48e3);
+                download(recorded[0], 48e3, "recorded_audio.wav");
                 startFreq = parseFloat(sweepStartFreqInput.value);
                 endFreq = parseFloat(sweepEndFreqInput.value);
                 duration = parseFloat(sweepDurationInput.value);
