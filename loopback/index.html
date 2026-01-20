@@ -111,6 +111,10 @@
             <input type="checkbox" id="feedMonoToLeftOnly">
             <span>Feed Mono to Left Only</span>
         </label>
+        <label>
+            <input type="checkbox" id="useAudioSrcObject">
+            <span>Use Audio Element srcObject for Output (otherwise it uses AudioContext destination)</span>
+        </label>
     </div>
     <style>
         .vu-container {
@@ -425,6 +429,7 @@
             const noiseSuppression = document.getElementById('noiseSuppression').checked;
             const echoCancellation = document.getElementById('echoCancellation').checked;
             const feedMonoToLeftOnly = document.getElementById('feedMonoToLeftOnly').checked;
+            const useAudioSrcObject = document.getElementById('useAudioSrcObject').checked;
 
             const deviceId = inputSelect.value || undefined;
 
@@ -440,39 +445,56 @@
                         channelCount: 2,
                     }
                 });
+                
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 source = audioCtx.createMediaStreamSource(currentStream);
-                audioCtx.destination.channelCount = 2;
+                if(useAudioSrcObject) {
+                    if (!feedMonoToLeftOnly) {
+                        //source.connect(audioCtx.destination);
+                        applyOutputSink(currentStream);
+                        setStatus(true);
+                        return;
+                    }
+                
+                    // route stream through a stereo panner to left and play via the hidden audio element
+                    const panner = audioCtx.createStereoPanner();
+                    panner.pan.value = -1; // full left
+                    source.connect(panner);
 
-                if (!feedMonoToLeftOnly) {
+                    const dest = audioCtx.createMediaStreamDestination();
+                    panner.connect(dest);
+
+                    // use the generated stream as the loopback output so setSinkId can be applied
+                    await applyOutputSink(dest.stream);
+                } else {
+                    audioCtx.destination.channelCount = 2;
+                    if (feedMonoToLeftOnly) {
+                        // create a mono to stereo splitter/merger
+                                                // route audio only to the left channel
+                        const origSource = source;
+                        const splitter = audioCtx.createChannelSplitter(2);
+                        const leftGain = audioCtx.createGain();
+                        const rightGain = audioCtx.createGain();
+                        const merger = audioCtx.createChannelMerger(2);
+
+                        leftGain.gain.value = 1;
+                        rightGain.gain.value = 0;
+
+                        origSource.connect(splitter);
+                        splitter.connect(leftGain, 0);
+                        splitter.connect(rightGain, 1);
+
+                        leftGain.connect(merger, 0, 0); // left output
+                        rightGain.connect(merger, 0, 1); // right output (silent)
+
+                        const outNode = audioCtx.createGain();
+                        merger.connect(outNode);
+
+                        // ensure the subsequent `source.connect(audioCtx.destination)` connects our processed output
+                        source = outNode;
+                    } 
                     source.connect(audioCtx.destination);
-                    setStatus(true);
-                    return;
                 }
-            
-                // route audio only to the left channel
-                const origSource = source;
-                const splitter = audioCtx.createChannelSplitter(2);
-                const leftGain = audioCtx.createGain();
-                const rightGain = audioCtx.createGain();
-                const merger = audioCtx.createChannelMerger(2);
-
-                leftGain.gain.value = 1;
-                rightGain.gain.value = 0;
-
-                origSource.connect(splitter);
-                splitter.connect(leftGain, 0);
-                splitter.connect(rightGain, 1);
-
-                leftGain.connect(merger, 0, 0); // left output
-                rightGain.connect(merger, 0, 1); // right output (silent)
-
-                const outNode = audioCtx.createGain();
-                merger.connect(outNode);
-
-                // ensure the subsequent `source.connect(audioCtx.destination)` connects our processed output
-                source = outNode;
-                source.connect(audioCtx.destination);
                 setStatus(true);
             } catch (err) {
                 alert('Error accessing microphone: ' + err.message);
