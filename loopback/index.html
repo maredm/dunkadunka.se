@@ -124,6 +124,8 @@
             }
         }
 
+
+
         async function startLoopback() {
             const autoGainControl = document.getElementById('gainControl').checked;
             const noiseSuppression = document.getElementById('noiseSuppression').checked;
@@ -136,7 +138,8 @@
                     audio: {
                         autoGainControl,
                         noiseSuppression,
-                        echoCancellation
+                        echoCancellation,
+                        stereo: true,
                     }
                 });
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -210,8 +213,9 @@
                         list.forEach((d, i) => {
                             const opt = document.createElement('option');
                             opt.value = d.deviceId;
-                            opt.textContent = d.label || `${placeholder} ${i + 1}`;
-                            select.appendChild(opt);
+                            opt.textContent = d.label || `${placeholder} ${i + 1} `;
+                            opt.textContent += function(){ navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: d.deviceId } } }).then(s => { const t = s.getAudioTracks()[0]; let ch = '?'; try { const settings = t && t.getSettings ? t.getSettings() : {}; if (settings && settings.channelCount) ch = settings.channelCount; else if (t && t.getCapabilities) { const caps = t.getCapabilities(); if (caps && caps.channelCount) ch = Array.isArray(caps.channelCount) ? caps.channelCount[caps.channelCount.length-1] : caps.channelCount; } } catch(_) {} opt.textContent = (d.label || (placeholder + ' ' + (i + 1))) + ' — ' + ch + 'ch'; s.getTracks().forEach(track => track.stop()); }).catch(()=>{}); return '' }();
+                                                        select.appendChild(opt);
                         });
                         if (prev && Array.from(select.options).some(o => o.value === prev)) {
                             select.value = prev;
