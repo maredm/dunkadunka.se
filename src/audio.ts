@@ -608,8 +608,9 @@ export function fftCorrelation(x: Float32Array | Float32Array, y: Float32Array |
     };
 }
 
-
-export function fftConvolve(x: Float32Array | Float32Array, y: Float32Array | Float32Array, mode: 'same' | 'full' = 'same'): Float32Array {
+export function fftConvolve(x: Float32Array, y: Float32Array, mode: 'same' | 'full' = 'same'): Float32Array;
+export function fftConvolve(x: Float64Array, y: Float64Array, mode: 'same' | 'full' = 'same'): Float64Array;
+export function fftConvolve(x: Float32Array | Float64Array, y: Float64Array, mode: 'same' | 'full' = 'same'): Float64Array {
     const lenX = x.length;
     const lenY = y.length;
     const fullLen = lenX + lenY - 1;

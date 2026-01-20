@@ -54,7 +54,7 @@ export class Farina {
 
     window(signal: ImpulseResponseResult, at: number, length: number): ImpulseResponseResult {
         const size = Math.floor(length * this.fs);
-        const window: Float32Array = getSelectedWindow('rectangular', size, false);
+        const window: Float32Array = getSelectedWindow('hanning', size, false);
 
         const si = signal.ir.slice(at - size / 2, at + size / 2);
         const w = Float32Array.from({ length: size }, () => 0);
