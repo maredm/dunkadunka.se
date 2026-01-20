@@ -112,14 +112,7 @@
         let source = null;
         let stream = null;
     
-        navigator.mediaDevices.getUserMedia({ audio: true})
-            .then(() => {
-                // Permission granted
-            })
-            .catch((err) => {
-                alert('Microphone access is required for this tool to function.');
-            });
-
+       
         function setStatus(running) {
             const statusEl = document.getElementById('status');
             if (running) {
@@ -313,6 +306,15 @@
                 }
             });
         });
+
+         navigator.mediaDevices.getUserMedia({ audio: true})
+            .then(() => {
+                populateDeviceLists();
+            })
+            .catch((err) => {
+                alert('Microphone access is required for this tool to function.');
+            });
+
 
         setStatus(false);
     </script>
