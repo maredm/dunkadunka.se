@@ -2,576 +2,319 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Audio Loopback Tool</title>
+    <title>Audio Loopback with getUserMedia</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        * {
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: #f6f8fa;
             margin: 0;
             padding: 0;
-            box-sizing: border-box;
+            color: #222;
         }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
-        .visualization {
-            background: #222;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
-            height: 120px;
-            display: flex;
-            align-items: flex-end;
-            justify-content: center;
-            gap: 2px;
-            overflow: hidden;
-        }
-        
-        .bar {
-            width: 4px;
-            background: linear-gradient(to top, #667eea, #764ba2);
-            border-radius: 2px;
-            opacity: 0.8;
-            min-height: 2px;
-            transition: height 0.1s ease-out;
-        }
-        
-        .container {
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            padding: 40px;
-            max-width: 500px;
-            width: 100%;
-        }
-        
         h1 {
-            color: #333;
-            margin-bottom: 30px;
             text-align: center;
-            font-size: 24px;
+            margin-top: 2rem;
+            font-size: 2rem;
+            font-weight: 600;
         }
-        
-        .form-group {
-            margin-bottom: 20px;
-        }
-        
-        label {
+        .status {
             display: block;
-            margin-bottom: 8px;
+            margin: 1rem auto;
+            padding: 0.5rem 1.5rem;
+            width: fit-content;
+            border-radius: 1rem;
+            background: #e0e0e0;
             color: #555;
             font-weight: 500;
-            font-size: 14px;
+            font-size: 1.1rem;
+            transition: background 0.2s, color 0.2s;
         }
-        
-        select, input {
-            width: 100%;
-            padding: 10px 12px;
-            border: 1px solid #ddd;
-            border-radius: 6px;
-            font-size: 14px;
-            transition: border-color 0.3s;
+        .status.running {
+            background: #4caf50;
+            color: #fff;
         }
-        
-        select:focus, input:focus {
-            outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        }
-        
-        .checkbox-group {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        input[type="checkbox"] {
-            width: auto;
-            cursor: pointer;
-        }
-        
-        .constraints-section {
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 6px;
-            margin-bottom: 20px;
-        }
-        
-        .constraints-section h3 {
-            font-size: 14px;
-            color: #555;
-            margin-bottom: 12px;
-        }
-        
-        .constraint-row {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 10px;
-            font-size: 13px;
-        }
-        
-        .constraint-row:last-child {
-            margin-bottom: 0;
-        }
-        
-        .constraint-row label {
-            margin: 0;
-            font-weight: 400;
-            flex: 1;
-        }
-        
-        .constraint-row input {
-            width: 80px;
-            margin: 0;
-        }
-        
         .button-group {
             display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
+            justify-content: center;
+            gap: 1rem;
+            margin: 1.5rem 0;
         }
-        
         button {
-            flex: 1;
-            padding: 12px;
+            padding: 0.7rem 2rem;
+            font-size: 1rem;
             border: none;
-            border-radius: 6px;
-            font-weight: 600;
-            font-size: 14px;
+            border-radius: 0.5rem;
+            background: #1976d2;
+            color: #fff;
             cursor: pointer;
-            transition: all 0.3s;
+            font-weight: 500;
+            box-shadow: 0 2px 8px rgba(25, 118, 210, 0.08);
+            transition: background 0.2s;
         }
-        
-        .btn-start {
-            background: #667eea;
-            color: white;
+        button:hover {
+            background: #1565c0;
         }
-        
-        .btn-start:hover:not(:disabled) {
-            background: #5568d3;
-            transform: translateY(-2px);
-            box-shadow: 0 8px 16px rgba(102, 126, 234, 0.4);
+        .controls {
+            max-width: 400px;
+            margin: 2rem auto;
+            background: #fff;
+            border-radius: 1rem;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+            padding: 2rem;
         }
-        
-        .btn-stop {
-            background: #ff6b6b;
-            color: white;
+        .controls h2 {
+            margin-top: 0;
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #1976d2;
+            margin-bottom: 1rem;
         }
-        
-        .btn-stop:hover:not(:disabled) {
-            background: #ee5a52;
-            transform: translateY(-2px);
-            box-shadow: 0 8px 16px rgba(255, 107, 107, 0.4);
-        }
-        
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-        
-        .toggle-group {
+        .controls label {
             display: flex;
             align-items: center;
-            gap: 15px;
-        }
-        
-        .toggle-switch {
-            position: relative;
-            width: 50px;
-            height: 28px;
-        }
-        
-        .toggle-switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-        
-        .toggle-slider {
-            position: absolute;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            font-size: 1rem;
             cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: #ccc;
-            transition: 0.3s;
-            border-radius: 28px;
         }
-        
-        .toggle-slider:before {
-            position: absolute;
-            content: "";
-            height: 22px;
-            width: 22px;
-            left: 3px;
-            bottom: 3px;
-            background-color: white;
-            transition: 0.3s;
-            border-radius: 50%;
-        }
-        
-        input:checked + .toggle-slider {
-            background-color: #667eea;
-        }
-        
-        input:checked + .toggle-slider:before {
-            transform: translateX(22px);
-        }
-        
-        .status {
-            padding: 15px;
-            border-radius: 6px;
-            text-align: center;
-            font-weight: 500;
-            font-size: 14px;
-            margin-top: 20px;
-        }
-        
-        .status.idle {
-            background: #e9ecef;
-            color: #495057;
-        }
-        
-        .status.active {
-            background: #d4edda;
-            color: #155724;
-        }
-        
-        .status.error {
-            background: #f8d7da;
-            color: #721c24;
-        }
-        
-        .error-message {
-            color: #721c24;
-            font-size: 13px;
-            margin-top: 10px;
-            padding: 10px;
-            background: #f8d7da;
-            border-radius: 4px;
-            display: none;
-        }
-        
-        .error-message.show {
-            display: block;
+        .controls input[type="checkbox"] {
+            accent-color: #1976d2;
+            width: 1.2em;
+            height: 1.2em;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>🎙️ Audio Loopback</h1>
-        
-        <div class="form-group">
-            <label for="inputDevice">Input Device</label>
-            <select id="inputDevice"></select>
-        </div>
-        
-        <div class="form-group">
-            <label for="outputDevice">Output Device</label>
-            <select id="outputDevice"></select>
-        </div>
-        
-        <div class="form-group">
-            <label for="channels">Number of Channels</label>
-            <select id="channels">
-                <option value="1">Mono (1)</option>
-                <option value="2" selected>Stereo (2)</option>
-                <option value="4">4 Channels</option>
-                <option value="6">5.1 Surround (6)</option>
-            </select>
-        </div>
-        
-        <div class="constraints-section">
-            <h3>Audio Constraints</h3>
-            <div class="constraint-row">
-                <label for="echoCancellation">Echo Cancellation:</label>
-                <input type="checkbox" id="echoCancellation" checked>
-            </div>
-            <div class="constraint-row">
-                <label for="noiseSuppression">Noise Suppression:</label>
-                <input type="checkbox" id="noiseSuppression" checked>
-            </div>
-            <div class="constraint-row">
-                <label for="autoGainControl">Auto Gain Control:</label>
-                <input type="checkbox" id="autoGainControl" checked>
-            </div>
-            <div class="constraint-row">
-                <label for="sampleRate">Sample Rate (Hz):</label>
-                <input type="number" id="sampleRate" value="48000" min="8000" max="192000" step="1000">
-            </div>
-        </div>
-        
-        <div class="button-group">
-            <button class="btn-start" id="startBtn">Start</button>
-            <button class="btn-stop" id="stopBtn" disabled>Stop</button>
-        </div>
-        
-        <div class="toggle-group">
-            <label for="loopbackToggle">Loopback Active:</label>
-            <label class="toggle-switch">
-                <input type="checkbox" id="loopbackToggle" disabled>
-                <span class="toggle-slider"></span>
-            </label>
-        </div>
-        
-        <div id="status" class="status idle">Ready</div>
-        <div id="error" class="error-message"></div>
-        <br>
-        <div class="visualization" id="vuMeter" aria-hidden="false"></div>
+    <h1>Audio Loopback Tool</h1>
+    <div id="status" class="status">Stopped</div>
+    <div class="button-group">
+        <button id="startBtn">Start Loopback</button>
+        <button id="stopBtn">Stop Loopback</button>
     </div>
-
+    <div class="controls">
+        <h2>Audio Constraints</h2>
+        <label>
+            <input type="checkbox" id="gainControl">
+            <span>Auto Gain Control</span>
+        </label>
+        <label>
+            <input type="checkbox" id="noiseSuppression">
+            <span>Noise Suppression</span>
+        </label>
+        <label>
+            <input type="checkbox" id="echoCancellation">
+            <span>Echo Cancellation</span>
+        </label>
+    </div>
     <script>
-    (() => {
-        const vu = document.getElementById('vuMeter');
-        let analyserNode = null;
-        let dataArray = null;
-        let animationId = null;
-        let bars = [];
+        let audioCtx = null;
+        let source = null;
+        let stream = null;
+    
+        navigator.mediaDevices.getUserMedia({ audio: true})
+            .then(() => {
+                // Permission granted
+            })
+            .catch((err) => {
+                alert('Microphone access is required for this tool to function.');
+            });
 
-        function createBars(count) {
-            vu.innerHTML = '';
-            bars = [];
-            for (let i = 0; i < count; i++) {
-                const b = document.createElement('div');
-                b.className = 'bar';
-                b.style.height = '4px';
-                vu.appendChild(b);
-                bars.push(b);
+        function setStatus(running) {
+            const statusEl = document.getElementById('status');
+            if (running) {
+                statusEl.textContent = 'Running';
+                statusEl.classList.add('running');
+            } else {
+                statusEl.textContent = 'Stopped';
+                statusEl.classList.remove('running');
             }
         }
 
-        function startRendering(analyser) {
-            stopRendering();
-            analyserNode = analyser;
-            analyserNode.fftSize = 256;
-            const bufferLength = analyserNode.frequencyBinCount;
-            dataArray = new Uint8Array(bufferLength);
-            const barCount = Math.min(64, bufferLength);
-            createBars(barCount);
+        async function startLoopback() {
+            const autoGainControl = document.getElementById('gainControl').checked;
+            const noiseSuppression = document.getElementById('noiseSuppression').checked;
+            const echoCancellation = document.getElementById('echoCancellation').checked;
 
-            function render() {
-                analyserNode.getByteFrequencyData(dataArray);
-                const step = Math.max(1, Math.floor(dataArray.length / barCount));
-                for (let i = 0; i < barCount; i++) {
-                    const value = dataArray[i * step];
-                    const height = Math.max(4, (value / 255) * 100);
-                    bars[i].style.height = height + 'px';
-                    bars[i].style.opacity = 0.6 + (value / 255) * 0.4;
-                }
-                animationId = requestAnimationFrame(render);
-            }
-            render();
-        }
+            stopLoopback();
 
-        function stopRendering() {
-            if (animationId) cancelAnimationFrame(animationId);
-            animationId = null;
-            analyserNode = null;
-            dataArray = null;
-            if (bars.length) bars.forEach(b => b.style.height = '4px');
-        }
-
-        const AC = window.AudioContext || window.webkitAudioContext;
-        if (!AC) return;
-
-        const Proto = AC.prototype;
-        const OriginalCreate = Proto.createMediaStreamSource;
-
-        Proto.createMediaStreamSource = function(stream) {
-            const source = OriginalCreate.call(this, stream);
             try {
-                const analyser = this.createAnalyser();
-                analyser.fftSize = 256;
-                // connect the source to analyser (analyser not connected to destination)
-                source.connect(analyser);
-                startRendering(analyser);
-
-                const onStateChange = () => {
-                    if (this.state === 'closed') {
-                        try { source.disconnect(analyser); } catch (e) {}
-                        stopRendering();
-                        this.removeEventListener('statechange', onStateChange);
+                stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        autoGainControl,
+                        noiseSuppression,
+                        echoCancellation
                     }
-                };
-                this.addEventListener('statechange', onStateChange);
-            } catch (e) {
-                // ignore if analyser not available
-            }
-            return source;
-        };
-    })();
-    </script>
-
-    <script>
-        const inputDeviceSelect = document.getElementById('inputDevice');
-        const outputDeviceSelect = document.getElementById('outputDevice');
-        const channelsSelect = document.getElementById('channels');
-        const startBtn = document.getElementById('startBtn');
-        const stopBtn = document.getElementById('stopBtn');
-        const loopbackToggle = document.getElementById('loopbackToggle');
-        const statusDiv = document.getElementById('status');
-        const errorDiv = document.getElementById('error');
-
-        let audioContext;
-        let inputStream;
-        let outputDestination;
-        let sourceNode;
-        let processorNode;
-        let isLoopbackActive = false;
-
-        // Populate device lists
-        async function populateDevices() {
-            try {
-                const devices = await navigator.mediaDevices.enumerateDevices();
-                
-                const audioInputs = devices.filter(device => device.kind === 'audioinput');
-                const audioOutputs = devices.filter(device => device.kind === 'audiooutput');
-
-                inputDeviceSelect.innerHTML = '';
-                outputDeviceSelect.innerHTML = '';
-
-                audioInputs.forEach((device, index) => {
-                    const option = document.createElement('option');
-                    option.value = device.deviceId;
-                    option.textContent = device.label || `Input Device ${index + 1}`;
-                    inputDeviceSelect.appendChild(option);
                 });
-
-                audioOutputs.forEach((device, index) => {
-                    const option = document.createElement('option');
-                    option.value = device.deviceId;
-                    option.textContent = device.label || `Output Device ${index + 1}`;
-                    outputDeviceSelect.appendChild(option);
-                });
-
-                if (audioInputs.length === 0) {
-                    showError('No input devices found');
-                }
-                if (audioOutputs.length === 0) {
-                    showError('No output devices found');
-                }
-            } catch (error) {
-                showError('Failed to enumerate devices: ' + error.message);
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                source = audioCtx.createMediaStreamSource(stream);
+                source.connect(audioCtx.destination);
+                setStatus(true);
+            } catch (err) {
+                alert('Error accessing microphone: ' + err.message);
+                setStatus(false);
             }
         }
 
-        // Get audio constraints
-        function getAudioConstraints() {
-            return {
-                deviceId: { exact: inputDeviceSelect.value },
-                echoCancellation: document.getElementById('echoCancellation').checked,
-                noiseSuppression: document.getElementById('noiseSuppression').checked,
-                autoGainControl: document.getElementById('autoGainControl').checked,
-                sampleRate: parseInt(document.getElementById('sampleRate').value)
+        // add input/output device selectors and override start/stop to use them
+            const controls = document.querySelector('.controls');
+            const deviceContainer = document.createElement('div');
+            deviceContainer.style.marginBottom = '1rem';
+            deviceContainer.style.display = 'flex';
+            deviceContainer.style.flexDirection = 'column';
+            deviceContainer.style.gap = '0.5rem';
+
+            const makeSelectRow = (labelText, id) => {
+                const wrapper = document.createElement('label');
+                wrapper.style.display = 'flex';
+                wrapper.style.flexDirection = 'column';
+                wrapper.style.fontSize = '1rem';
+                wrapper.style.gap = '0.25rem';
+                const label = document.createElement('span');
+                label.textContent = labelText;
+                const select = document.createElement('select');
+                select.id = id;
+                select.style.padding = '0.35rem';
+                wrapper.appendChild(label);
+                wrapper.appendChild(select);
+                return { wrapper, select };
             };
-        }
 
-        // Start loopback
-        startBtn.addEventListener('click', async () => {
-            try {
-                clearError();
-                statusDiv.textContent = 'Requesting audio access...';
-                statusDiv.className = 'status idle';
+            const { wrapper: inWrap, select: inputSelect } = makeSelectRow('Input Device', 'inputSelect');
+            const { wrapper: outWrap, select: outputSelect } = makeSelectRow('Output Device', 'outputSelect');
+            deviceContainer.appendChild(inWrap);
+            deviceContainer.appendChild(outWrap);
+            controls.insertBefore(deviceContainer, controls.firstChild);
 
-                const constraints = {
-                    audio: getAudioConstraints()
-                };
-
-                inputStream = await navigator.mediaDevices.getUserMedia(constraints);
-                
-                audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                
-                const channels = parseInt(channelsSelect.value);
-                sourceNode = audioContext.createMediaStreamSource(inputStream);
-                
-                // Create processor node
-                processorNode = audioContext.createScriptProcessor(4096, 2, channels);
-                
-                sourceNode.connect(processorNode);
-                processorNode.connect(audioContext.destination);
-
-                loopbackToggle.disabled = false;
-                loopbackToggle.checked = true;
-                isLoopbackActive = true;
-
-                startBtn.disabled = true;
-                stopBtn.disabled = false;
-                inputDeviceSelect.disabled = true;
-                outputDeviceSelect.disabled = true;
-                channelsSelect.disabled = true;
-
-                statusDiv.textContent = `✓ Loopback Active (${channels} channels)`;
-                statusDiv.className = 'status active';
-            } catch (error) {
-                showError('Failed to start loopback: ' + error.message);
-                statusDiv.textContent = 'Error';
-                statusDiv.className = 'status error';
+            // hidden audio element used to set sinkId for output selection
+            let loopAudio = document.getElementById('loopbackAudio');
+            if (!loopAudio) {
+                loopAudio = document.createElement('audio');
+                loopAudio.id = 'loopbackAudio';
+                loopAudio.autoplay = true;
+                loopAudio.style.display = 'none';
+                document.body.appendChild(loopAudio);
             }
-        });
 
-        // Stop loopback
-        stopBtn.addEventListener('click', () => {
-            try {
-                clearError();
-                
-                if (sourceNode) sourceNode.disconnect();
-                if (processorNode) processorNode.disconnect();
-                if (audioContext) audioContext.close();
-                if (inputStream) {
-                    inputStream.getTracks().forEach(track => track.stop());
-                }
+            let currentStream = null;
 
-                isLoopbackActive = false;
-                loopbackToggle.checked = false;
-                loopbackToggle.disabled = true;
+            async function populateDeviceLists() {
+                try {
+                    const devices = await navigator.mediaDevices.enumerateDevices();
+                    const inputs = devices.filter(d => d.kind === 'audioinput');
+                    const outputs = devices.filter(d => d.kind === 'audiooutput');
 
-                startBtn.disabled = false;
-                stopBtn.disabled = true;
-                inputDeviceSelect.disabled = false;
-                outputDeviceSelect.disabled = false;
-                channelsSelect.disabled = false;
+                    const fill = (select, list, placeholder) => {
+                        const prev = select.value;
+                        select.innerHTML = '';
+                        if (list.length === 0) {
+                            const opt = document.createElement('option');
+                            opt.value = '';
+                            opt.textContent = `No ${placeholder} found`;
+                            select.appendChild(opt);
+                            return;
+                        }
+                        list.forEach((d, i) => {
+                            const opt = document.createElement('option');
+                            opt.value = d.deviceId;
+                            opt.textContent = d.label || `${placeholder} ${i + 1}`;
+                            select.appendChild(opt);
+                        });
+                        if (prev && Array.from(select.options).some(o => o.value === prev)) {
+                            select.value = prev;
+                        }
+                    };
 
-                statusDiv.textContent = 'Stopped';
-                statusDiv.className = 'status idle';
-            } catch (error) {
-                showError('Error stopping loopback: ' + error.message);
-            }
-        });
-
-        // Toggle loopback
-        loopbackToggle.addEventListener('change', () => {
-            if (processorNode) {
-                if (loopbackToggle.checked) {
-                    processorNode.connect(audioContext.destination);
-                    statusDiv.textContent = '✓ Loopback Active';
-                } else {
-                    processorNode.disconnect();
-                    statusDiv.textContent = '⊗ Loopback Paused';
+                    fill(inputSelect, inputs, 'Microphone');
+                    fill(outputSelect, outputs, 'Speaker');
+                } catch (e) {
+                    console.warn('Could not list media devices:', e);
                 }
             }
+
+            async function applyOutputSink(stream) {
+                loopAudio.srcObject = stream;
+                // setSinkId supported in many Chromium browsers
+                if (typeof loopAudio.setSinkId === 'function') {
+                    const sink = outputSelect.value;
+                    if (sink) {
+                        try {
+                            await loopAudio.setSinkId(sink);
+                        } catch (e) {
+                            console.warn('setSinkId failed:', e);
+                        }
+                    }
+                }
+            }
+
+            // override startLoopback and stopLoopback to support device selection
+            async function startLoopback() {
+                // stop any existing stream
+                stopLoopback();
+
+                const autoGainControl = document.getElementById('gainControl').checked;
+                const noiseSuppression = document.getElementById('noiseSuppression').checked;
+                const echoCancellation = document.getElementById('echoCancellation').checked;
+
+                const deviceId = inputSelect.value || undefined;
+
+                try {
+                    currentStream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            deviceId: deviceId ? { exact: deviceId } : undefined,
+                            autoGainControl,
+                            noiseSuppression,
+                            echoCancellation
+                        }
+                    });
+
+                    await applyOutputSink(currentStream);
+                    setStatus(true);
+                } catch (err) {
+                    alert('Error accessing microphone or device: ' + err.message);
+                    setStatus(false);
+                }
+            }
+
+            function stopLoopback() {
+                if (currentStream) {
+                    currentStream.getTracks().forEach(t => t.stop());
+                    currentStream = null;
+                }
+                if (loopAudio) {
+                    loopAudio.srcObject = null;
+                }
+                setStatus(false);
+            }
+
+            // wire controls (override previous handlers)
+            document.getElementById('startBtn').onclick = startLoopback;
+            document.getElementById('stopBtn').onclick = stopLoopback;
+
+            inputSelect.addEventListener('change', () => {
+                if (document.getElementById('status').textContent === 'Running') startLoopback();
+            });
+            outputSelect.addEventListener('change', () => {
+                if (currentStream) applyOutputSink(currentStream);
+            });
+
+            // refresh device lists on change and on load
+            navigator.mediaDevices.addEventListener('devicechange', populateDeviceLists);
+            populateDeviceLists();
+            
+
+        document.getElementById('startBtn').onclick = startLoopback;
+        document.getElementById('stopBtn').onclick = stopLoopback;
+
+        ['gainControl', 'noiseSuppression', 'echoCancellation'].forEach(id => {
+            document.getElementById(id).addEventListener('change', () => {
+                if (audioCtx) {
+                    startLoopback();
+                }
+            });
         });
 
-        function showError(message) {
-            errorDiv.textContent = message;
-            errorDiv.classList.add('show');
-        }
-
-        function clearError() {
-            errorDiv.textContent = '';
-            errorDiv.classList.remove('show');
-        }
-
-        // Initialize
-        populateDevices();
-        navigator.mediaDevices.addEventListener('devicechange', populateDevices);
+        setStatus(false);
     </script>
 </body>
 </html>
