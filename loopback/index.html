@@ -107,6 +107,10 @@
             <span>Echo Cancellation</span>
         </label>
     </div>
+        <label>
+            <input type="checkbox" id="feedMonoToLeftOnly">
+            <span>Feed Mono to Left Only</span>
+        </label>
     <style>
         .vu-container {
             max-width: 400px;
@@ -326,6 +330,7 @@
             const autoGainControl = document.getElementById('gainControl').checked;
             const noiseSuppression = document.getElementById('noiseSuppression').checked;
             const echoCancellation = document.getElementById('echoCancellation').checked;
+            const feedMonoToLeftOnly = document.getElementById('feedMonoToLeftOnly').checked;
 
             stopLoopback();
 
@@ -340,6 +345,36 @@
                 });
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 source = audioCtx.createMediaStreamSource(stream);
+                audioCtx.destination.channelCount = 2;
+
+                if (!feedMonoToLeftOnly) {
+                    source.connect(audioCtx.destination);
+                    setStatus(true);
+                    return;
+                }
+            
+                // route audio only to the left channel
+                const origSource = source;
+                const splitter = audioCtx.createChannelSplitter(2);
+                const leftGain = audioCtx.createGain();
+                const rightGain = audioCtx.createGain();
+                const merger = audioCtx.createChannelMerger(2);
+
+                leftGain.gain.value = 1;
+                rightGain.gain.value = 0;
+
+                origSource.connect(splitter);
+                splitter.connect(leftGain, 0);
+                splitter.connect(rightGain, 1);
+
+                leftGain.connect(merger, 0, 0); // left output
+                rightGain.connect(merger, 0, 1); // right output (silent)
+
+                const outNode = audioCtx.createGain();
+                merger.connect(outNode);
+
+                // ensure the subsequent `source.connect(audioCtx.destination)` connects our processed output
+                source = outNode;
                 source.connect(audioCtx.destination);
                 setStatus(true);
             } catch (err) {
