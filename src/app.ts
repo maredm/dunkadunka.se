@@ -42,6 +42,12 @@ function normalizeAngleDeg(angleDeg: number): number {
     return a;
 }
 
+const statusMessage = document.getElementById('statusMessage') as HTMLElement;
+function setStatusMessage(message: string, isError: boolean = false): void {
+    statusMessage.textContent = message;
+    statusMessage.style.color = isError ? '#d73a49' : '#28a745';
+}
+
 function getPolarMeasurements(): PolarMeasurement[] {
     const rows = Array.from(polarMeasurementsEl.querySelectorAll<HTMLElement>('.polar-measurement-row'));
     const out: PolarMeasurement[] = [];
@@ -582,6 +588,8 @@ analyzePolarBtn.addEventListener('click', async () => {
 });
 
 function createAnalysisTab(responseData: Audio, referenceData: Audio | null, filename: string, referenceFilename: string | null): void {
+    setStatusMessage('Creating analysis tab...');
+
     tabCounter++;
     const tabId = `analysis-${tabCounter}`;
     let shortName = filename.length > 20 ? filename.substring(0, 17) + '...' : filename;
@@ -751,6 +759,8 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
         {}, 
         true
     );
+
+    setStatusMessage('');
 
     if (referenceData) {
         referenceSamples = referenceData.getChannelData(0);
@@ -1160,6 +1170,7 @@ function createDirectivityPlotTab(responseDatas: Audio[], referenceData: Audio, 
             colorscale: 'Jet',
             zmin: -50,
             zmax: 0,
+            zsmooth: 'best',
             colorbar: { title: 'dB (norm @ 1 kHz)' }
         } as any
         ],

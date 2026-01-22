@@ -2297,6 +2297,11 @@ function normalizeAngleDeg(angleDeg) {
   if (a < 0) a += 360;
   return a;
 }
+var statusMessage = document.getElementById("statusMessage");
+function setStatusMessage(message, isError = false) {
+  statusMessage.textContent = message;
+  statusMessage.style.color = isError ? "#d73a49" : "#28a745";
+}
 function getPolarMeasurements() {
   var _a;
   const rows = Array.from(polarMeasurementsEl.querySelectorAll(".polar-measurement-row"));
@@ -2718,6 +2723,7 @@ analyzePolarBtn.addEventListener("click", () => __async(null, null, function* ()
   }
 }));
 function createAnalysisTab(responseData, referenceData, filename, referenceFilename) {
+  setStatusMessage("Creating analysis tab...");
   tabCounter++;
   const tabId = `analysis-${tabCounter}`;
   let shortName = filename.length > 20 ? filename.substring(0, 17) + "..." : filename;
@@ -2869,6 +2875,7 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
         {},
         true
       );
+      setStatusMessage("");
       if (referenceData) {
         referenceSamples = referenceData.getChannelData(0);
         const referenceFFT = computeFFT(referenceSamples);
@@ -3212,6 +3219,7 @@ function createDirectivityPlotTab(responseDatas, referenceData, anglesDeg) {
             colorscale: "Jet",
             zmin: -50,
             zmax: 0,
+            zsmooth: "best",
             colorbar: { title: "dB (norm @ 1 kHz)" }
           }
         ],
