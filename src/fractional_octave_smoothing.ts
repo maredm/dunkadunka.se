@@ -26,24 +26,51 @@ export function getFractionalOctaveFrequencies(fraction: number, f_low: number =
     return frequencies;
 }
 
-export function fractionalOctaveSmoothing(frequencyData: Float32Array, fraction: number, frequencies: Float32Array): Float32Array {
-    const frequenciesAll = linspace(0, 48000 / 2, frequencyData.length);
-    const smoothedData = new Float32Array(frequencies.length);
-    const n = frequencyData.length;
-    const factor = Math.pow(2, (0.5 * fraction)) - Math.pow(0.5, (0.5 * fraction));
-    for (let p = 0; p < frequencies.length; p++) {
-        const i = closest(frequencies[p], frequenciesAll);
-        // If the distance between this and previous frequency is less than frequency_resolution, pass direct value
+export function fractionalOctaveSmoothing(frequencyData: Float32Array, fraction: number, frequencies: Float32Array): Float32Array{
+    const FD = frequencyData;
+    const F = frequencies;
+    const n = FD.length | 0;
+    const out = new Float32Array(F.length);
+    if (n === 0 || F.length === 0) return out;
 
-        let sum = 0;
-        const width = Math.round(0.5 * factor * (n * 0.5 - Math.abs(n * 0.5 - i)));
-        if (width === 0) {
-            sum = frequencyData[i];
-        } else {
-            const as = frequencyData.slice(Math.round(i - width + 1), Math.min(Math.round(i + width), n - 1));
-            sum = average(as);
+    const nMinus1 = n - 1;
+    const half = n * 0.5;
+    const fac = Math.pow(2, 0.5 * fraction) - Math.pow(2, -0.5 * fraction);
+    const invBin = n > 1 ? (nMinus1) / 24000 : 0;
+
+    // prefix sum (double precision for accumulation)
+    const pref = new Float64Array(n + 1);
+    for (let k = 0; k < n; ++k) pref[k + 1] = pref[k] + FD[k];
+
+    for (let p = 0, P = F.length; p < P; ++p) {
+        // map center frequency to nearest bin index
+        const fp = F[p];
+        let i = invBin ? ((fp * invBin) + 0.5) | 0 : 0;
+        if (i < 0) i = 0;
+        else if (i > nMinus1) i = nMinus1;
+
+        // compute window half-width in bins (integer)
+        const dist = Math.abs(half - i);
+        let w = ((0.5 * fac * (half - dist)) + 0.5) | 0;
+
+        if (w <= 0) {
+            out[p] = FD[i];
+            continue;
         }
-        smoothedData[p] = sum;
+
+        // inclusive start/end indices
+        let s = i - w + 1;
+        if (s < 0) s = 0;
+        let e = i + w;
+        if (e > nMinus1) e = nMinus1;
+
+        const len = e - s + 1;
+        if (len <= 0) {
+            out[p] = FD[i];
+        } else {
+            const sum = pref[e + 1] - pref[s];
+            out[p] = sum / len;
+        }
     }
-    return smoothedData;
+    return out;
 }

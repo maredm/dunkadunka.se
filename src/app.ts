@@ -1,9 +1,9 @@
-import { Audio, computeFFT, computeFFTFromIR, db, FFTResult, groupDelays, ImpulseResponseResult, rms, smoothFFT, twoChannelImpulseResponse } from "./audio";
+import { Audio, computeFFT, updatedFFT, computeFFTFromIR, db, FFTResult, groupDelays, ImpulseResponseResult, loadAudioFromFilename, rms, smoothFFT, twoChannelFFT, twoChannelImpulseResponse } from "./audio";
 import { Farina, plotDistortion, plotTHD } from "./farina";
 import { storage } from "./storage";
 import { audio } from "./audio";
 import "./device-settings";
-import { linspace, max } from "./math";
+import { linspace, max, nextPow2 } from "./math";
 import { COLORS, plot } from "./plotting";
 import { AudioRecorder } from "./recorder";
 import { download, BextChunk, convertToIXML } from "./wave";
@@ -493,6 +493,30 @@ function switchTab(tabId: string): void {
     document.querySelector(`[data-content="${tabId}"]`)?.classList.add('active');
 }
 
+
+function compute(computation: Function, ...message: any[]): Promise<any> {
+    const delegate = () => {
+        onmessage = ({ data: { computation, message } }) => {
+            const wrapper = (fn: any) => Function('"use strict"; return (' + fn.toString() + ')')();
+            const result = wrapper(computation)(...message);
+            postMessage(result);
+        };
+    }
+    const functionBody = delegate.toString().replace(/^[^{]*{\s*/, '').replace(/\s*}[^}]*$/, '');
+    return new Promise((resolve, reject) => {
+        const worker = new Worker(URL.createObjectURL(
+            new Blob([functionBody], { type: 'text/javascript' })
+        ));
+        worker.onmessage = ({ data }) => {
+            resolve(data);
+            worker.terminate();
+        };
+        worker.onerror = worker.onmessageerror = reject;
+        worker.postMessage({ computation: computation.toString(), message });
+        return worker;
+    });
+}
+
 analyzeUploadBtn.addEventListener('click', async () => {
     const responseFile = responseFileUploadInput.files?.[0];
     const referenceFile = referenceFileUploadInput.files?.[0];
@@ -567,10 +591,14 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
     }
     // Create tab button
     const tab = document.createElement('button');
-    tab.className = 'tab tab-closable';
+    tab.className = 'tab tab-closable tab-loading';
     tab.dataset.tab = tabId;
     tab.innerHTML = `<span class="tab-icon-analysis"></span>${shortName} <span class="tab-close">✕</span>`;
     tabsInnerContainer.appendChild(tab);
+    
+    // Update HTML.
+    window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
     
     // Create tab content
     const content = document.createElement('div');
@@ -977,25 +1005,30 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
     }       
 
     document.getElementById('resize-handle')?.addEventListener('mousedown', initResize, false);
+
+    tab.classList.remove('tab-loading');
+
+    });});
 }
 
 
 function createDirectivityPlotTab(responseDatas: Audio[], referenceData: Audio, anglesDeg?: number[]): void {
+    console.log('Creating directivity plot tab with', responseDatas.length, 'responses and reference data', referenceData);
     if (responseDatas.length === 0 || referenceData.length === 0) return;
 
     tabCounter++;
-    const directivityTabId = `directivity-${tabCounter}`;
+    const tabId = `directivity-${tabCounter}`;
     const shortName = `Directivity (${responseDatas.length})`;
 
     const tab = document.createElement('button');
-    tab.className = 'tab tab-closable';
-    tab.dataset.tab = directivityTabId;
+    tab.className = 'tab tab-closable tab-loading';
+    tab.dataset.tab = tabId;
     tab.innerHTML = `<span class="tab-icon-analysis"></span>${shortName} <span class="tab-close">✕</span>`;
     tabsInnerContainer.appendChild(tab);
 
     const content = document.createElement('div');
     content.className = 'tab-content';
-    content.dataset.content = directivityTabId;
+    content.dataset.content = tabId;
     content.innerHTML = `
         <div class="flex h-full">
         <div class="flex-1 main-content">
@@ -1005,7 +1038,55 @@ function createDirectivityPlotTab(responseDatas: Audio[], referenceData: Audio, 
     `;
     tabContents.appendChild(content);
 
-    switchTab(directivityTabId);
+    window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
+    
+    // Create tab content
+    const content = document.createElement('div');
+    content.className = 'tab-content';
+    content.dataset.content = tabId;
+    content.innerHTML = `
+        <button class="sidecar-toggle" id="sidebar-toggle-${tabId}" title="Toggle Sidecar">Open settings pane</button>
+        <div class="flex h-full">
+            <div class="flex-none w-86 border-r border-[#ddd] p-2 relative sidecar" style="transition:50ms linear;">
+                <div class="section">
+                    <div class="title">Settings</div>
+                    <p><i>There are no settings for this analysis.</i></p>
+                </div>
+                <div class="section">
+                    <div class="title">Plots</div>
+                    <ul class="list" id="plot-list-${tabId}">
+                        <!--li><input type="checkbox" id="checkbox-magnitude-${tabId}" alt="show/hide" checked><label for="checkbox-magnitude-${tabId}">Magnitude</label></li>
+                        <li><input type="checkbox" id="checkbox-phase-${tabId}" alt="show/hide" checked><label for="checkbox-phase-${tabId}">Phase</label></li>
+                        <li><input type="checkbox" id="checkbox-ir-${tabId}" alt="show/hide" checked><label for="checkbox-ir-${tabId}">Impulse Response</label></li>
+                        <li><input type="checkbox" id="checkbox-ir-${tabId}" alt="show/hide" disabled><label for="checkbox-ir-${tabId}">Fundamental + Harmonic Distortion</label></li>
+                        <li><input type="checkbox" id="checkbox-distortion-${tabId}" alt="show/hide" disabled><label for="checkbox-distortion-${tabId}">Distortion</label></li>
+                        <li><input type="checkbox" id="checkbox-distortion-${tabId}" alt="show/hide" disabled><label for="checkbox-distortion-${tabId}">Sound Pressure Level</label></li>
+                        <li><input type="checkbox" id="checkbox-deconvoluted-ir-${tabId}" alt="show/hide" disabled><label for="checkbox-deconvoluted-ir-${tabId}">Deconvoluted Impulse Response</label></li>
+                        <li><input type="checkbox" id="checkbox-stimulus-waveform-${tabId}" alt="show/hide" disabled><label for="checkbox-stimulus-waveform-${tabId}">Stimulus Waveform</label></li>
+                        <li><input type="checkbox" id="checkbox-recorded-waveform-${tabId}" alt="show/hide" disabled><label for="checkbox-recorded-waveform-${tabId}">Recorded Waveform</label></li>
+                        <li><input type="checkbox" id="checkbox-recorded-noise-floor-${tabId}" alt="show/hide" disabled><label for="checkbox-recorded-noise-floor-${tabId}">Recorded Noise Floor</label></li>
+                        <li><input type="checkbox" id="checkbox-target-curve-${tabId}" alt="show/hide" disabled><label for="checkbox-target-curve-${tabId}">Target Curve<button class="float-right text-xs cursor-pointer" style="color: #bbb; padding-top: 3px">Set</button></label></li-->
+                    </ul>
+                </div>
+                <div class="section">
+                    <div class="title">Properties</div>
+                    <p id="properties-${tabId}"><i>There are no properties for this analysis.</i></p>
+                </div>
+                <div id="resize-handle" class="resize-handle"></div>
+            </div>
+            <div class="flex-1 main-content">
+                <div class="grid grid-cols-6 gap-[1px] bg-[#ddd] border-b border-[#ddd] plot-outer">
+                </div>
+            </div>
+        </div>
+       
+        
+    `;
+    tabContents.appendChild(content);
+    switchTab(tabId);
+
+    const startTime = performance.now()
 
     const useCustomAngles = !!anglesDeg && anglesDeg.length === responseDatas.length;
     const angles = useCustomAngles
@@ -1013,16 +1094,34 @@ function createDirectivityPlotTab(responseDatas: Audio[], referenceData: Audio, 
         : responseDatas.map((_, i) => (360 * i) / responseDatas.length);
 
     const referenceSamples = Float32Array.from(referenceData.getChannelData(0));
-
-    const transfers: FFTResult[] = responseDatas.map((resp) => {
-        const len = Math.min(resp.getChannelData(0).length, referenceSamples.length);
-        const ir: ImpulseResponseResult = twoChannelImpulseResponse(
-        resp.getChannelData(0).subarray(0, len),
-        referenceSamples.subarray(0, len)
+    
+    const len = Math.min(7.5*48000, referenceSamples.length);
+    const referenceFFT = updatedFFT(referenceSamples.subarray(0, len), len);
+    
+    const calcStartTime = performance.now()
+    const transfers: FFTResult[] = [];
+    for (let i = 0; i < responseDatas.length; i++) {
+        const resp = responseDatas[i];
+        const loopStartTime = performance.now()
+        const fftr = twoChannelFFT(
+            resp.getChannelData(0).subarray(0, len),
+            referenceSamples.subarray(0, len),
+            nextPow2(len),
+            0,
+            referenceFFT,
         );
-        return smoothFFT(computeFFTFromIR(ir), 1/3, 1/48);
-    });
+        console.warn(`LOOP TOOK ${performance.now() - loopStartTime} milliseconds`)
+        //
+        fftr.magnitude = db(fftr.magnitude.map((v, i) => Math.abs(v)));
+        
+        const ffto = smoothFFT(fftr, 1/3, 1/24);
+        console.warn(`LOOP+ TOOK ${performance.now() - loopStartTime} milliseconds`)
+        transfers.push(fftr);
+    }
+    const calcEndTime = performance.now()
+    console.warn(`CALC TOOK ${calcEndTime - calcStartTime} milliseconds`)
 
+        
     const baseFreq = transfers[0]?.frequency;
     if (!baseFreq || baseFreq.length === 0) return;
 
@@ -1046,6 +1145,11 @@ function createDirectivityPlotTab(responseDatas: Audio[], referenceData: Audio, 
         return magDb.map((v) => v - ref);
     });
 
+        
+    const endTime = performance.now()
+
+    console.warn(`TOOK ${endTime - startTime} milliseconds`)
+
     plot(
         [
         {
@@ -1059,7 +1163,7 @@ function createDirectivityPlotTab(responseDatas: Audio[], referenceData: Audio, 
             colorbar: { title: 'dB (norm @ 1 kHz)' }
         } as any
         ],
-        directivityTabId,
+        tabId,
         'Directivity Map',
         'Frequency (Hz)',
         'Angle (deg)',
@@ -1068,6 +1172,9 @@ function createDirectivityPlotTab(responseDatas: Audio[], referenceData: Audio, 
         { margin: { l: 60, r: 20, t: 40, b: 50 } },
         false
     );
+    tab.classList.remove('tab-loading');
+    });
+    });
 }
 
 // Save and load state from sessionStorage
@@ -1103,5 +1210,28 @@ async function loadState(): Promise<void> {
     }
 }
 
+function normalizesAngleDeg(angle: number): number {
+    let a = angle % 360;
+    if (a < 0) a += 360;
+    return a;
+}
+
+async function loadTestPolarData(): Promise<void> {
+    // Load some test data for polar analysis
+    const angles = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200, 210, 220, 230, 240, 250, 260, 270, 280, 290, 300, 310, 320, 330, 340, 350];
+    
+    const files = angles.map(a => `testdata/${a}.wav`);
+    createDirectivityPlotTab(
+        await Promise.all(files.map(f => loadAudioFromFilename(f))),
+        await loadAudioFromFilename('testdata/0.wav'),
+        angles
+    );
+}
+
+loadTestPolarData();
 // Load state on page load
 loadState();
+
+function solve() {
+    throw new Error("Function not implemented.");
+}

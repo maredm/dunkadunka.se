@@ -184,9 +184,6 @@
   }
 }
 @layer utilities {
-  .\@container {
-    container-type: inline-size;
-  }
   .visible {
     visibility: visible;
   }
@@ -283,17 +280,8 @@
   .flex-1 {
     flex: 1;
   }
-  .flex-2 {
-    flex: 2;
-  }
   .flex-none {
     flex: none;
-  }
-  .flex-shrink {
-    flex-shrink: 1;
-  }
-  .border-collapse {
-    border-collapse: collapse;
   }
   .transform {
     transform: var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,);
@@ -306,9 +294,6 @@
   }
   .grid-cols-6 {
     grid-template-columns: repeat(6, minmax(0, 1fr));
-  }
-  .flex-wrap {
-    flex-wrap: wrap;
   }
   .items-center {
     align-items: center;
@@ -412,13 +397,6 @@
   }
   .italic {
     font-style: italic;
-  }
-  .underline {
-    text-decoration-line: underline;
-  }
-  .antialiased {
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
   }
   .outline {
     outline-style: var(--tw-outline-style);
@@ -823,6 +801,25 @@ img {
   overflow-x: auto;
   white-space: nowrap;
 }
+.tab-loading .tab-icon-analysis::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 20px;
+  width: 14px;
+  height: 14px;
+  margin: -8px 0 0 -8px;
+  border: 6px solid transparent;
+  border-top: 6px solid #111213;
+  border-bottom: 6px solid #111213;
+  border-radius: 50%;
+  animation: spin 2s ease-in-out infinite;
+  margin-right: calc(var(--spacing) * 2);
+  display: inline-block;
+  --tw-font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-red-500);
+}
 .tab-icon-recording::before {
   margin-right: calc(var(--spacing) * 2);
   display: inline-block;
@@ -830,6 +827,9 @@ img {
   font-weight: var(--font-weight-bold);
   color: var(--color-red-500);
   content: "⬤";
+}
+.tab-loading .tab-icon-recording::before {
+  opacity: 0 !important;
 }
 .tab-icon-waveform::before {
   margin-right: calc(var(--spacing) * 2);
@@ -839,6 +839,9 @@ img {
   color: var(--color-sky-500);
   content: "∿";
 }
+.tab-loading .tab-icon-waveform::before {
+  opacity: 0 !important;
+}
 .tab-icon-analysis::before {
   margin-right: calc(var(--spacing) * 2);
   display: inline-block;
@@ -846,6 +849,9 @@ img {
   font-weight: var(--font-weight-bold);
   color: var(--color-purple-500);
   content: "⛶";
+}
+.tab-loading .tab-icon-analysis::before {
+  opacity: 0 !important;
 }
 .tab {
   margin: calc(var(--spacing) * 1);
@@ -861,6 +867,11 @@ img {
 .tab.active:not(.tab-closable) {
   background: #fff;
   border: 1px solid var(--border);
+}
+.tab-loading {
+  position: relative;
+  pointer-events: none;
+  color: #999;
 }
 .tab-closable {
   padding-right: 16px;
@@ -1152,6 +1163,11 @@ body {
   syntax: "*";
   inherits: false;
   initial-value: 0;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 @layer properties {
   @supports ((-webkit-hyphens: none) and (not (margin-trim: inline))) or ((-moz-orient: inline) and (not (color:rgb(from red r g b)))) {

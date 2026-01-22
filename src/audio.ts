@@ -291,6 +291,20 @@ async function loadAudioFile(file: File): Promise<Audio> {
 
     return Audio.fromAudioBuffer(audioBuffer, metadata);
 }
+export async function loadAudioFromBlob(blob: Blob, filename?: string): Promise<Audio> {
+    const file = blob instanceof File
+        ? blob
+        : new File([blob], filename ?? 'blob', { type: blob.type || '' });
+    return await loadAudioFile(file);
+}
+export async function loadAudioFromFilename(filename: string): Promise<Audio> {
+    const resp = await fetch(filename);
+    const blob = await resp.blob();
+    console.log(`Fetched audio file from ${filename}:`, blob);
+    return await loadAudioFromBlob(blob, filename);
+}
+
+
 
 export class Audio extends AudioBuffer {
     metadata?: { [Key: string]: string | number | null; };
@@ -350,6 +364,12 @@ export class Audio extends AudioBuffer {
         }
         const data = this.getChannelData(channel);
         return rms(data);
+    }
+
+    static async fromFilename(filename: string): Promise<Audio> {
+        const response = await fetch(filename);
+        const file = await response.blob();
+        return await loadAudioFile(file as File);
     }
 }
 
@@ -608,9 +628,9 @@ export function fftCorrelation(x: Float32Array | Float32Array, y: Float32Array |
     };
 }
 
-export function fftConvolve(x: Float32Array, y: Float32Array, mode: 'same' | 'full' = 'same'): Float32Array;
-export function fftConvolve(x: Float64Array, y: Float64Array, mode: 'same' | 'full' = 'same'): Float64Array;
-export function fftConvolve(x: Float32Array | Float64Array, y: Float64Array, mode: 'same' | 'full' = 'same'): Float64Array {
+export function fftConvolve(x: Float32Array, y: Float32Array, mode: 'same' | 'full'): Float32Array;
+export function fftConvolve(x: Float64Array, y: Float64Array, mode: 'same' | 'full'): Float64Array;
+export function fftConvolve(x: Float32Array | Float64Array, y: Float32Array | Float64Array, mode: 'same' | 'full' = 'same'): Float32Array | Float64Array {
     const lenX = x.length;
     const lenY = y.length;
     const fullLen = lenX + lenY - 1;
@@ -739,74 +759,87 @@ export function twoChannelImpulseResponse(y: Float32Array, x: Float32Array): Imp
     };
 }
 
-export function twoChannelFFT(dataArray: Float32Array | Float32Array, reference: Float32Array | Float32Array, fftSize: number, offset: number): FFTResult {
-    const dataPadded = Float32Array.from({ length: fftSize }, () => 0);
-    const referencePadded = Float32Array.from({ length: fftSize }, () => 0);
+export function updatedFFT(dataArray: Float32Array | Float32Array, fftSize: number): FFTResult {
+    dataArray = dataArray as Float32Array;
+
+    fftSize = nextPow2(fftSize);
+
+    // allocate zeroed buffer and copy using built-in set (faster than per-element loops)
+    const dataPadded = new Float32Array(fftSize);
+    const dataLen = Math.min(dataArray.length, fftSize);
+    if (dataLen > 0) dataPadded.set(dataArray.subarray(0, dataLen), 0);
+
+    // perform FFT directly (avoid double-wrapping via computeFFT)
+    const fft = new FFT(fftSize);
+    const B = fft.createComplexArray();
+
+    fft.realTransform(B, dataPadded);
+
+    if (typeof fft.completeSpectrum === 'function') {
+        fft.completeSpectrum(B);
+    }
+    
+    const half = fftSize >> 1;
+    const sigMag = new Float32Array(half);
+    const sigPhase = new Float32Array(half);
+
+    // compute magnitude & phase
+    for (let i = 0; i < half; i++) {
+        const br = B[2 * i], bi = B[2 * i + 1];
+        sigMag[i] = abs(br, bi);
+        sigPhase[i] = Math.atan2(bi, br);
+    }
+
+    const frequency = linspace(0, 48000 / 2, half);
+
+    return {
+        frequency,
+        magnitude: sigMag,
+        phase: sigPhase,
+        fftSize
+    };
+}
+
+export function twoChannelFFT(dataArray: Float32Array | Float32Array, reference: Float32Array | Float32Array, fftSize: number, offset: number, precomputedReference?: FFTResult ): FFTResult {
+    const refArr = reference as Float32Array;
+    const dataArr = dataArray as Float32Array;
+
+    // allocate zeroed buffers and copy using built-in set (faster than per-element loops)
+    const dataPadded = new Float32Array(fftSize);
+    const referencePadded = new Float32Array(fftSize);
 
     if (offset >= 0) {
-        // copy reference into referencePadded starting at 'offset'
-        const refLen = Math.min(reference.length, Math.max(0, fftSize - offset));
-        for (let i = 0; i < refLen; i++) {
-            referencePadded[offset + i] = reference[i];
-        }
-        // copy dataArray into dataPadded starting at 0
-        const dataLen = Math.min((dataArray as Float32Array).length, fftSize);
-        for (let i = 0; i < dataLen; i++) {
-            dataPadded[i] = (dataArray as Float32Array)[i];
-        }
+        const refLen = Math.min(refArr.length, Math.max(0, fftSize - offset));
+        if (refLen > 0) referencePadded.set(refArr.subarray(0, refLen), offset);
+        const dataLen = Math.min(dataArr.length, fftSize);
+        if (dataLen > 0) dataPadded.set(dataArr.subarray(0, dataLen), 0);
     } else {
-        // offset < 0: copy reference starting at 0
-        const refLen = Math.min(reference.length, fftSize);
-        for (let i = 0; i < refLen; i++) {
-            referencePadded[i] = reference[i];
-        }
-        // place dataArray into dataPadded starting at -offset
+        const refLen = Math.min(refArr.length, fftSize);
+        if (refLen > 0) referencePadded.set(refArr.subarray(0, refLen), 0);
         const start = -offset;
-        const dataLen = Math.min((dataArray as Float32Array).length, Math.max(0, fftSize - start));
-        for (let i = 0; i < dataLen; i++) {
-            dataPadded[start + i] = (dataArray as Float32Array)[i];
-        }
+        const dataLen = Math.min(dataArr.length, Math.max(0, fftSize - start));
+        if (dataLen > 0) dataPadded.set(dataArr.subarray(0, dataLen), start);
     }
 
-    //const rmss = rms(referencePadded);
-    const reference_ = computeFFT(referencePadded);  // Avoid log(0)
-    const signal_ = computeFFT(dataPadded);
-    const signalMags = signal_.magnitude.map(v => 20 * Math.log10(v === 0 ? 1e-20 : v));
-    const referenceMags = reference_.magnitude.map(v => 20 * Math.log10(v === 0 ? 1e-20 : v));
-    const h = referenceMags.map((v, i) => signalMags[i] - v); // dB difference
-    const frequency = linspace(0, 48000 / 2, h.length);
+    // compute FFTs
+    const sigFFT = updatedFFT(dataPadded, fftSize);
+    const refFFT = precomputedReference || updatedFFT(referencePadded, fftSize);
 
-    // For phase, align the reference and signal using a fixed offset (26718 samples for 1m @ 340m/s and 48kHz)
-    // This is a hack to get a reasonable phase response for the measurement setup
-    // In a real application, use cross-correlation to find the delay between signals
+    const half = fftSize >> 1;
+    const sigMag = sigFFT.magnitude;
+    const sigPhase = sigFFT.phase;
+    const refMag = refFFT.magnitude;
+    const refPhase = refFFT.phase;
 
-    const i_50 = closest(50, frequency); // Example usage of closest function
-    const phase_signal = signal_.phase;
-    const phase_reference = reference_.phase;
-    // phase difference (unwrap phases first)
-    const sphase = unwrapPhase(phase_signal.map((v, i) => v - phase_reference[i])); // phase difference in radians
-    const correction = (Math.floor(sphase[i_50] / (2 * Math.PI) + 0.5)) * (2 * Math.PI);
-    const phase = sphase.map(v => (v - correction)); // relative to 50 Hz
-
-    // simple phase unwrapping (returns Float32Array)
-    function unwrapPhase(phases: Float32Array): Float32Array {
-        const N = phases.length;
-        const out = Float32Array.from({ length: N }, () => 0);
-        if (N === 0) return out;
-        out[0] = phases[0];
-        let offset = 0;
-        const theta = Math.PI; // unwrapping threshold
-        for (let i = 1; i < N; i++) {
-            let delta = phases[i] - phases[i - 1];
-            if (delta > theta) {
-                offset -= 2 * Math.PI;
-            } else if (delta < -theta) {
-                offset += 2 * Math.PI;
-            }
-            out[i] = phases[i] + offset;
-        }
-        return out;
+    // build transfer magnitude (reference / signal)
+    const h = new Float32Array(half);
+    const phase = new Float32Array(half);
+    for (let i = 0; i < half; i++) {
+        h[i] = refMag[i] / sigMag[i];
+        phase[i] = sigPhase[i] - refPhase[i];
     }
+
+    const frequency = linspace(0, 48000 / 2, half);
 
     return {
         frequency,
@@ -818,65 +851,73 @@ export function twoChannelFFT(dataArray: Float32Array | Float32Array, reference:
 
 export function computeFFTFromIR(ir: ImpulseResponseResult, f_phase_wrap: number = 1000, frequency_multiplier: number = 1): FFTResult {
     const fftSize = nextPow2(ir.ir.length);
-    console.log(`Computing FFT from IR with size ${fftSize}`);
-    
     const fft = new FFT(fftSize);
-    const out = Float32Array.from(fft.createComplexArray());
-    if (ir.ir_complex[1] === 0) {
-        console.log("IR is in real format, converting to complex");
-        // real IR, convert to complex
-        const frame = Float32Array.from({ length: fftSize }, () => 0);
-        for (let i = 0; i < fftSize; i++) {
-            frame[i] = (ir.ir_complex[2 * i] || 0);
-        }
+    const out = fft.createComplexArray(); // length 2*fftSize
+
+    // Prepare spectrum into `out`
+    if (ir.ir_complex && ir.ir_complex.length >= 2 && ir.ir_complex[1] === 0) {
+        // real IR -> use realTransform on a zero-padded real frame
+        const frame = new Float32Array(fftSize);
+        frame.set(ir.ir.subarray(0, Math.min(ir.ir.length, fftSize)));
         fft.realTransform(out, frame);
     } else {
-        fft.transform(out, ir.ir_complex);
-    }
-
-    const magnitude = Float32Array.from({ length: fftSize / 2 }, () => 0);
-    const phase = Float32Array.from({ length: fftSize / 2 }, () => 0);
-    
-    for (let i = 0; i < fftSize / 2; i++) {
-        const re = out[2 * i];
-        const im = out[2 * i + 1];
-        magnitude[i] = abs(re, im);
-        phase[i] = Math.atan2(im, re); // phase in radians, range [-PI, PI].
-    }
-    const frequency = linspace(0, 48000 / 2, magnitude.length);
-
-    const i_norm = closest(f_phase_wrap, frequency); // Example usage of closest function
-    // phase difference (unwrap phases first)
-    const unwraped_phase = unwrapPhase(phase); // phase difference in radians
-    const correction = (Math.floor(unwraped_phase[i_norm] / (2 * Math.PI) + 0.5)) * (2 * Math.PI);
-    const corrected_unwraped_phase = unwraped_phase.map(v => (v - correction)); // relative to 50 Hz
-
-    // simple phase unwrapping (returns Float32Array)
-    function unwrapPhase(phases: Float32Array): Float32Array {
-        const N = phases.length;
-        const out = Float32Array.from({ length: N }, () => 0);
-        if (N === 0) return out;
-        out[0] = phases[0];
-        let offset = 0;
-        for (let i = 1; i < N; i++) {
-            let delta = phases[i] - phases[i - 1];
-            if (delta > Math.PI) {
-                offset -= 2 * Math.PI;
-            } else if (delta < -Math.PI) {
-                offset += 2 * Math.PI;
+        // complex input: ensure input length matches expected complex length
+        if (ir.ir_complex && ir.ir_complex.length === out.length) {
+            fft.transform(out, ir.ir_complex);
+        } else {
+            const tmp = fft.createComplexArray();
+            if (ir.ir_complex) {
+                tmp.set(ir.ir_complex.subarray ? ir.ir_complex.subarray(0, Math.min(ir.ir_complex.length, tmp.length)) : ir.ir_complex.slice(0, tmp.length));
             }
-            out[i] = phases[i] + offset;
+            fft.transform(out, tmp);
         }
-        return out;
+    }
+
+    const half = fftSize >> 1;
+    const magnitude = new Float32Array(half);
+    const unwrapped = new Float32Array(half);
+
+    // compute magnitude and unwrap phase in one pass
+    if (half > 0) {
+        let prevWrapped = Math.atan2(out[1], out[0]);
+        unwrapped[0] = prevWrapped;
+        magnitude[0] = abs(out[0], out[1]);
+        let offset = 0;
+        for (let i = 1; i < half; i++) {
+            const re = out[2 * i];
+            const im = out[2 * i + 1];
+            const wrapped = Math.atan2(im, re);
+            let delta = wrapped - prevWrapped;
+            if (delta > Math.PI) offset -= 2 * Math.PI;
+            else if (delta < -Math.PI) offset += 2 * Math.PI;
+            const u = wrapped + offset;
+            unwrapped[i] = u;
+            magnitude[i] = abs(re, im);
+            prevWrapped = wrapped;
+        }
+    }
+
+    const frequency = linspace(0, (48000 / 2) * frequency_multiplier, half);
+
+    // normalize phase so that phase at f_phase_wrap is near zero (remove 2pi multiples)
+    const idxNorm = closest(f_phase_wrap, frequency);
+    const normIndex = Math.max(0, Math.min(idxNorm, half - 1));
+    const correction = Math.round(unwrapped[normIndex] / (2 * Math.PI)) * (2 * Math.PI);
+
+    // convert to degrees and apply correction in-place into a phase array
+    const phase = new Float32Array(half);
+    const rad2deg = 180 / Math.PI;
+    for (let i = 0; i < half; i++) {
+        phase[i] = (unwrapped[i] - correction) * rad2deg;
     }
 
     return {
         frequency,
         magnitude,
-        phase: corrected_unwraped_phase.map(v => v / Math.PI * 180),
+        phase,
         peakAt: ir.peakAt,
         sampleRate: ir.sampleRate,
-        fftSize: fftSize,
+        fftSize,
     };
 }
 

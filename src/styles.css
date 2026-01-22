@@ -298,17 +298,41 @@ img {
     overflow-x: auto;
     white-space: nowrap;
 }
+.tab-loading .tab-icon-analysis::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 20px;
+    width: 14px;
+    height: 14px;
+    margin: -8px 0 0 -8px;
+    border: 6px solid transparent;
+    border-top: 6px solid #111213;
+    border-bottom: 6px solid #111213;
+    border-radius: 50%;
+    animation: spin 2s ease-in-out infinite ;
+    @apply text-red-500 font-bold mr-2 inline-block;
+}
 .tab-icon-recording::before {
     @apply text-red-500 font-bold mr-2 inline-block;
     content: "⬤";
+}
+.tab-loading .tab-icon-recording::before {
+    opacity: 0 !important;
 }
 .tab-icon-waveform::before {
     @apply text-sky-500 font-bold mr-2 inline-block;
     content: "∿";
 }
+.tab-loading .tab-icon-waveform::before {
+    opacity: 0 !important;
+}
 .tab-icon-analysis::before {
     @apply text-purple-500 font-bold mr-2 inline-block;
     content: "⛶";
+}
+.tab-loading .tab-icon-analysis::before {
+    opacity: 0 !important;
 }
 .tab {
     @apply rounded-md px-4 py-1 m-1;
@@ -321,6 +345,11 @@ img {
 .tab.active:not(.tab-closable) {
     background: #fff;
     border: 1px solid var(--border);
+}
+.tab-loading {
+    position: relative;
+    pointer-events: none;
+    color: #999;
 }
 .tab-closable {
     padding-right: 16px;
