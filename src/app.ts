@@ -479,43 +479,6 @@ analyzeUploadBtn.addEventListener('click', async () => {
     }
 });
 
-analyzePolarBtn.addEventListener('click', async () => {
-    const referenceFile = polarReferenceFileInput.files?.[0];
-    if (!referenceFile) return;
-
-    const measurements = getPolarMeasurements();
-    if (measurements.length === 0) {
-        alert('Please add at least one measurement (angle + file).');
-        return;
-    }
-
-    const oldText = analyzePolarBtn.textContent || 'Analyze Polar Directivity';
-    analyzePolarBtn.disabled = true;
-    analyzePolarBtn.textContent = 'Analyzing...';
-
-    try {
-        const referenceData = (await audio.loadAudioFile(referenceFile)).applyGain(1 / 16384);
-
-        const loaded = await Promise.all(
-            measurements.map(async (m) => ({
-                angleDeg: m.angleDeg,
-                audio: (await audio.loadAudioFile(m.file)).applyGain(1 / 16384),
-            }))
-        );
-
-        loaded.sort((a, b) => a.angleDeg - b.angleDeg);
-        const responseAudios = loaded.map((x) => x.audio);
-        const anglesDeg = loaded.map((x) => x.angleDeg);
-
-        createDirectivityPlotTab(responseAudios, referenceData, anglesDeg);
-    } catch (error) {
-        alert('Error analyzing polar files: ' + (error as Error).message);
-    } finally {
-        analyzePolarBtn.textContent = oldText;
-        updatePolarAnalyzeEnabled();
-    }
-});
-
 function createAnalysisTab(responseData: Audio, referenceData: Audio | null, filename: string, referenceFilename: string | null): void {
     setStatusMessage('Creating analysis tab...');
 

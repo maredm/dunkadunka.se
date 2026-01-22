@@ -2632,39 +2632,6 @@ analyzeUploadBtn.addEventListener("click", () => __async(null, null, function* (
     analyzeUploadBtn.textContent = "Analyze Frequency Response";
   }
 }));
-analyzePolarBtn.addEventListener("click", () => __async(null, null, function* () {
-  var _a;
-  const referenceFile = (_a = polarReferenceFileInput.files) == null ? void 0 : _a[0];
-  if (!referenceFile) return;
-  const measurements = getPolarMeasurements();
-  if (measurements.length === 0) {
-    alert("Please add at least one measurement (angle + file).");
-    return;
-  }
-  const oldText = analyzePolarBtn.textContent || "Analyze Polar Directivity";
-  analyzePolarBtn.disabled = true;
-  analyzePolarBtn.textContent = "Analyzing...";
-  try {
-    const referenceData = (yield audio.loadAudioFile(referenceFile)).applyGain(1 / 16384);
-    const loaded = yield Promise.all(
-      measurements.map((m) => __async(null, null, function* () {
-        return {
-          angleDeg: m.angleDeg,
-          audio: (yield audio.loadAudioFile(m.file)).applyGain(1 / 16384)
-        };
-      }))
-    );
-    loaded.sort((a, b) => a.angleDeg - b.angleDeg);
-    const responseAudios = loaded.map((x) => x.audio);
-    const anglesDeg = loaded.map((x) => x.angleDeg);
-    createDirectivityPlotTab(responseAudios, referenceData, anglesDeg);
-  } catch (error) {
-    alert("Error analyzing polar files: " + error.message);
-  } finally {
-    analyzePolarBtn.textContent = oldText;
-    updatePolarAnalyzeEnabled();
-  }
-}));
 function createAnalysisTab(responseData, referenceData, filename, referenceFilename) {
   setStatusMessage("Creating analysis tab...");
   tabCounter++;
