@@ -529,395 +529,6 @@ function fractionalOctaveSmoothing(frequencyData, fraction, frequencies) {
   return out;
 }
 
-// src/wave.ts
-function download(samples, sampleRate = 48e3, name = "output", bext, ixml) {
-  const channels = 1;
-  const bytesPerSample = 4;
-  const blockAlign = channels * bytesPerSample;
-  const byteRate = sampleRate * blockAlign;
-  const dataSize = samples.length * bytesPerSample;
-  let bextDataSize = 0;
-  let bextPayload = null;
-  if (bext) {
-    const description = bext.description || "";
-    const originator = bext.originator || "";
-    const originatorReference = bext.originatorReference || "";
-    const originationDate = bext.originationDate || "";
-    const originationTime = bext.originationTime || "";
-    const codingHistory = bext.codingHistory || "";
-    const version = typeof bext.version === "number" ? bext.version : 1;
-    const umidBytes = bext.umid && bext.umid.length ? bext.umid : null;
-    const baseLen = 602;
-    const codingLen = codingHistory ? codingHistory.length + 1 : 0;
-    bextDataSize = baseLen + codingLen;
-    if (bextDataSize % 2 === 1) bextDataSize++;
-    bextPayload = new Uint8Array(bextDataSize);
-    let p = 0;
-    const writeFixed = (str, len) => {
-      for (let i = 0; i < len; i++) {
-        const code = i < str.length ? str.charCodeAt(i) & 255 : 0;
-        bextPayload[p++] = code;
-      }
-    };
-    writeFixed(description, 256);
-    writeFixed(originator, 32);
-    writeFixed(originatorReference, 32);
-    writeFixed(originationDate, 10);
-    writeFixed(originationTime, 8);
-    let timeRefLow = 0;
-    let timeRefHigh = 0;
-    try {
-      const tr = bext.timeReference || "0";
-      const BigIntFn = globalThis.BigInt;
-      if (typeof BigIntFn === "function") {
-        const t = BigIntFn(tr);
-        const mask = BigIntFn(4294967295);
-        timeRefLow = Number(t & mask);
-        timeRefHigh = Number(t >> BigIntFn(32) & mask);
-      } else {
-        const n = Number(tr || 0);
-        timeRefLow = Math.floor(n % 4294967296);
-        timeRefHigh = Math.floor(n / 4294967296);
-      }
-    } catch (e) {
-      timeRefLow = 0;
-      timeRefHigh = 0;
-    }
-    bextPayload[p++] = timeRefLow & 255;
-    bextPayload[p++] = timeRefLow >>> 8 & 255;
-    bextPayload[p++] = timeRefLow >>> 16 & 255;
-    bextPayload[p++] = timeRefLow >>> 24 & 255;
-    bextPayload[p++] = timeRefHigh & 255;
-    bextPayload[p++] = timeRefHigh >>> 8 & 255;
-    bextPayload[p++] = timeRefHigh >>> 16 & 255;
-    bextPayload[p++] = timeRefHigh >>> 24 & 255;
-    bextPayload[p++] = version & 255;
-    bextPayload[p++] = version >>> 8 & 255;
-    if (version > 0) {
-      if (umidBytes) {
-        for (let i = 0; i < 64; i++) bextPayload[p++] = i < umidBytes.length ? umidBytes[i] : 0;
-      } else {
-        for (let i = 0; i < 64; i++) bextPayload[p++] = 0;
-      }
-    } else {
-      for (let i = 0; i < 64; i++) bextPayload[p++] = 0;
-    }
-    for (let i = 0; i < 190; i++) bextPayload[p++] = 0;
-    if (codingHistory) {
-      for (let i = 0; i < codingHistory.length; i++) bextPayload[p++] = codingHistory.charCodeAt(i) & 255;
-      bextPayload[p++] = 0;
-    }
-    while (p < bextDataSize) bextPayload[p++] = 0;
-  }
-  let ixmlDataSize = 0;
-  let ixmlPayload = null;
-  if (ixml) {
-    const enc = globalThis.TextEncoder ? new TextEncoder() : null;
-    if (enc) ixmlPayload = enc.encode(ixml);
-    else {
-      const arr = new Uint8Array(ixml.length);
-      for (let i = 0; i < ixml.length; i++) arr[i] = ixml.charCodeAt(i) & 255;
-      ixmlPayload = arr;
-    }
-    ixmlDataSize = ixmlPayload.length;
-    if (ixmlDataSize % 2 === 1) ixmlDataSize++;
-  }
-  const fmtChunkSize = 8 + 16;
-  const bextChunkSize = bextPayload ? 8 + bextDataSize : 0;
-  const ixmlChunkSize = ixmlPayload ? 8 + ixmlDataSize : 0;
-  const dataChunkSize = 8 + dataSize + (dataSize % 2 === 1 ? 1 : 0);
-  const riffBodySize = 4 + fmtChunkSize + bextChunkSize + ixmlChunkSize + dataChunkSize;
-  const totalSize = 8 + riffBodySize;
-  const buffer = new ArrayBuffer(totalSize);
-  const view = new DataView(buffer);
-  function writeString(offset, str) {
-    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
-  }
-  writeString(0, "RIFF");
-  view.setUint32(4, riffBodySize, true);
-  writeString(8, "WAVE");
-  let ptr = 12;
-  writeString(ptr, "fmt ");
-  view.setUint32(ptr + 4, 16, true);
-  view.setUint16(ptr + 8, 1, true);
-  view.setUint16(ptr + 10, channels, true);
-  view.setUint32(ptr + 12, sampleRate, true);
-  view.setUint32(ptr + 16, byteRate, true);
-  view.setUint16(ptr + 20, blockAlign, true);
-  view.setUint16(ptr + 22, 16, true);
-  ptr += 8 + 16;
-  if (bextPayload) {
-    writeString(ptr, "bext");
-    view.setUint32(ptr + 4, bextDataSize, true);
-    ptr += 8;
-    new Uint8Array(buffer, ptr, bextDataSize).set(bextPayload);
-    ptr += bextDataSize;
-    if (bextDataSize % 2 === 1) {
-      view.setUint8(ptr, 0);
-      ptr++;
-    }
-  }
-  if (ixmlPayload) {
-    writeString(ptr, "iXML");
-    view.setUint32(ptr + 4, ixmlDataSize, true);
-    ptr += 8;
-    const dest = new Uint8Array(buffer, ptr, ixmlDataSize);
-    dest.set(ixmlPayload);
-    if (ixmlDataSize > ixmlPayload.length) {
-      for (let i = ixmlPayload.length; i < ixmlDataSize; i++) dest[i] = 0;
-    }
-    ptr += ixmlDataSize;
-    if (ixmlDataSize % 2 === 1) {
-      view.setUint8(ptr, 0);
-      ptr++;
-    }
-  }
-  writeString(ptr, "data");
-  view.setUint32(ptr + 4, dataSize, true);
-  ptr += 8;
-  let off = ptr;
-  for (let i = 0; i < samples.length; i++, off += 2) {
-    const s = Math.max(-1, Math.min(1, Number(samples[i])));
-    view.setInt16(off, s < 0 ? s * 32768 : s * 32767, true);
-  }
-  if (dataSize % 2 === 1) {
-    view.setUint8(off, 0);
-    off++;
-  }
-  const blob = new Blob([buffer], { type: "audio/wav" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name + `.wav`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-function read(bufferOrBlob) {
-  return __async(this, null, function* () {
-    let buffer;
-    if (bufferOrBlob instanceof Blob) buffer = yield bufferOrBlob.arrayBuffer();
-    else if (bufferOrBlob instanceof ArrayBuffer) buffer = bufferOrBlob;
-    else if (bufferOrBlob instanceof Uint8Array) {
-      const tmp = new ArrayBuffer(bufferOrBlob.byteLength);
-      new Uint8Array(tmp).set(bufferOrBlob);
-      buffer = tmp;
-    } else throw new TypeError("Expected Blob, ArrayBuffer or Uint8Array");
-    const view = new DataView(buffer);
-    const readStr = (off, len) => {
-      let s = "";
-      for (let i = 0; i < len && off + i < view.byteLength; i++) {
-        const c = view.getUint8(off + i);
-        if (c === 0) break;
-        s += String.fromCharCode(c);
-      }
-      return s;
-    };
-    if (readStr(0, 4) !== "RIFF" || readStr(8, 4) !== "WAVE") throw new Error("Not a valid WAVE file");
-    let offset = 12;
-    let fmt = null;
-    let dataOffset = -1;
-    let dataSize = 0;
-    let bextChunk = null;
-    let ixmlChunk = null;
-    const readFixedString = (off, len) => {
-      const bytes = [];
-      for (let i = 0; i < len && off + i < view.byteLength; i++) {
-        bytes.push(view.getUint8(off + i));
-      }
-      let end = bytes.length;
-      while (end > 0 && bytes[end - 1] === 0) end--;
-      return String.fromCharCode(...bytes.slice(0, end));
-    };
-    while (offset + 8 <= view.byteLength) {
-      const id = readStr(offset, 4);
-      const size = view.getUint32(offset + 4, true);
-      const chunkStart = offset + 8;
-      if (id === "fmt ") {
-        const audioFormat2 = view.getUint16(chunkStart, true);
-        const channels2 = view.getUint16(chunkStart + 2, true);
-        const sampleRate2 = view.getUint32(chunkStart + 4, true);
-        const byteRate = view.getUint32(chunkStart + 8, true);
-        const blockAlign = view.getUint16(chunkStart + 12, true);
-        const bitsPerSample2 = view.getUint16(chunkStart + 14, true);
-        fmt = { audioFormat: audioFormat2, channels: channels2, sampleRate: sampleRate2, byteRate, blockAlign, bitsPerSample: bitsPerSample2 };
-      } else if (id === "data") {
-        dataOffset = chunkStart;
-        dataSize = size;
-      } else if (id === "bext") {
-        let p2 = chunkStart;
-        const remaining = chunkStart + size - p2;
-        const readLen = (n) => Math.max(0, Math.min(n, chunkStart + size - p2));
-        const safeRead = (n) => {
-          const r = readLen(n);
-          const s = readFixedString(p2, r);
-          p2 += n;
-          return s;
-        };
-        const description = readFixedString(p2, Math.min(256, chunkStart + size - p2));
-        p2 += 256;
-        const originator = readFixedString(p2, Math.min(32, chunkStart + size - p2));
-        p2 += 32;
-        const originatorReference = readFixedString(p2, Math.min(32, chunkStart + size - p2));
-        p2 += 32;
-        const originationDate = readFixedString(p2, Math.min(10, chunkStart + size - p2));
-        p2 += 10;
-        const originationTime = readFixedString(p2, Math.min(8, chunkStart + size - p2));
-        p2 += 8;
-        let timeRefLow = 0;
-        let timeRefHigh = 0;
-        if (p2 + 8 <= chunkStart + size) {
-          timeRefLow = view.getUint32(p2, true);
-          timeRefHigh = view.getUint32(p2 + 4, true);
-        } else {
-          if (p2 + 4 <= chunkStart + size) timeRefLow = view.getUint32(p2, true);
-        }
-        p2 += 8;
-        let version = 0;
-        if (p2 + 2 <= chunkStart + size) {
-          version = view.getUint16(p2, true);
-        }
-        p2 += 2;
-        let umid = null;
-        if (version > 0 && p2 + 64 <= chunkStart + size) {
-          umid = new Uint8Array(buffer.slice(p2, p2 + 64));
-          p2 += 64;
-        } else if (version > 0) {
-          const avail = Math.max(0, chunkStart + size - p2);
-          if (avail > 0) {
-            umid = new Uint8Array(buffer.slice(p2, p2 + avail));
-            p2 += avail;
-          }
-        }
-        const reservedLen = 190;
-        const skipReserved = Math.min(reservedLen, Math.max(0, chunkStart + size - p2));
-        p2 += skipReserved;
-        let codingHistory = "";
-        if (p2 < chunkStart + size) {
-          const bytes = new Uint8Array(buffer, p2, chunkStart + size - p2);
-          let s = "";
-          for (let i = 0; i < bytes.length; i++) {
-            const c = bytes[i];
-            if (c === 0) break;
-            s += String.fromCharCode(c);
-          }
-          codingHistory = s;
-        }
-        let timeReferenceStr = "0";
-        try {
-          const BigIntFn = globalThis.BigInt;
-          if (typeof BigIntFn === "function") {
-            const hi = BigIntFn(timeRefHigh);
-            const lo = BigIntFn(timeRefLow);
-            const combined = hi << BigIntFn(32) | lo;
-            timeReferenceStr = combined.toString();
-          } else {
-            timeReferenceStr = (timeRefHigh * 4294967296 + timeRefLow).toString();
-          }
-        } catch (e) {
-          timeReferenceStr = (timeRefHigh * 4294967296 + timeRefLow).toString();
-        }
-        bextChunk = {
-          description: description || void 0,
-          originator: originator || void 0,
-          originatorReference: originatorReference || void 0,
-          originationDate: originationDate || void 0,
-          originationTime: originationTime || void 0,
-          timeReference: timeReferenceStr,
-          version,
-          umid,
-          codingHistory: codingHistory || void 0
-        };
-      } else if (id === "iXML" || id === "iXML") {
-        const bytes = new Uint8Array(buffer, chunkStart, size);
-        let s = "";
-        for (let i = 0; i < bytes.length; i++) {
-          const c = bytes[i];
-          if (c === 0) break;
-          s += String.fromCharCode(c);
-        }
-        ixmlChunk = s;
-      }
-      offset = chunkStart + size;
-      if (size % 2 === 1) offset++;
-    }
-    if (!fmt) throw new Error('Missing "fmt " chunk');
-    if (dataOffset < 0) throw new Error('Missing "data" chunk');
-    const { audioFormat, channels, sampleRate, bitsPerSample } = fmt;
-    const bytesPerSample = bitsPerSample / 8;
-    const totalFrames = Math.floor(dataSize / (bytesPerSample * channels));
-    const out = new Float32Array(totalFrames * channels);
-    let p = dataOffset;
-    if (audioFormat === 1) {
-      if (bitsPerSample === 8) {
-        for (let i = 0, o = 0; i < totalFrames * channels; i++, o++) {
-          const v = view.getUint8(p++);
-          out[o] = (v - 128) / 128;
-        }
-      } else if (bitsPerSample === 16) {
-        for (let i = 0, o = 0; i < totalFrames * channels; i++, o++) {
-          const v = view.getInt16(p, true);
-          p += 2;
-          out[o] = v < 0 ? v / 32768 : v / 32767;
-        }
-      } else if (bitsPerSample === 24) {
-        for (let i = 0, o = 0; i < totalFrames * channels; i++, o++) {
-          const b0 = view.getUint8(p++);
-          const b1 = view.getUint8(p++);
-          const b2 = view.getUint8(p++);
-          let val = b2 << 16 | b1 << 8 | b0;
-          if (val & 8388608) val |= ~16777215;
-          out[o] = val / 8388608;
-        }
-      } else if (bitsPerSample === 32) {
-        for (let i = 0, o = 0; i < totalFrames * channels; i++, o++) {
-          const v = view.getInt32(p, true);
-          p += 4;
-          out[o] = v < 0 ? v / 2147483648 : v / 2147483647;
-        }
-      } else {
-        throw new Error("Unsupported PCM bitsPerSample: " + bitsPerSample);
-      }
-    } else if (audioFormat === 3) {
-      if (bitsPerSample !== 32 && bitsPerSample !== 64) throw new Error("Unsupported float bit depth: " + bitsPerSample);
-      if (bitsPerSample === 32) {
-        for (let i = 0, o = 0; i < totalFrames * channels; i++, o++) {
-          out[o] = view.getFloat32(p, true);
-          p += 4;
-        }
-      } else {
-        for (let i = 0, o = 0; i < totalFrames * channels; i++, o++) {
-          out[o] = view.getFloat64(p, true);
-          p += 8;
-        }
-      }
-    } else {
-      throw new Error("Unsupported audio format: " + audioFormat);
-    }
-    return {
-      samples: out,
-      sampleRate,
-      channels,
-      bitsPerSample,
-      format: audioFormat,
-      frames: totalFrames,
-      bext: bextChunk,
-      ixml: ixmlChunk
-    };
-  });
-}
-function convertToIXML(xmlContent) {
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<BWFXML>
-    <IXML_VERSION>3.01</IXML_VERSION>
-    <PROJECT>Converted Audio File</PROJECT>
-    <NOTE>Converted to iXML format.</NOTE>
-    <HISTORY></HISTORY>
-    <USER>${xmlContent}</USER>
-</BWFXML>`;
-}
-
 // src/audio.ts
 console.debug("Audio module loaded");
 window.FFT = FFT;
@@ -949,7 +560,6 @@ function loadAudioFile(file) {
   return __async(this, null, function* () {
     const headerBuffer = yield file.slice(0, 256 * 1024).arrayBuffer();
     function getExt(name) {
-      var _a, _b;
       const ext2 = (name.split(".").pop() || "").toLowerCase();
       try {
         const dvh = new DataView(headerBuffer);
@@ -969,18 +579,18 @@ function loadAudioFile(file) {
             const xmlString = new TextDecoder().decode(xmlBytes);
             file.__iXMLraw = xmlString;
             try {
-              const converter = ((_a = read) == null ? void 0 : _a.convertiXMLtoObject) || ((_b = window == null ? void 0 : window.wave) == null ? void 0 : _b.convertiXMLtoObject);
-              if (typeof converter === "function") {
-                try {
-                  const obj = converter(xmlString);
-                  file.__iXML = obj;
-                  console.log("iXML converted to object", obj);
-                } catch (convErr) {
-                  console.warn("convertiXMLtoObject failed:", convErr);
-                  file.__iXMLError = String(convErr);
-                }
-              } else {
-                console.debug("No convertiXMLtoObject available; raw iXML attached to file.__iXMLraw");
+              const parser = new DOMParser();
+              file.__iXML = parser.parseFromString(file.__iXMLraw, "application/xml");
+              const userNode = file.__iXML.querySelector("USER");
+              if (userNode) {
+                const meta = {};
+                Array.from(userNode.children).forEach((el) => {
+                  const key = el.tagName.toLowerCase();
+                  const txt = (el.textContent || "").trim();
+                  const num = Number(txt);
+                  meta[key] = txt === "" ? null : Number.isFinite(num) ? num : txt;
+                });
+                file.metadata = Object.assign(file.metadata || {}, meta);
               }
             } catch (e) {
               console.warn("iXML conversion attempt failed:", e);
@@ -1103,16 +713,12 @@ function loadAudioFile(file) {
     }
     const ext = getExt(file.name);
     const mime = file.type || "unknown";
-    let metadata = {};
+    let metadata = __spreadValues({}, file.__iXML);
     metadata.filename = file.name;
     metadata.size = file.size;
     metadata.mime = mime;
     metadata.ext = ext;
-    const ixmlObj = file.__iXML;
-    const ixmlRaw = file.__iXMLraw;
-    const ixmlErr = file.__iXMLError;
-    metadata.iXMLdata = ixmlRaw;
-    if (ixmlErr) metadata.iXMLError = String(ixmlErr);
+    metadata.iXML = file.metadata || null;
     const wavInfo = parseWav(headerBuffer);
     if (wavInfo) {
       metadata.format = "wav";
@@ -2278,6 +1884,182 @@ var AudioRecorder = class {
   }
 };
 
+// src/wave.ts
+function download(samples, sampleRate = 48e3, name = "output", bext, ixml) {
+  const channels = 1;
+  const bytesPerSample = 4;
+  const blockAlign = channels * bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = samples.length * bytesPerSample;
+  let bextDataSize = 0;
+  let bextPayload = null;
+  if (bext) {
+    const description = bext.description || "";
+    const originator = bext.originator || "";
+    const originatorReference = bext.originatorReference || "";
+    const originationDate = bext.originationDate || "";
+    const originationTime = bext.originationTime || "";
+    const codingHistory = bext.codingHistory || "";
+    const version = typeof bext.version === "number" ? bext.version : 1;
+    const umidBytes = bext.umid && bext.umid.length ? bext.umid : null;
+    const baseLen = 602;
+    const codingLen = codingHistory ? codingHistory.length + 1 : 0;
+    bextDataSize = baseLen + codingLen;
+    if (bextDataSize % 2 === 1) bextDataSize++;
+    bextPayload = new Uint8Array(bextDataSize);
+    let p = 0;
+    const writeFixed = (str, len) => {
+      for (let i = 0; i < len; i++) {
+        const code = i < str.length ? str.charCodeAt(i) & 255 : 0;
+        bextPayload[p++] = code;
+      }
+    };
+    writeFixed(description, 256);
+    writeFixed(originator, 32);
+    writeFixed(originatorReference, 32);
+    writeFixed(originationDate, 10);
+    writeFixed(originationTime, 8);
+    let timeRefLow = 0;
+    let timeRefHigh = 0;
+    try {
+      const tr = bext.timeReference || "0";
+      const BigIntFn = globalThis.BigInt;
+      if (typeof BigIntFn === "function") {
+        const t = BigIntFn(tr);
+        const mask = BigIntFn(4294967295);
+        timeRefLow = Number(t & mask);
+        timeRefHigh = Number(t >> BigIntFn(32) & mask);
+      } else {
+        const n = Number(tr || 0);
+        timeRefLow = Math.floor(n % 4294967296);
+        timeRefHigh = Math.floor(n / 4294967296);
+      }
+    } catch (e) {
+      timeRefLow = 0;
+      timeRefHigh = 0;
+    }
+    bextPayload[p++] = timeRefLow & 255;
+    bextPayload[p++] = timeRefLow >>> 8 & 255;
+    bextPayload[p++] = timeRefLow >>> 16 & 255;
+    bextPayload[p++] = timeRefLow >>> 24 & 255;
+    bextPayload[p++] = timeRefHigh & 255;
+    bextPayload[p++] = timeRefHigh >>> 8 & 255;
+    bextPayload[p++] = timeRefHigh >>> 16 & 255;
+    bextPayload[p++] = timeRefHigh >>> 24 & 255;
+    bextPayload[p++] = version & 255;
+    bextPayload[p++] = version >>> 8 & 255;
+    if (version > 0) {
+      if (umidBytes) {
+        for (let i = 0; i < 64; i++) bextPayload[p++] = i < umidBytes.length ? umidBytes[i] : 0;
+      } else {
+        for (let i = 0; i < 64; i++) bextPayload[p++] = 0;
+      }
+    } else {
+      for (let i = 0; i < 64; i++) bextPayload[p++] = 0;
+    }
+    for (let i = 0; i < 190; i++) bextPayload[p++] = 0;
+    if (codingHistory) {
+      for (let i = 0; i < codingHistory.length; i++) bextPayload[p++] = codingHistory.charCodeAt(i) & 255;
+      bextPayload[p++] = 0;
+    }
+    while (p < bextDataSize) bextPayload[p++] = 0;
+  }
+  let ixmlDataSize = 0;
+  let ixmlPayload = null;
+  if (ixml) {
+    const enc = globalThis.TextEncoder ? new TextEncoder() : null;
+    if (enc) ixmlPayload = enc.encode(ixml);
+    else {
+      const arr = new Uint8Array(ixml.length);
+      for (let i = 0; i < ixml.length; i++) arr[i] = ixml.charCodeAt(i) & 255;
+      ixmlPayload = arr;
+    }
+    ixmlDataSize = ixmlPayload.length;
+    if (ixmlDataSize % 2 === 1) ixmlDataSize++;
+  }
+  const fmtChunkSize = 8 + 16;
+  const bextChunkSize = bextPayload ? 8 + bextDataSize : 0;
+  const ixmlChunkSize = ixmlPayload ? 8 + ixmlDataSize : 0;
+  const dataChunkSize = 8 + dataSize + (dataSize % 2 === 1 ? 1 : 0);
+  const riffBodySize = 4 + fmtChunkSize + bextChunkSize + ixmlChunkSize + dataChunkSize;
+  const totalSize = 8 + riffBodySize;
+  const buffer = new ArrayBuffer(totalSize);
+  const view = new DataView(buffer);
+  function writeString(offset, str) {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+  }
+  writeString(0, "RIFF");
+  view.setUint32(4, riffBodySize, true);
+  writeString(8, "WAVE");
+  let ptr = 12;
+  writeString(ptr, "fmt ");
+  view.setUint32(ptr + 4, 16, true);
+  view.setUint16(ptr + 8, 1, true);
+  view.setUint16(ptr + 10, channels, true);
+  view.setUint32(ptr + 12, sampleRate, true);
+  view.setUint32(ptr + 16, byteRate, true);
+  view.setUint16(ptr + 20, blockAlign, true);
+  view.setUint16(ptr + 22, 16, true);
+  ptr += 8 + 16;
+  if (bextPayload) {
+    writeString(ptr, "bext");
+    view.setUint32(ptr + 4, bextDataSize, true);
+    ptr += 8;
+    new Uint8Array(buffer, ptr, bextDataSize).set(bextPayload);
+    ptr += bextDataSize;
+    if (bextDataSize % 2 === 1) {
+      view.setUint8(ptr, 0);
+      ptr++;
+    }
+  }
+  if (ixmlPayload) {
+    writeString(ptr, "iXML");
+    view.setUint32(ptr + 4, ixmlDataSize, true);
+    ptr += 8;
+    const dest = new Uint8Array(buffer, ptr, ixmlDataSize);
+    dest.set(ixmlPayload);
+    if (ixmlDataSize > ixmlPayload.length) {
+      for (let i = ixmlPayload.length; i < ixmlDataSize; i++) dest[i] = 0;
+    }
+    ptr += ixmlDataSize;
+    if (ixmlDataSize % 2 === 1) {
+      view.setUint8(ptr, 0);
+      ptr++;
+    }
+  }
+  writeString(ptr, "data");
+  view.setUint32(ptr + 4, dataSize, true);
+  ptr += 8;
+  let off = ptr;
+  for (let i = 0; i < samples.length; i++, off += 2) {
+    const s = Math.max(-1, Math.min(1, Number(samples[i])));
+    view.setInt16(off, s < 0 ? s * 32768 : s * 32767, true);
+  }
+  if (dataSize % 2 === 1) {
+    view.setUint8(off, 0);
+    off++;
+  }
+  const blob = new Blob([buffer], { type: "audio/wav" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name + `.wav`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+function convertToIXML(xmlContent) {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<BWFXML>
+    <IXML_VERSION>3.01</IXML_VERSION>
+    <PROJECT>Converted Audio File</PROJECT>
+    <NOTE>Converted to iXML format.</NOTE>
+    <HISTORY></HISTORY>
+    <USER>${xmlContent}</USER>
+</BWFXML>`;
+}
+
 // src/app.ts
 console.debug("App module loaded");
 var root = document.documentElement;
@@ -2297,6 +2079,8 @@ var analyzePolarBtn = document.getElementById("analyzePolarBtn");
 var polarStatusEl = document.getElementById("polarStatus");
 responseFileUploadInput.addEventListener("change", () => {
   var _a;
+  console.log("File changed.");
+  console.log(audio.loadAudioFile(responseFileUploadInput.files[0]));
   analyzeUploadBtn.disabled = !((_a = responseFileUploadInput.files) == null ? void 0 : _a.length);
 });
 function normalizeAngleDeg(angleDeg) {
@@ -2498,14 +2282,12 @@ downloadRecordingBtn == null ? void 0 : downloadRecordingBtn.addEventListener("c
         <ANGLE>${measurementAngleInput.value}</ANGLE>
         <LOCATION>${measurementLocationInput.value}</LOCATION>
         <COMMENT>${measurementCommentInput.value}</COMMENT>
-        <STIMULUS>
-            <TYPE>chirp</TYPE>
-            <START>${sweepStartFreqInput.value}</START>
-            <END>${sweepEndFreqInput.value}</END>
-            <FADE>0.01</FADE>
-            <DURATION>${sweepDurationInput.value}</DURATION>
-            <SAMPLE_RATE>48000</SAMPLE_RATE>
-        </STIMULUS>
+        <STIMULUS_TYPE>chirp</STIMULUS_TYPE>
+        <STIMULUS_START_FREQ>${sweepStartFreqInput.value}</STIMULUS_START_FREQ>
+        <STIMULUS_END_FREQ>${sweepEndFreqInput.value}</STIMULUS_END_FREQ>
+        <STIMULUS_DURATION>${sweepDurationInput.value}</STIMULUS_DURATION>
+        <STIMULUS_FADE>0.01</STIMULUS_FADE>
+        <STIMULUS_SAMPLE_RATE>48000</STIMULUS_SAMPLE_RATE>
         <ORIGIN>Acquisition Module</ORIGIN>`)
     );
   } catch (err) {
@@ -3059,7 +2841,6 @@ function createDirectivityPlotTab(responseDatas, referenceData, anglesDeg) {
   window.requestAnimationFrame(() => {
     window.requestAnimationFrame(() => {
       var _a;
-      switchTab(tabId);
       const startTime = performance.now();
       const useCustomAngles = !!anglesDeg && anglesDeg.length === responseDatas.length;
       const angles = useCustomAngles ? anglesDeg.map(normalizeAngleDeg) : responseDatas.map((_, i) => 360 * i / responseDatas.length);
@@ -3079,10 +2860,8 @@ function createDirectivityPlotTab(responseDatas, referenceData, anglesDeg) {
           0,
           referenceFFT
         );
-        console.warn(`LOOP TOOK ${performance.now() - loopStartTime} milliseconds`);
         fftr.magnitude = fftr.magnitude.map((v, i2) => Math.abs(v));
         const ffto = smoothFFT(fftr, 1 / 3, 1 / 48);
-        console.warn(`LOOP+ TOOK ${performance.now() - loopStartTime} milliseconds`);
         smoothTransfers.push(ffto);
         transfers.push(fftr);
       }
@@ -3280,6 +3059,79 @@ function loadTestPolarData() {
     );
   });
 }
+var fileMap = /* @__PURE__ */ new Map();
+function createListItem(file, id, audioObject) {
+  var _a, _b, _c, _d, _e, _f;
+  const li = document.createElement("li");
+  li.dataset.id = id;
+  li.style.display = "flex";
+  li.classList.add("file-list-item");
+  li.innerHTML = `
+        <div style="flex:1;min-width:0;">
+            <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${file.name}</div>
+            <div style="font-size:12px;color:#666;">${(file.size / 1024).toFixed(1)} KB \u2022 ${file.type || "audio/*"}</div>
+            <div style="font-size:12px;color:#666;">Duration: ${audioObject.duration.toFixed(2)} seconds</div>
+            <div style="font-size:12px;color:#666;">Angle: ${(_c = (_b = (_a = audioObject == null ? void 0 : audioObject.metadata) == null ? void 0 : _a.iXML) == null ? void 0 : _b.angle) != null ? _c : "N/A"} deg</div>
+            <div style="font-size:12px;color:#666;">Origin: ${(_f = (_e = (_d = audioObject == null ? void 0 : audioObject.metadata) == null ? void 0 : _d.iXML) == null ? void 0 : _e.origin) != null ? _f : "Imported"}</div>
+        </div>
+        <div class="file-list-item-controls flex:1;min-width:0;">
+            <div><label style="font-size:13px;"><input type="radio" name="selectedResponse" value="${id}"> Response</label></div>
+            <div><label style="font-size:13px;"><input type="radio" name="selectedReference" value="${id}"> Reference</label></div>
+            <div><button type="button" data-action="remove" style="margin-left:8px;">Remove</button></div>
+        </div>
+    `;
+  return li;
+}
+function updateAnalyzeState() {
+  const hasResponse = !!document.querySelector('input[name="selectedResponse"]:checked');
+  const analyzeBtn = document.getElementById("analyzeUploadBtn");
+}
+function addFilesFromInput(fileList) {
+  Array.from(fileList).forEach((f) => __async(null, null, function* () {
+    var _a;
+    const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const a = yield audio.loadAudioFile(f).catch((err) => {
+      alert(`Failed to load audio file "${f.name}": ${err.message || err}`);
+    });
+    fileMap.set(id, f);
+    const li = createListItem(f, id, a);
+    (_a = document.getElementById("fileList")) == null ? void 0 : _a.appendChild(li);
+  }));
+  updateAnalyzeState();
+}
+document.addEventListener("DOMContentLoaded", () => {
+  const respInput = document.getElementById("responseFileUpload");
+  const refInput = document.getElementById("referenceFileUpload");
+  if (respInput) respInput.addEventListener("change", (e) => {
+    var _a, _b;
+    if ((_b = (_a = e == null ? void 0 : e.target) == null ? void 0 : _a.files) == null ? void 0 : _b.length) addFilesFromInput(e.target.files);
+    e.target.value = "";
+  });
+  if (refInput) refInput.addEventListener("change", (e) => {
+    var _a, _b;
+    if ((_b = (_a = e == null ? void 0 : e.target) == null ? void 0 : _a.files) == null ? void 0 : _b.length) addFilesFromInput(e.target.files);
+    e.target.value = "";
+  });
+  document.getElementById("fileList").addEventListener("click", (e) => {
+    const li = e.target.closest("li");
+    if (!li) return;
+    const id = li.dataset.id;
+    if (e.target.matches('button[data-action="remove"]')) {
+      const responseRadio = document.querySelector(`input[name="selectedResponse"][value="${id}"]`);
+      const referenceRadio = document.querySelector(`input[name="selectedReference"][value="${id}"]`);
+      if (responseRadio && responseRadio.checked) responseRadio.checked = false;
+      if (referenceRadio && referenceRadio.checked) referenceRadio.checked = false;
+      fileMap.delete(id);
+      li.remove();
+      updateAnalyzeState();
+    }
+  });
+  document.getElementById("fileList").addEventListener("change", (e) => {
+    if (e.target.name === "selectedResponse") {
+      updateAnalyzeState();
+    }
+  });
+});
 loadTestPolarData();
 loadState();
 //# sourceMappingURL=app.js.map

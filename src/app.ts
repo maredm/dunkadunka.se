@@ -31,6 +31,8 @@ const polarStatusEl = document.getElementById('polarStatus') as HTMLElement;
 
 // Enable analyze button when response file is selected
 responseFileUploadInput.addEventListener('change', () => {
+    console.log("File changed.")
+    console.log(audio.loadAudioFile(responseFileUploadInput.files[0]))
     analyzeUploadBtn.disabled = !responseFileUploadInput.files?.length;
 });
 
@@ -297,14 +299,12 @@ downloadRecordingBtn?.addEventListener('click', () => {
         <ANGLE>${measurementAngleInput.value}</ANGLE>
         <LOCATION>${measurementLocationInput.value}</LOCATION>
         <COMMENT>${measurementCommentInput.value}</COMMENT>
-        <STIMULUS>
-            <TYPE>chirp</TYPE>
-            <START>${sweepStartFreqInput.value}</START>
-            <END>${sweepEndFreqInput.value}</END>
-            <FADE>0.01</FADE>
-            <DURATION>${sweepDurationInput.value}</DURATION>
-            <SAMPLE_RATE>48000</SAMPLE_RATE>
-        </STIMULUS>
+        <STIMULUS_TYPE>chirp</STIMULUS_TYPE>
+        <STIMULUS_START_FREQ>${sweepStartFreqInput.value}</STIMULUS_START_FREQ>
+        <STIMULUS_END_FREQ>${sweepEndFreqInput.value}</STIMULUS_END_FREQ>
+        <STIMULUS_DURATION>${sweepDurationInput.value}</STIMULUS_DURATION>
+        <STIMULUS_FADE>0.01</STIMULUS_FADE>
+        <STIMULUS_SAMPLE_RATE>48000</STIMULUS_SAMPLE_RATE>
         <ORIGIN>Acquisition Module</ORIGIN>`));
     } catch (err) {
         console.error('Failed to create/download recording:', err);
@@ -976,7 +976,7 @@ function createDirectivityPlotTab(responseDatas: Audio[], referenceData: Audio, 
     window.requestAnimationFrame(() => {
     window.requestAnimationFrame(() => {
     
-    switchTab(tabId);
+    //switchTab(tabId);
 
     const startTime = performance.now()
 
@@ -1003,12 +1003,10 @@ function createDirectivityPlotTab(responseDatas: Audio[], referenceData: Audio, 
             0,
             referenceFFT,
         );
-        console.warn(`LOOP TOOK ${performance.now() - loopStartTime} milliseconds`)
         //
         fftr.magnitude = fftr.magnitude.map((v, i) => Math.abs(v));
         
         const ffto = smoothFFT(fftr, 1/3, 1/48);
-        console.warn(`LOOP+ TOOK ${performance.now() - loopStartTime} milliseconds`)
         smoothTransfers.push(ffto);
         transfers.push(fftr);
     }
@@ -1246,6 +1244,84 @@ async function loadTestPolarData(): Promise<void> {
         angles
     );
 }
+
+const fileMap = new Map();
+function createListItem(file: File, id: string, audioObject: Audio): HTMLLIElement {
+    const li = document.createElement('li');
+    li.dataset.id = id;
+    li.style.display = 'flex';
+    li.classList.add('file-list-item');
+    li.innerHTML = `
+        <div style="flex:1;min-width:0;">
+            <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${file.name}</div>
+            <div style="font-size:12px;color:#666;">${(file.size/1024).toFixed(1)} KB • ${file.type || 'audio/*'}</div>
+            <div style="font-size:12px;color:#666;">Duration: ${audioObject.duration.toFixed(2)} seconds</div>
+            <div style="font-size:12px;color:#666;">Angle: ${audioObject?.metadata?.iXML?.angle ?? 'N/A'} deg</div>
+            <div style="font-size:12px;color:#666;">Origin: ${audioObject?.metadata?.iXML?.origin ?? 'Imported'}</div>
+        </div>
+        <div class="file-list-item-controls flex:1;min-width:0;">
+            <div><label style="font-size:13px;"><input type="radio" name="selectedResponse" value="${id}"> Response</label></div>
+            <div><label style="font-size:13px;"><input type="radio" name="selectedReference" value="${id}"> Reference</label></div>
+            <div><button type="button" data-action="remove" style="margin-left:8px;">Remove</button></div>
+        </div>
+    `;
+    return li;
+}
+
+function updateAnalyzeState(){
+    const hasResponse = !!document.querySelector('input[name="selectedResponse"]:checked');
+    const analyzeBtn = document.getElementById('analyzeUploadBtn');
+}
+
+function addFilesFromInput(fileList: FileList){
+    Array.from(fileList).forEach(async f=>{
+        const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
+        const a = await audio.loadAudioFile(f).catch(err=>{
+            alert(`Failed to load audio file "${f.name}": ${err.message || err}`);
+        });
+        fileMap.set(id, f);
+        const li = createListItem(f, id, a);
+        document.getElementById('fileList')?.appendChild(li);
+    });
+    updateAnalyzeState();
+}
+
+document.addEventListener('DOMContentLoaded', ()=>{
+    const respInput = document.getElementById('responseFileUpload');
+    const refInput = document.getElementById('referenceFileUpload'); // exists below
+    if(respInput) respInput.addEventListener('change', e => {
+        if(e?.target?.files?.length) addFilesFromInput(e.target.files);
+        e.target.value = '';
+    });
+    if(refInput) refInput.addEventListener('change', e => {
+        if(e?.target?.files?.length) addFilesFromInput(e.target.files);
+        e.target.value = '';
+    });
+
+    document.getElementById('fileList').addEventListener('click', e=>{
+        const li = e.target.closest('li');
+        if(!li) return;
+        const id = li.dataset.id;
+        if(e.target.matches('button[data-action="remove"]')){
+            // remove
+            // if removed file was chosen in underlying file inputs, clear radios
+            const responseRadio = document.querySelector(`input[name="selectedResponse"][value="${id}"]`);
+            const referenceRadio = document.querySelector(`input[name="selectedReference"][value="${id}"]`);
+            if(responseRadio && responseRadio.checked) responseRadio.checked = false;
+            if(referenceRadio && referenceRadio.checked) referenceRadio.checked = false;
+            fileMap.delete(id);
+            li.remove();
+            updateAnalyzeState();
+        }
+    });
+
+    document.getElementById('fileList').addEventListener('change', e=>{
+        if(e.target.name === 'selectedResponse'){
+            // ensure analyze button is enabled/disabled
+            updateAnalyzeState();
+        }
+    });
+});
 
 loadTestPolarData();
 // Load state on page load

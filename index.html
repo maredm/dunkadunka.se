@@ -33,21 +33,18 @@
         <div class="tab-content active" data-content="upload">
             <div class="tab-inner-content">
                 <div class="loose-container">
-                    <h2>Waveform Frequency Response Analyzer</h2>
+                    <h2>Upload waveforms/measurements to analyze</h2>
                     <p class="info">Upload an audio file to analyze its frequency content and optionally compare it to a reference/stimulus file.</p>
                     
                     <div class="upload-section">
-                        <h3>Response Waveform *</h3>
-                        <input type="file" id="responseFileUpload" accept="audio/*,.wav,.mp3,.flac,.ogg">
-                        <p class="info">Required: The waveform to analyze</p>
-                    </div>
+                        <p>
+                            <input type="file" id="responseFileUpload" accept="audio/*,.wav,.mp3,.flac,.ogg" multiple>
+                            <label for="responseFileUpload" style="display: inline-block; margin-top: 1rem;" class="button button-custom button-custom-secondary">Select files to waveforms</label>
+                        </p>
+                        <p class="info">Select one or more audio files. Then pick which file is the Response and optionally which is the Reference.</p>
 
-                    <div class="upload-section">
-                        <h3>Reference/Stimulus File</h3>
-                        <input type="file" id="referenceFileUpload" accept="audio/*,.wav,.mp3,.flac,.ogg">
-                        <p class="info">Optional: Reference signal for frequency response calculation</p>
+                        <ul id="fileList" class="file-list" style="list-style:none;padding:0;margin-top:8px;"></ul>
                     </div>
-
                     <button id="analyzeUploadBtn" class="button-custom button-custom-primary" disabled>Analyze Frequency Response</button>
                 </div>
             </div>

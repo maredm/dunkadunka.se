@@ -778,11 +778,10 @@ label.button-custom:active {
   padding-top: 7px;
 }
 .loose-container {
-  font-family: 'Newsreader', Georgia, 'Times New Roman', Times, serif;
   margin: 0 auto;
   padding: 30px;
   border: 1px solid var(--border);
-  width: 210mm;
+  max-width: 210mm;
   border-radius: var(--radius-md);
   background-color: var(--color-white);
 }
@@ -938,6 +937,34 @@ img {
   font-size: var(--text-sm);
   line-height: var(--tw-leading, var(--text-sm--line-height));
   color: #24292e;
+}
+.file-list-item {
+  display: flex;
+  margin-bottom: 8px;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  border: 1px solid #d78b3a;
+  border-radius: 8px;
+  background-color: #fffaf4;
+}
+.file-list-item:hover {
+  border: 2px solid #d78b3a;
+  padding: 5px 11px;
+}
+.file-list-item:disabled {
+  border: 2px solid #b36a2c;
+  padding: 5px 11px;
+}
+input[type="file"] {
+  display: none;
+}
+input[type="file"]::after {
+  content: 'Choose File';
+  border: 1px solid #ccc;
+  display: inline-block;
+  padding: 6px 12px;
+  cursor: pointer;
 }
 .param-row {
   display: flex;

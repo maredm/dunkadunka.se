@@ -102,21 +102,19 @@ async function loadAudioFile(file: File): Promise<Audio> {
                 // prefer convertiXMLtoObject exported by ./wave (if available on imported read)
                 // or a global window.wave.convertiXMLtoObject if provided by user's environment.
                 try {
-                const converter =
-                    (read as any)?.convertiXMLtoObject ||
-                    (window as any)?.wave?.convertiXMLtoObject;
-                if (typeof converter === 'function') {
-                    try {
-                    const obj = converter(xmlString);
-                    (file as any).__iXML = obj;
-                    console.log('iXML converted to object', obj);
-                    } catch (convErr) {
-                    console.warn('convertiXMLtoObject failed:', convErr);
-                    (file as any).__iXMLError = String(convErr);
+                    const parser = new DOMParser();
+                    (file as any).__iXML = parser.parseFromString((file as any).__iXMLraw, "application/xml");
+                    const userNode = (file as any).__iXML.querySelector("USER");
+                    if (userNode) {
+                        const meta: { [key: string]: string | number | null } = {};
+                        Array.from(userNode.children).forEach((el: any) => {
+                            const key = el.tagName.toLowerCase();
+                            const txt = (el.textContent || '').trim();
+                            const num = Number(txt);
+                            meta[key] = txt === '' ? null : (Number.isFinite(num) ? num : txt);
+                        });
+                        (file as any).metadata = Object.assign((file as any).metadata || {}, meta);
                     }
-                } else {
-                    console.debug('No convertiXMLtoObject available; raw iXML attached to file.__iXMLraw');
-                }
                 } catch (e) {
                 console.warn('iXML conversion attempt failed:', e);
                 }
@@ -255,21 +253,14 @@ async function loadAudioFile(file: File): Promise<Audio> {
 
     const ext = getExt(file.name);
     const mime = file.type || 'unknown';
-    let metadata: {[Key: string]: string | number | null} = {};
+    let metadata: {[Key: string]: string | number | null} = {...(file as any).__iXML};
 
     // Basic file info
     metadata.filename = file.name;
     metadata.size = file.size;
     metadata.mime = mime;
     metadata.ext = ext;
-
-    // Attach any iXML data discovered during header scan.
-    // Prefer the converted object if available, otherwise include raw iXML string.
-    const ixmlObj = (file as any).__iXML;
-    const ixmlRaw = (file as any).__iXMLraw;
-    const ixmlErr = (file as any).__iXMLError;
-    metadata.iXMLdata = ixmlRaw;
-    if (ixmlErr) metadata.iXMLError = String(ixmlErr);
+    metadata.iXML = (file as any).metadata || null;
 
     const wavInfo = parseWav(headerBuffer);
     if (wavInfo) {
