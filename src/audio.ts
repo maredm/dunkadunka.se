@@ -835,7 +835,7 @@ export function twoChannelFFT(dataArray: Float32Array | Float32Array, reference:
     const h = new Float32Array(half);
     const phase = new Float32Array(half);
     for (let i = 0; i < half; i++) {
-        h[i] = refMag[i] / sigMag[i];
+        h[i] = sigMag[i] / ( refMag[i] || 1e-20);
         phase[i] = sigPhase[i] - refPhase[i];
     }
 
@@ -867,7 +867,15 @@ export function computeFFTFromIR(ir: ImpulseResponseResult, f_phase_wrap: number
         } else {
             const tmp = fft.createComplexArray();
             if (ir.ir_complex) {
-                tmp.set(ir.ir_complex.subarray ? ir.ir_complex.subarray(0, Math.min(ir.ir_complex.length, tmp.length)) : ir.ir_complex.slice(0, tmp.length));
+                // Use fast typed-array set if available, otherwise fall back to element-wise copy
+                if (typeof (tmp as any).set === 'function' && (ir.ir_complex as any).subarray) {
+                    (tmp as any).set((ir.ir_complex as any).subarray(0, Math.min(ir.ir_complex.length, tmp.length)));
+                } else {
+                    const len = Math.min(ir.ir_complex.length, tmp.length);
+                    for (let i = 0; i < len; i++) {
+                        tmp[i] = (ir.ir_complex as any)[i];
+                    }
+                }
             }
             fft.transform(out, tmp);
         }

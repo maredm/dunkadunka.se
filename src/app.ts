@@ -1,9 +1,9 @@
-import { Audio, computeFFT, updatedFFT, computeFFTFromIR, db, FFTResult, groupDelays, ImpulseResponseResult, loadAudioFromFilename, rms, smoothFFT, twoChannelFFT, twoChannelImpulseResponse } from "./audio";
+import { Audio, computeFFT, updatedFFT, computeFFTFromIR, db, FFTResult, groupDelays, ImpulseResponseResult, loadAudioFromFilename, rms, smoothFFT, twoChannelFFT, twoChannelImpulseResponse, dbToLinear } from "./audio";
 import { Farina, plotDistortion, plotTHD } from "./farina";
 import { storage } from "./storage";
 import { audio } from "./audio";
 import "./device-settings";
-import { linspace, max, nextPow2 } from "./math";
+import { average, linspace, max, nextPow2 } from "./math";
 import { COLORS, plot } from "./plotting";
 import { AudioRecorder } from "./recorder";
 import { download, BextChunk, convertToIXML } from "./wave";
@@ -1036,21 +1036,7 @@ function createDirectivityPlotTab(responseDatas: Audio[], referenceData: Audio, 
     tab.innerHTML = `<span class="tab-icon-analysis"></span>${shortName} <span class="tab-close">✕</span>`;
     tabsInnerContainer.appendChild(tab);
 
-    const content = document.createElement('div');
-    content.className = 'tab-content';
-    content.dataset.content = tabId;
-    content.innerHTML = `
-        <div class="flex h-full">
-        <div class="flex-1 main-content">
-            <div class="grid grid-cols-6 gap-[1px] bg-[#ddd] border-b border-[#ddd] plot-outer"></div>
-        </div>
-        </div>
-    `;
-    tabContents.appendChild(content);
 
-    window.requestAnimationFrame(() => {
-    window.requestAnimationFrame(() => {
-    
     // Create tab content
     const content = document.createElement('div');
     content.className = 'tab-content';
@@ -1094,6 +1080,10 @@ function createDirectivityPlotTab(responseDatas: Audio[], referenceData: Audio, 
         
     `;
     tabContents.appendChild(content);
+
+    window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
+    
     switchTab(tabId);
 
     const startTime = performance.now()
@@ -1110,6 +1100,7 @@ function createDirectivityPlotTab(responseDatas: Audio[], referenceData: Audio, 
     
     const calcStartTime = performance.now()
     const transfers: FFTResult[] = [];
+    const smoothTransfers: FFTResult[] = [];
     for (let i = 0; i < responseDatas.length; i++) {
         const resp = responseDatas[i];
         const loopStartTime = performance.now()
@@ -1122,10 +1113,11 @@ function createDirectivityPlotTab(responseDatas: Audio[], referenceData: Audio, 
         );
         console.warn(`LOOP TOOK ${performance.now() - loopStartTime} milliseconds`)
         //
-        fftr.magnitude = db(fftr.magnitude.map((v, i) => Math.abs(v)));
+        fftr.magnitude = fftr.magnitude.map((v, i) => Math.abs(v));
         
-        const ffto = smoothFFT(fftr, 1/3, 1/24);
+        const ffto = smoothFFT(fftr, 1/3, 1/48);
         console.warn(`LOOP+ TOOK ${performance.now() - loopStartTime} milliseconds`)
+        smoothTransfers.push(ffto);
         transfers.push(fftr);
     }
     const calcEndTime = performance.now()
@@ -1145,14 +1137,21 @@ function createDirectivityPlotTab(responseDatas: Audio[], referenceData: Audio, 
         normIdx = i;
         }
     }
+    
     transfers.push(transfers[0]); // close the circle
     angles.push(360); // close the circle
 
+    // cycle array by 16 indices to center front at 0 deg
+    const cycleBy = 18;
+    const cycleTransfers = smoothTransfers.slice(cycleBy).concat(smoothTransfers.slice(0, cycleBy));
+
+
+    const asngles = angles.map(a => a-180);
+
     // z[angleIndex][freqIndex]
-    const z: any = transfers.map((tf) => {
+    const z: any = cycleTransfers.map((tf) => {
         const magDb = db(tf.magnitude);
-        const ref = magDb[normIdx] ?? 0;
-        return magDb.map((v) => v - ref);
+        return magDb.map((v, i) => v - db(smoothTransfers[0].magnitude)[i]);
     });
 
         
@@ -1164,12 +1163,13 @@ function createDirectivityPlotTab(responseDatas: Audio[], referenceData: Audio, 
         [
         {
             type: 'heatmap',
-            x: Array.from(baseFreq),
-            y: angles,
+            x: smoothTransfers[0].frequency,
+            y: asngles,
             z,
-            colorscale: 'Jet',
-            zmin: -50,
-            zmax: 0,
+            colorscale: 'Portland',
+            zmin: -24,
+            contours: { coloring: '#fff', showlines: true, start: -36, end: 0, size: 6 },
+            zmax: 6,
             zsmooth: 'best',
             colorbar: { title: 'dB (norm @ 1 kHz)' }
         } as any
@@ -1179,10 +1179,126 @@ function createDirectivityPlotTab(responseDatas: Audio[], referenceData: Audio, 
         'Frequency (Hz)',
         'Angle (deg)',
         { type: 'log', range: [Math.log10(20), Math.log10(20000)] },
-        { range: [0, 360] },
+        { range: [-180, 180] },
         { margin: { l: 60, r: 20, t: 40, b: 50 } },
         false
     );
+
+    // Calculate the average response.
+    const avgMagnitude = new Float32Array(baseFreq.length);
+    for (let i = 0; i < baseFreq.length; i++) {
+        let sum = 0;
+        for (let j = 0; j < transfers.length - 1; j++) {
+            sum += transfers[j].magnitude[i];
+        }
+        avgMagnitude[i] = sum / (transfers.length - 1);
+    }
+    
+    const smoothAvgMagnitude = smoothFFT({frequency: baseFreq, magnitude: avgMagnitude, phase: new Float32Array(baseFreq.length), fftSize: nextPow2(baseFreq.length)}, 1/6, 1/48);
+    const on = smoothFFT(transfers[0], 1/6, 1/48);
+
+    const anglesToPlot = [0, 30, 60, 90, 180];
+
+    plot(
+        [
+            ...anglesToPlot.map((angle, i) => {
+                const idx = angles.findIndex(a => Math.abs(a - angle) < 0.1);
+                if (idx === -1) {
+                    return null;
+                }
+                return {x: smoothFFT(transfers[idx], 1/6, 1/48).frequency, y: db(smoothFFT(transfers[idx], 1/6, 1/48).magnitude), name: `${angle} deg response`, line: { width: 1.5, color: COLORS[i] }};
+            }),
+            {x: smoothAvgMagnitude.frequency, y: db(smoothAvgMagnitude.magnitude), name: 'Average Response', line: { width: 2, color: '#000000' }},
+        
+        ], 
+        tabId, 
+        'Transfer Function', 
+        'Frequency (Hz)', 
+        'Amplitude (dB)',
+        {type: 'log', range: [Math.log10(20), Math.log10(20000)]}, 
+        {range: [-85, 5]},
+        {}, 
+        false
+    );
+
+    // Plot directivity index.
+    plot(
+        [
+            {x: on.frequency, y: db(smoothAvgMagnitude.magnitude).map((v, i) => db(on.magnitude)[i] - v), name: 'Average Response', line: { width: 2, color: '#000000' }},
+        ], 
+        tabId, 
+        'Directivity Index', 
+        'Frequency (Hz)', 
+        'DI (dB)',
+        {type: 'log', range: [Math.log10(20), Math.log10(20000)]}, 
+        {range: [-10, 50]},
+        {}, 
+        false
+    );
+
+    // Polar directivity plots (add several frequency slices)
+    (() => {
+        const freqsToPlot = [62.5, 125, 250, 500, 1_000, 2_000, 4_000, 8_000, 16_000];
+        const uniqueTransfers = smoothTransfers; // last entry is duplicate to close circle
+        const uniqueAngles = angles;
+
+        const traces: any[] = [];
+        const aseFreq = uniqueTransfers[0].frequency;
+
+        for (let fi = 0; fi < freqsToPlot.length; fi++) {
+            const hz = freqsToPlot[fi];
+            // find nearest frequency index
+            let idx = 0;
+            let best = Number.POSITIVE_INFINITY;
+            for (let i = 0; i < aseFreq.length; i++) {
+                const d = Math.abs(aseFreq[i] - hz);
+                if (d < best) {
+                    best = d;
+                    idx = i;
+                }
+            }
+
+            // collect magnitude (dB) across angles
+            const magDb = uniqueTransfers.map(tf => db(tf.magnitude)[idx] ?? -999);
+            // normalize so max = 0 dB
+            const maxVal = Math.max(...magDb);
+            const r = magDb.map(v => v - maxVal);
+
+            // close the loop for polar plot
+            const theta = [...uniqueAngles, 360];
+            const rClosed = [...r];
+
+            traces.push({
+                type: 'scatterpolar',
+                r: rClosed,
+                theta,
+                mode: 'lines+markers',
+                name: `${hz} Hz`,
+                line: { color: COLORS[fi % COLORS.length], width: 2 },
+                marker: { size: 4 }
+            });
+        }
+
+        plot(
+            traces,
+            tabId,
+            'Polar Directivity',
+            'Frequency (Hz)',
+            'Angle (deg)',
+            {}, // x-axis options unused for polar
+            {}, // y-axis options unused for polar
+            { 
+                polar: {
+                    radialaxis: { title: { text: 'Relative dB (max = 0 dB)' }, angle: 90, dtick: 10, range: [-50, 0]  },
+                    angularaxis: { direction: 'clockwise', rotation: 90, tickmode: 'array' }
+                },
+                margin: { l: 60, r: 20, t: 40, b: 50 }
+            },
+            false
+        );
+    })();
+
+        
     tab.classList.remove('tab-loading');
     });
     });
@@ -1234,7 +1350,7 @@ async function loadTestPolarData(): Promise<void> {
     const files = angles.map(a => `testdata/${a}.wav`);
     createDirectivityPlotTab(
         await Promise.all(files.map(f => loadAudioFromFilename(f))),
-        await loadAudioFromFilename('testdata/0.wav'),
+        await loadAudioFromFilename('testdata/sweep_signal.wav.wav'),
         angles
     );
 }
