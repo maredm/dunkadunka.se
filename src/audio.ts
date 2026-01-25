@@ -76,6 +76,60 @@ async function loadAudioFile(file: File): Promise<Audio> {
     function getExt(name: string) {
         const ext = (name.split('.').pop() || '').toLowerCase();
 
+        return ext;
+    }
+
+    function getMimeType(ext: string) {
+        const mimeTypes: { [key: string]: string } = {
+            'wav': 'audio/wav',
+            'mp3': 'audio/mpeg',
+            'flac': 'audio/flac',
+            'ogg': 'audio/ogg',
+            'm4a': 'audio/mp4',
+        };
+        return mimeTypes[ext] || 'application/octet-stream';
+    }
+
+    function getNameWithoutExt(name: string) {
+        const parts = name.split('.');
+        if (parts.length > 1) {
+            parts.pop();
+            return parts.join('.');
+        }
+        return name;
+    }
+
+    function parseWav(buf: ArrayBuffer) {
+        const dv = new DataView(buf);
+        function readStr(off: number, len: number) {
+            let s = '';
+            for (let i = 0; i < len; i++) s += String.fromCharCode(dv.getUint8(off + i));
+            return s;
+        }
+
+        if (readStr(0, 4) !== 'RIFF' || readStr(8, 4) !== 'WAVE') return null;
+
+        let offset = 12;
+        const info: any = {};
+        while (offset + 8 <= dv.byteLength) {
+            const id = readStr(offset, 4);
+            const size = dv.getUint32(offset + 4, true);
+            if (id === 'fmt ') {
+                info.audioFormat = dv.getUint16(offset + 8, true);
+                info.numChannels = dv.getUint16(offset + 10, true);
+                info.sampleRate = dv.getUint32(offset + 12, true);
+                info.byteRate = dv.getUint32(offset + 16, true);
+                info.blockAlign = dv.getUint16(offset + 20, true);
+                info.bitsPerSample = dv.getUint16(offset + 22, true);
+            } else if (id === 'data') {
+                info.dataChunkSize = size;
+            }
+            offset += 8 + size + (size % 2);
+        }
+        if (info.sampleRate && info.byteRate && info.dataChunkSize) {
+            info.duration = info.dataChunkSize / info.byteRate;
+        }
+
         // Attempt to detect and decode embedded iXML chunk from the headerBuffer.
         try {
             const dvh = new DataView(headerBuffer);
@@ -125,40 +179,6 @@ async function loadAudioFile(file: File): Promise<Audio> {
             }
         } catch (e) {
             console.warn('Failed to scan header for iXML chunk:', e);
-        }
-
-        return ext;
-    }
-
-    function parseWav(buf: ArrayBuffer) {
-        const dv = new DataView(buf);
-        function readStr(off: number, len: number) {
-            let s = '';
-            for (let i = 0; i < len; i++) s += String.fromCharCode(dv.getUint8(off + i));
-            return s;
-        }
-
-        if (readStr(0, 4) !== 'RIFF' || readStr(8, 4) !== 'WAVE') return null;
-
-        let offset = 12;
-        const info: any = {};
-        while (offset + 8 <= dv.byteLength) {
-            const id = readStr(offset, 4);
-            const size = dv.getUint32(offset + 4, true);
-            if (id === 'fmt ') {
-                info.audioFormat = dv.getUint16(offset + 8, true);
-                info.numChannels = dv.getUint16(offset + 10, true);
-                info.sampleRate = dv.getUint32(offset + 12, true);
-                info.byteRate = dv.getUint32(offset + 16, true);
-                info.blockAlign = dv.getUint16(offset + 20, true);
-                info.bitsPerSample = dv.getUint16(offset + 22, true);
-            } else if (id === 'data') {
-                info.dataChunkSize = size;
-            }
-            offset += 8 + size + (size % 2);
-        }
-        if (info.sampleRate && info.byteRate && info.dataChunkSize) {
-            info.duration = info.dataChunkSize / info.byteRate;
         }
         return info;
     }
@@ -257,6 +277,7 @@ async function loadAudioFile(file: File): Promise<Audio> {
 
     // Basic file info
     metadata.filename = file.name;
+    metadata.name = getNameWithoutExt(file.name);
     metadata.size = file.size;
     metadata.mime = mime;
     metadata.ext = ext;
@@ -298,9 +319,9 @@ export async function loadAudioFromFilename(filename: string): Promise<Audio> {
 
 
 export class Audio extends AudioBuffer {
-    metadata?: { [Key: string]: string | number | null; };
+    metadata: { [Key: string]: string | number | null; } = {};
 
-    static fromAudioBuffer(buffer: AudioBuffer, metadata?: { [Key: string]: string | number | null; }): Audio {
+    static fromAudioBuffer(buffer: AudioBuffer, metadata: { [Key: string]: string | number | null; }): Audio {
         const audio = new Audio({
             length: buffer.length,
             numberOfChannels: buffer.numberOfChannels,
@@ -309,11 +330,12 @@ export class Audio extends AudioBuffer {
         for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
             audio.copyToChannel(buffer.getChannelData(ch), ch);
         }
-        audio.metadata = metadata;
+        audio.metadata = metadata
+        console.log('Created Audio from AudioBuffer with metadata:', audio.metadata);
         return audio;
     }
 
-    static fromSamples(samples: Float32Array, sampleRate: number = 48000, metadata?: { [Key: string]: string | number | null; }): Audio {
+    static fromSamples(samples: Float32Array, sampleRate: number = 48000, metadata: { [Key: string]: string | number | null; }): Audio {
         if (!samples || samples.length == 0) return new Audio({ length: 0, numberOfChannels: 1, sampleRate: sampleRate });
         const audio = new Audio({
             length: samples.length,
@@ -323,6 +345,44 @@ export class Audio extends AudioBuffer {
         audio.copyToChannel(samples, 0);
         audio.metadata = metadata;
         return audio;
+    }
+
+    static fromObject(obj: any): Audio {
+        const sampleRate = obj.sampleRate || 48000;
+        const numberOfChannels = obj.numberOfChannels || 1;
+        const length = obj.length || (obj.data ? obj.data.length / numberOfChannels : 1);
+        const audio = new Audio({
+            length: length,
+            numberOfChannels: numberOfChannels,
+            sampleRate: sampleRate,
+        });
+
+        if (obj.data) {
+            for (let i = 0; i < obj.data.length; i++) {
+                const channel = Math.floor(i / length);
+                const index = i % length;
+                audio.copyToChannel(new Float32Array([obj.data[i]]), channel, index);
+            }
+        }
+        console.log('METADATA', obj.metadata);
+        audio.metadata = obj.metadata
+
+        return audio;
+    }
+
+    toObject(): { [Key: string]: any; } {
+        console.log('this.metadata', this.metadata);
+        return {
+            sampleRate: this.sampleRate,
+            numberOfChannels: this.numberOfChannels,
+            length: this.length,
+            metadata: this.metadata,
+            data: Float32Array.from({ length: this.length * this.numberOfChannels }, (_, i) => { 
+                const channel = Math.floor(i / this.length);
+                const index = i % this.length;
+                return this.getChannelData(channel)[index];
+            })
+        };
     }
 
     applyGain(gain: number): Audio {

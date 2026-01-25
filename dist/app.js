@@ -561,48 +561,25 @@ function loadAudioFile(file) {
     const headerBuffer = yield file.slice(0, 256 * 1024).arrayBuffer();
     function getExt(name) {
       const ext2 = (name.split(".").pop() || "").toLowerCase();
-      try {
-        const dvh = new DataView(headerBuffer);
-        const readStr = (off, len) => {
-          let s = "";
-          for (let i = 0; i < len; i++) s += String.fromCharCode(dvh.getUint8(off + i));
-          return s;
-        };
-        let offset = 12;
-        while (offset + 8 <= dvh.byteLength) {
-          const id = readStr(offset, 4);
-          const size = dvh.getUint32(offset + 4, true);
-          if (id === "iXML") {
-            const start = offset + 8;
-            const end = Math.min(start + size, dvh.byteLength);
-            const xmlBytes = new Uint8Array(headerBuffer.slice(start, end));
-            const xmlString = new TextDecoder().decode(xmlBytes);
-            file.__iXMLraw = xmlString;
-            try {
-              const parser = new DOMParser();
-              file.__iXML = parser.parseFromString(file.__iXMLraw, "application/xml");
-              const userNode = file.__iXML.querySelector("USER");
-              if (userNode) {
-                const meta = {};
-                Array.from(userNode.children).forEach((el) => {
-                  const key = el.tagName.toLowerCase();
-                  const txt = (el.textContent || "").trim();
-                  const num = Number(txt);
-                  meta[key] = txt === "" ? null : Number.isFinite(num) ? num : txt;
-                });
-                file.metadata = Object.assign(file.metadata || {}, meta);
-              }
-            } catch (e) {
-              console.warn("iXML conversion attempt failed:", e);
-            }
-            break;
-          }
-          offset += 8 + size + size % 2;
-        }
-      } catch (e) {
-        console.warn("Failed to scan header for iXML chunk:", e);
-      }
       return ext2;
+    }
+    function getMimeType(ext2) {
+      const mimeTypes = {
+        "wav": "audio/wav",
+        "mp3": "audio/mpeg",
+        "flac": "audio/flac",
+        "ogg": "audio/ogg",
+        "m4a": "audio/mp4"
+      };
+      return mimeTypes[ext2] || "application/octet-stream";
+    }
+    function getNameWithoutExt(name) {
+      const parts = name.split(".");
+      if (parts.length > 1) {
+        parts.pop();
+        return parts.join(".");
+      }
+      return name;
     }
     function parseWav(buf) {
       const dv = new DataView(buf);
@@ -631,6 +608,47 @@ function loadAudioFile(file) {
       }
       if (info.sampleRate && info.byteRate && info.dataChunkSize) {
         info.duration = info.dataChunkSize / info.byteRate;
+      }
+      try {
+        const dvh = new DataView(headerBuffer);
+        const readStr2 = (off, len) => {
+          let s = "";
+          for (let i = 0; i < len; i++) s += String.fromCharCode(dvh.getUint8(off + i));
+          return s;
+        };
+        let offset2 = 12;
+        while (offset2 + 8 <= dvh.byteLength) {
+          const id = readStr2(offset2, 4);
+          const size = dvh.getUint32(offset2 + 4, true);
+          if (id === "iXML") {
+            const start = offset2 + 8;
+            const end = Math.min(start + size, dvh.byteLength);
+            const xmlBytes = new Uint8Array(headerBuffer.slice(start, end));
+            const xmlString = new TextDecoder().decode(xmlBytes);
+            file.__iXMLraw = xmlString;
+            try {
+              const parser = new DOMParser();
+              file.__iXML = parser.parseFromString(file.__iXMLraw, "application/xml");
+              const userNode = file.__iXML.querySelector("USER");
+              if (userNode) {
+                const meta = {};
+                Array.from(userNode.children).forEach((el) => {
+                  const key = el.tagName.toLowerCase();
+                  const txt = (el.textContent || "").trim();
+                  const num = Number(txt);
+                  meta[key] = txt === "" ? null : Number.isFinite(num) ? num : txt;
+                });
+                file.metadata = Object.assign(file.metadata || {}, meta);
+              }
+            } catch (e) {
+              console.warn("iXML conversion attempt failed:", e);
+            }
+            break;
+          }
+          offset2 += 8 + size + size % 2;
+        }
+      } catch (e) {
+        console.warn("Failed to scan header for iXML chunk:", e);
       }
       return info;
     }
@@ -715,6 +733,7 @@ function loadAudioFile(file) {
     const mime = file.type || "unknown";
     let metadata = __spreadValues({}, file.__iXML);
     metadata.filename = file.name;
+    metadata.name = getNameWithoutExt(file.name);
     metadata.size = file.size;
     metadata.mime = mime;
     metadata.ext = ext;
@@ -737,21 +756,11 @@ function loadAudioFile(file) {
     return Audio.fromAudioBuffer(audioBuffer, metadata);
   });
 }
-function loadAudioFromBlob(blob, filename) {
-  return __async(this, null, function* () {
-    const file = blob instanceof File ? blob : new File([blob], filename != null ? filename : "blob", { type: blob.type || "" });
-    return yield loadAudioFile(file);
-  });
-}
-function loadAudioFromFilename(filename) {
-  return __async(this, null, function* () {
-    const resp = yield fetch(filename);
-    const blob = yield resp.blob();
-    console.log(`Fetched audio file from ${filename}:`, blob);
-    return yield loadAudioFromBlob(blob, filename);
-  });
-}
 var Audio = class _Audio extends AudioBuffer {
+  constructor() {
+    super(...arguments);
+    this.metadata = {};
+  }
   static fromAudioBuffer(buffer, metadata) {
     const audio2 = new _Audio({
       length: buffer.length,
@@ -762,6 +771,7 @@ var Audio = class _Audio extends AudioBuffer {
       audio2.copyToChannel(buffer.getChannelData(ch), ch);
     }
     audio2.metadata = metadata;
+    console.log("Created Audio from AudioBuffer with metadata:", audio2.metadata);
     return audio2;
   }
   static fromSamples(samples, sampleRate = 48e3, metadata) {
@@ -774,6 +784,40 @@ var Audio = class _Audio extends AudioBuffer {
     audio2.copyToChannel(samples, 0);
     audio2.metadata = metadata;
     return audio2;
+  }
+  static fromObject(obj) {
+    const sampleRate = obj.sampleRate || 48e3;
+    const numberOfChannels = obj.numberOfChannels || 1;
+    const length = obj.length || (obj.data ? obj.data.length / numberOfChannels : 1);
+    const audio2 = new _Audio({
+      length,
+      numberOfChannels,
+      sampleRate
+    });
+    if (obj.data) {
+      for (let i = 0; i < obj.data.length; i++) {
+        const channel = Math.floor(i / length);
+        const index = i % length;
+        audio2.copyToChannel(new Float32Array([obj.data[i]]), channel, index);
+      }
+    }
+    console.log("METADATA", obj.metadata);
+    audio2.metadata = obj.metadata;
+    return audio2;
+  }
+  toObject() {
+    console.log("this.metadata", this.metadata);
+    return {
+      sampleRate: this.sampleRate,
+      numberOfChannels: this.numberOfChannels,
+      length: this.length,
+      metadata: this.metadata,
+      data: Float32Array.from({ length: this.length * this.numberOfChannels }, (_, i) => {
+        const channel = Math.floor(i / this.length);
+        const index = i % this.length;
+        return this.getChannelData(channel)[index];
+      })
+    };
   }
   applyGain(gain) {
     const numChannels = this.numberOfChannels;
@@ -2043,7 +2087,7 @@ function download(samples, sampleRate = 48e3, name = "output", bext, ixml) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = name + `.wav`;
+  a.download = name;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -2062,6 +2106,7 @@ function convertToIXML(xmlContent) {
 
 // src/app.ts
 console.debug("App module loaded");
+var fileMap = [];
 var root = document.documentElement;
 var uiColor = "#0366d6";
 root.style.setProperty("--color", uiColor);
@@ -2077,17 +2122,6 @@ var polarMeasurementsEl = document.getElementById("polarMeasurements");
 var addPolarMeasurementBtn = document.getElementById("addPolarMeasurementBtn");
 var analyzePolarBtn = document.getElementById("analyzePolarBtn");
 var polarStatusEl = document.getElementById("polarStatus");
-responseFileUploadInput.addEventListener("change", () => {
-  var _a;
-  console.log("File changed.");
-  console.log(audio.loadAudioFile(responseFileUploadInput.files[0]));
-  analyzeUploadBtn.disabled = !((_a = responseFileUploadInput.files) == null ? void 0 : _a.length);
-});
-function normalizeAngleDeg(angleDeg) {
-  let a = angleDeg % 360;
-  if (a < 0) a += 360;
-  return a;
-}
 var statusMessage = document.getElementById("statusMessage");
 function setStatusMessage(message, isError = false) {
   statusMessage.textContent = message;
@@ -2785,238 +2819,6 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
     });
   });
 }
-function createDirectivityPlotTab(responseDatas, referenceData, anglesDeg) {
-  console.log("Creating directivity plot tab with", responseDatas.length, "responses and reference data", referenceData);
-  if (responseDatas.length === 0 || referenceData.length === 0) return;
-  tabCounter++;
-  const tabId = `directivity-${tabCounter}`;
-  const shortName = `Directivity (${responseDatas.length})`;
-  const tab = document.createElement("button");
-  tab.className = "tab tab-closable tab-loading";
-  tab.dataset.tab = tabId;
-  tab.innerHTML = `<span class="tab-icon-analysis"></span>${shortName} <span class="tab-close">\u2715</span>`;
-  tabsInnerContainer.appendChild(tab);
-  const content = document.createElement("div");
-  content.className = "tab-content";
-  content.dataset.content = tabId;
-  content.innerHTML = `
-        <button class="sidecar-toggle" id="sidebar-toggle-${tabId}" title="Toggle Sidecar">Open settings pane</button>
-        <div class="flex h-full">
-            <div class="flex-none w-86 border-r border-[#ddd] p-2 relative sidecar" style="transition:50ms linear;">
-                <div class="section">
-                    <div class="title">Settings</div>
-                    <p><i>There are no settings for this analysis.</i></p>
-                </div>
-                <div class="section">
-                    <div class="title">Plots</div>
-                    <ul class="list" id="plot-list-${tabId}">
-                        <!--li><input type="checkbox" id="checkbox-magnitude-${tabId}" alt="show/hide" checked><label for="checkbox-magnitude-${tabId}">Magnitude</label></li>
-                        <li><input type="checkbox" id="checkbox-phase-${tabId}" alt="show/hide" checked><label for="checkbox-phase-${tabId}">Phase</label></li>
-                        <li><input type="checkbox" id="checkbox-ir-${tabId}" alt="show/hide" checked><label for="checkbox-ir-${tabId}">Impulse Response</label></li>
-                        <li><input type="checkbox" id="checkbox-ir-${tabId}" alt="show/hide" disabled><label for="checkbox-ir-${tabId}">Fundamental + Harmonic Distortion</label></li>
-                        <li><input type="checkbox" id="checkbox-distortion-${tabId}" alt="show/hide" disabled><label for="checkbox-distortion-${tabId}">Distortion</label></li>
-                        <li><input type="checkbox" id="checkbox-distortion-${tabId}" alt="show/hide" disabled><label for="checkbox-distortion-${tabId}">Sound Pressure Level</label></li>
-                        <li><input type="checkbox" id="checkbox-deconvoluted-ir-${tabId}" alt="show/hide" disabled><label for="checkbox-deconvoluted-ir-${tabId}">Deconvoluted Impulse Response</label></li>
-                        <li><input type="checkbox" id="checkbox-stimulus-waveform-${tabId}" alt="show/hide" disabled><label for="checkbox-stimulus-waveform-${tabId}">Stimulus Waveform</label></li>
-                        <li><input type="checkbox" id="checkbox-recorded-waveform-${tabId}" alt="show/hide" disabled><label for="checkbox-recorded-waveform-${tabId}">Recorded Waveform</label></li>
-                        <li><input type="checkbox" id="checkbox-recorded-noise-floor-${tabId}" alt="show/hide" disabled><label for="checkbox-recorded-noise-floor-${tabId}">Recorded Noise Floor</label></li>
-                        <li><input type="checkbox" id="checkbox-target-curve-${tabId}" alt="show/hide" disabled><label for="checkbox-target-curve-${tabId}">Target Curve<button class="float-right text-xs cursor-pointer" style="color: #bbb; padding-top: 3px">Set</button></label></li-->
-                    </ul>
-                </div>
-                <div class="section">
-                    <div class="title">Properties</div>
-                    <p id="properties-${tabId}"><i>There are no properties for this analysis.</i></p>
-                </div>
-                <div id="resize-handle" class="resize-handle"></div>
-            </div>
-            <div class="flex-1 main-content">
-                <div class="grid grid-cols-6 gap-[1px] bg-[#ddd] border-b border-[#ddd] plot-outer">
-                </div>
-            </div>
-        </div>
-       
-        
-    `;
-  tabContents.appendChild(content);
-  window.requestAnimationFrame(() => {
-    window.requestAnimationFrame(() => {
-      var _a;
-      const startTime = performance.now();
-      const useCustomAngles = !!anglesDeg && anglesDeg.length === responseDatas.length;
-      const angles = useCustomAngles ? anglesDeg.map(normalizeAngleDeg) : responseDatas.map((_, i) => 360 * i / responseDatas.length);
-      const referenceSamples = Float32Array.from(referenceData.getChannelData(0));
-      const len = Math.min(7.5 * 48e3, referenceSamples.length);
-      const referenceFFT = updatedFFT(referenceSamples.subarray(0, len), len);
-      const calcStartTime = performance.now();
-      const transfers = [];
-      const smoothTransfers = [];
-      for (let i = 0; i < responseDatas.length; i++) {
-        const resp = responseDatas[i];
-        const loopStartTime = performance.now();
-        const fftr = twoChannelFFT(
-          resp.getChannelData(0).subarray(0, len),
-          referenceSamples.subarray(0, len),
-          nextPow2(len),
-          0,
-          referenceFFT
-        );
-        fftr.magnitude = fftr.magnitude.map((v, i2) => Math.abs(v));
-        const ffto = smoothFFT(fftr, 1 / 3, 1 / 48);
-        smoothTransfers.push(ffto);
-        transfers.push(fftr);
-      }
-      const calcEndTime = performance.now();
-      console.warn(`CALC TOOK ${calcEndTime - calcStartTime} milliseconds`);
-      const baseFreq = (_a = transfers[0]) == null ? void 0 : _a.frequency;
-      if (!baseFreq || baseFreq.length === 0) return;
-      const normHz = 1e3;
-      let normIdx = 0;
-      let best = Number.POSITIVE_INFINITY;
-      for (let i = 0; i < baseFreq.length; i++) {
-        const d = Math.abs(baseFreq[i] - normHz);
-        if (d < best) {
-          best = d;
-          normIdx = i;
-        }
-      }
-      transfers.push(transfers[0]);
-      angles.push(360);
-      const cycleBy = 18;
-      const cycleTransfers = smoothTransfers.slice(cycleBy).concat(smoothTransfers.slice(0, cycleBy));
-      const asngles = angles.map((a) => a - 180);
-      const z = cycleTransfers.map((tf) => {
-        const magDb = db(tf.magnitude);
-        return magDb.map((v, i) => v - db(smoothTransfers[0].magnitude)[i]);
-      });
-      const endTime = performance.now();
-      console.warn(`TOOK ${endTime - startTime} milliseconds`);
-      plot(
-        [
-          {
-            type: "heatmap",
-            x: smoothTransfers[0].frequency,
-            y: asngles,
-            z,
-            colorscale: "Portland",
-            zmin: -24,
-            contours: { coloring: "#fff", showlines: true, start: -36, end: 0, size: 6 },
-            zmax: 6,
-            zsmooth: "best",
-            colorbar: { title: "dB (norm @ 1 kHz)" }
-          }
-        ],
-        tabId,
-        "Directivity Map",
-        "Frequency (Hz)",
-        "Angle (deg)",
-        { type: "log", range: [Math.log10(20), Math.log10(2e4)] },
-        { range: [-180, 180] },
-        { margin: { l: 60, r: 20, t: 40, b: 50 } },
-        false
-      );
-      const avgMagnitude = new Float32Array(baseFreq.length);
-      for (let i = 0; i < baseFreq.length; i++) {
-        let sum2 = 0;
-        for (let j = 0; j < transfers.length - 1; j++) {
-          sum2 += transfers[j].magnitude[i];
-        }
-        avgMagnitude[i] = sum2 / (transfers.length - 1);
-      }
-      const smoothAvgMagnitude = smoothFFT({ frequency: baseFreq, magnitude: avgMagnitude, phase: new Float32Array(baseFreq.length), fftSize: nextPow2(baseFreq.length) }, 1 / 6, 1 / 48);
-      const on = smoothFFT(transfers[0], 1 / 6, 1 / 48);
-      const anglesToPlot = [0, 30, 60, 90, 180];
-      plot(
-        [
-          ...anglesToPlot.map((angle, i) => {
-            const idx = angles.findIndex((a) => Math.abs(a - angle) < 0.1);
-            if (idx === -1) {
-              return null;
-            }
-            return { x: smoothFFT(transfers[idx], 1 / 6, 1 / 48).frequency, y: db(smoothFFT(transfers[idx], 1 / 6, 1 / 48).magnitude), name: `${angle} deg response`, line: { width: 1.5, color: COLORS[i] } };
-          }),
-          { x: smoothAvgMagnitude.frequency, y: db(smoothAvgMagnitude.magnitude), name: "Average Response", line: { width: 2, color: "#000000" } }
-        ],
-        tabId,
-        "Transfer Function",
-        "Frequency (Hz)",
-        "Amplitude (dB)",
-        { type: "log", range: [Math.log10(20), Math.log10(2e4)] },
-        { range: [-85, 5] },
-        {},
-        false
-      );
-      plot(
-        [
-          { x: on.frequency, y: db(smoothAvgMagnitude.magnitude).map((v, i) => db(on.magnitude)[i] - v), name: "Average Response", line: { width: 2, color: "#000000" } }
-        ],
-        tabId,
-        "Directivity Index",
-        "Frequency (Hz)",
-        "DI (dB)",
-        { type: "log", range: [Math.log10(20), Math.log10(2e4)] },
-        { range: [-10, 50] },
-        {},
-        false
-      );
-      (() => {
-        const freqsToPlot = [62.5, 125, 250, 500, 1e3, 2e3, 4e3, 8e3, 16e3];
-        const uniqueTransfers = smoothTransfers;
-        const uniqueAngles = angles;
-        const traces = [];
-        const aseFreq = uniqueTransfers[0].frequency;
-        for (let fi = 0; fi < freqsToPlot.length; fi++) {
-          const hz = freqsToPlot[fi];
-          let idx = 0;
-          let best2 = Number.POSITIVE_INFINITY;
-          for (let i = 0; i < aseFreq.length; i++) {
-            const d = Math.abs(aseFreq[i] - hz);
-            if (d < best2) {
-              best2 = d;
-              idx = i;
-            }
-          }
-          const magDb = uniqueTransfers.map((tf) => {
-            var _a2;
-            return (_a2 = db(tf.magnitude)[idx]) != null ? _a2 : -999;
-          });
-          const maxVal = Math.max(...magDb);
-          const r = magDb.map((v) => v - maxVal);
-          const theta = [...uniqueAngles, 360];
-          const rClosed = [...r];
-          traces.push({
-            type: "scatterpolar",
-            r: rClosed,
-            theta,
-            mode: "lines+markers",
-            name: `${hz} Hz`,
-            line: { color: COLORS[fi % COLORS.length], width: 2 },
-            marker: { size: 4 }
-          });
-        }
-        plot(
-          traces,
-          tabId,
-          "Polar Directivity",
-          "Frequency (Hz)",
-          "Angle (deg)",
-          {},
-          // x-axis options unused for polar
-          {},
-          // y-axis options unused for polar
-          {
-            polar: {
-              radialaxis: { title: { text: "Relative dB (max = 0 dB)" }, angle: 90, dtick: 10, range: [-50, 0] },
-              angularaxis: { direction: "clockwise", rotation: 90, tickmode: "array" }
-            },
-            margin: { l: 60, r: 20, t: 40, b: 50 }
-          },
-          false
-        );
-      })();
-      tab.classList.remove("tab-loading");
-    });
-  });
-}
 function saveState() {
   const tabs = Array.from(document.querySelectorAll(".tab[data-tab]")).map((tab) => {
     var _a;
@@ -3048,35 +2850,52 @@ function loadState() {
     }
   });
 }
-function loadTestPolarData() {
+function loadWaveformsFromStorage() {
   return __async(this, null, function* () {
-    const angles = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200, 210, 220, 230, 240, 250, 260, 270, 280, 290, 300, 310, 320, 330, 340, 350];
-    const files = angles.map((a) => `testdata/${a}.wav`);
-    createDirectivityPlotTab(
-      yield Promise.all(files.map((f) => loadAudioFromFilename(f))),
-      yield loadAudioFromFilename("testdata/sweep_signal.wav.wav"),
-      angles
-    );
+    const waveforms = storage.getItem("waveforms");
+    console.log("Attempting:", waveforms);
+    const items = [];
+    yield waveforms.then((raw) => {
+      var _a;
+      const decoded = JSON.parse(raw || "[]");
+      console.log("f ", decoded[0], decoded[0].length, (_a = decoded[0].data) == null ? void 0 : _a.length, decoded[0].metadata);
+      console.log("Decoded waveforms from storage:", decoded);
+      const startLoadTime = performance.now();
+      for (const item of decoded) {
+        items.push(Audio.fromObject(item));
+      }
+      console.log(`Loaded ${items.length} waveforms from storage in ${performance.now() - startLoadTime} milliseconds`);
+      console.log("Loaded waveforms from storage:", items);
+    }).catch((err) => {
+      console.warn("Failed to load waveforms from storage:", err);
+    });
+    console.log("Returning loaded waveforms:", items);
+    return items;
   });
 }
-var fileMap = /* @__PURE__ */ new Map();
-function createListItem(file, id, audioObject) {
-  var _a, _b, _c, _d, _e, _f;
+function saveWaveformsToStorage(waveforms) {
+  console.warn("Saving waveforms to storage:", waveforms);
+  const toSave = waveforms.map((wf) => wf.toObject());
+  storage.setItem("waveforms", JSON.stringify(toSave)).catch((err) => {
+    console.error("Failed to save waveforms to storage:", err);
+  });
+}
+function createListItem(audioObject) {
+  var _a, _b, _c, _d, _e, _f, _g, _h;
   const li = document.createElement("li");
-  li.dataset.id = id;
   li.style.display = "flex";
   li.classList.add("file-list-item");
   li.innerHTML = `
         <div style="flex:1;min-width:0;">
-            <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${file.name}</div>
-            <div style="font-size:12px;color:#666;">${(file.size / 1024).toFixed(1)} KB \u2022 ${file.type || "audio/*"}</div>
+            <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${((_a = audioObject.metadata) == null ? void 0 : _a.filename) || "Unknown"}</div>
+            <div style="font-size:12px;color:#666;">${((_b = audioObject.metadata) == null ? void 0 : _b.mime) || "audio/*"}</div>
             <div style="font-size:12px;color:#666;">Duration: ${audioObject.duration.toFixed(2)} seconds</div>
-            <div style="font-size:12px;color:#666;">Angle: ${(_c = (_b = (_a = audioObject == null ? void 0 : audioObject.metadata) == null ? void 0 : _a.iXML) == null ? void 0 : _b.angle) != null ? _c : "N/A"} deg</div>
-            <div style="font-size:12px;color:#666;">Origin: ${(_f = (_e = (_d = audioObject == null ? void 0 : audioObject.metadata) == null ? void 0 : _d.iXML) == null ? void 0 : _e.origin) != null ? _f : "Imported"}</div>
+            <div style="font-size:12px;color:#666;">Angle: ${(_e = (_d = (_c = audioObject == null ? void 0 : audioObject.metadata) == null ? void 0 : _c.iXML) == null ? void 0 : _d.angle) != null ? _e : "N/A"} deg</div>
+            <div style="font-size:12px;color:#666;">Origin: ${(_h = (_g = (_f = audioObject == null ? void 0 : audioObject.metadata) == null ? void 0 : _f.iXML) == null ? void 0 : _g.origin) != null ? _h : "Imported"}</div>
         </div>
         <div class="file-list-item-controls flex:1;min-width:0;">
-            <div><label style="font-size:13px;"><input type="radio" name="selectedResponse" value="${id}"> Response</label></div>
-            <div><label style="font-size:13px;"><input type="radio" name="selectedReference" value="${id}"> Reference</label></div>
+            <div><label style="font-size:13px;"><input type="radio" name="selectedResponse" value=""> Response</label></div>
+            <div><label style="font-size:13px;"><input type="radio" name="selectedReference" value=""> Reference</label></div>
             <div><button type="button" data-action="remove" style="margin-left:8px;">Remove</button></div>
         </div>
     `;
@@ -3087,27 +2906,27 @@ function updateAnalyzeState() {
   const analyzeBtn = document.getElementById("analyzeUploadBtn");
 }
 function addFilesFromInput(fileList) {
-  Array.from(fileList).forEach((f) => __async(null, null, function* () {
-    var _a;
-    const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    const a = yield audio.loadAudioFile(f).catch((err) => {
-      alert(`Failed to load audio file "${f.name}": ${err.message || err}`);
+  return __async(this, null, function* () {
+    yield Promise.all(Array.from(fileList).map((f) => __async(null, null, function* () {
+      var _a;
+      const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+      const a = yield audio.loadAudioFile(f);
+      fileMap.push(a);
+      console.log("Added file:", id, a);
+      console.log("Current file map:", fileMap);
+      const li = createListItem(a);
+      (_a = document.getElementById("fileList")) == null ? void 0 : _a.appendChild(li);
+    }))).then(() => {
+      console.log("All files added. Current file map:", fileMap);
+      saveWaveformsToStorage(fileMap);
     });
-    fileMap.set(id, f);
-    const li = createListItem(f, id, a);
-    (_a = document.getElementById("fileList")) == null ? void 0 : _a.appendChild(li);
-  }));
-  updateAnalyzeState();
+    updateAnalyzeState();
+  });
 }
 document.addEventListener("DOMContentLoaded", () => {
   const respInput = document.getElementById("responseFileUpload");
   const refInput = document.getElementById("referenceFileUpload");
   if (respInput) respInput.addEventListener("change", (e) => {
-    var _a, _b;
-    if ((_b = (_a = e == null ? void 0 : e.target) == null ? void 0 : _a.files) == null ? void 0 : _b.length) addFilesFromInput(e.target.files);
-    e.target.value = "";
-  });
-  if (refInput) refInput.addEventListener("change", (e) => {
     var _a, _b;
     if ((_b = (_a = e == null ? void 0 : e.target) == null ? void 0 : _a.files) == null ? void 0 : _b.length) addFilesFromInput(e.target.files);
     e.target.value = "";
@@ -3121,8 +2940,11 @@ document.addEventListener("DOMContentLoaded", () => {
       const referenceRadio = document.querySelector(`input[name="selectedReference"][value="${id}"]`);
       if (responseRadio && responseRadio.checked) responseRadio.checked = false;
       if (referenceRadio && referenceRadio.checked) referenceRadio.checked = false;
-      fileMap.delete(id);
+      const index = fileMap.findIndex((a) => a.id === id);
+      if (index !== -1) fileMap.splice(index, 1);
       li.remove();
+      fileMap.pop();
+      saveWaveformsToStorage(fileMap);
       updateAnalyzeState();
     }
   });
@@ -3131,7 +2953,16 @@ document.addEventListener("DOMContentLoaded", () => {
       updateAnalyzeState();
     }
   });
+  loadWaveformsFromStorage().then((waveforms) => {
+    var _a;
+    console.log("Loaded waveforms from storage on startup:", waveforms);
+    for (const a of waveforms) {
+      console.log("Creating list item for loaded waveform:", a);
+      const li = createListItem(a);
+      fileMap.push(a);
+      (_a = document.getElementById("fileList")) == null ? void 0 : _a.appendChild(li);
+    }
+  });
 });
-loadTestPolarData();
 loadState();
 //# sourceMappingURL=app.js.map

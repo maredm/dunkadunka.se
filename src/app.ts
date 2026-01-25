@@ -10,6 +10,7 @@ import { download, BextChunk, convertToIXML } from "./wave";
 
 console.debug("App module loaded");
 
+const fileMap: Audio[] = [];
 const root = document.documentElement;
 const uiColor = "#0366d6";
 root.style.setProperty('--color', uiColor);
@@ -29,12 +30,6 @@ const addPolarMeasurementBtn = document.getElementById('addPolarMeasurementBtn')
 const analyzePolarBtn = document.getElementById('analyzePolarBtn') as HTMLButtonElement;
 const polarStatusEl = document.getElementById('polarStatus') as HTMLElement;
 
-// Enable analyze button when response file is selected
-responseFileUploadInput.addEventListener('change', () => {
-    console.log("File changed.")
-    console.log(audio.loadAudioFile(responseFileUploadInput.files[0]))
-    analyzeUploadBtn.disabled = !responseFileUploadInput.files?.length;
-});
 
 type PolarMeasurement = { angleDeg: number; file: File };
 
@@ -102,10 +97,10 @@ async function initializeAudioContext(): Promise<AudioContext> {
 async function detectAndSetupChannels(): Promise<void> {
     try {
         // Request audio input to check channel count
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-            audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } 
+        const stream = await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
         });
-        
+
         const audioContext = await initializeAudioContext();
         const analyser = audioContext.createAnalyser();
         const source = audioContext.createMediaStreamSource(stream);
@@ -113,7 +108,7 @@ async function detectAndSetupChannels(): Promise<void> {
 
         // Get channel count from the stream
         const channelCount = source.mediaStream.getAudioTracks()[0].getSettings()?.channelCount || 1;
-        
+
         // Stop the stream as we only need it for channel detection
         stream.getTracks().forEach(track => track.stop());
 
@@ -157,13 +152,13 @@ async function startRecordingAndPlayback(): Promise<void> {
         const startFreq = parseFloat(sweepStartFreqInput.value);
         const endFreq = parseFloat(sweepEndFreqInput.value);
         const duration = parseFloat(sweepDurationInput.value);
-        
+
         // Pre and post recording buffers (in seconds)
         const preRecordTime = 0.5;  // Start recording 0.5s before playback
         const postRecordTime = 1.0; // Continue recording 1s after playback ends
         const totalRecordTime = preRecordTime + duration + postRecordTime;
 
-        const [sweepSignal, , ] = audio.chirp(startFreq, endFreq, duration);
+        const [sweepSignal, ,] = audio.chirp(startFreq, endFreq, duration);
 
         download(sweepSignal, 48000, 'sweep_signal.wav');
 
@@ -217,7 +212,7 @@ async function startRecordingAndPlayback(): Promise<void> {
 async function playbackOnly(): Promise<void> {
     try {
         const audioContext = await initializeAudioContext();
-        
+
         const startFreq = parseFloat(sweepStartFreqInput.value);
         const endFreq = parseFloat(sweepEndFreqInput.value);
         const duration = parseFloat(sweepDurationInput.value);
@@ -294,7 +289,7 @@ const downloadRecordingBtn = document.getElementById('downloadRecordingBtn') as 
 downloadRecordingBtn?.addEventListener('click', () => {
     try {
         download(recorded[0], 48000, 'recorded_audio.wav',
-            {}, 
+            {},
             convertToIXML(`
         <ANGLE>${measurementAngleInput.value}</ANGLE>
         <LOCATION>${measurementLocationInput.value}</LOCATION>
@@ -317,7 +312,7 @@ const downloadSweepBtn = document.getElementById('downloadSweepBtn') as HTMLButt
 downloadSweepBtn?.addEventListener('click', () => {
     try {
         download(recorded[0], 48000, 'reference_audio.wav',
-            {}, 
+            {},
             convertToIXML(`
         <STIMULUS>
             <TYPE>chirp</TYPE>
@@ -342,7 +337,7 @@ stopPlayBtn.addEventListener('click', stopPlayback);
 analyzeRecordingBtn.addEventListener('click', async () => {
     console.log('Analyzing recording...');
 
-    try {        
+    try {
         const recordedAudio = Audio.fromSamples(recorded[0], 48000);
 
         // Generate the chirp sweep as reference data
@@ -355,9 +350,9 @@ analyzeRecordingBtn.addEventListener('click', async () => {
 
         // Add timestamp to recording name
         const now = new Date();
-        const dateTime = now.toLocaleString('sv-SE', { 
-            year: '2-digit', 
-            month: '2-digit', 
+        const dateTime = now.toLocaleString('sv-SE', {
+            year: '2-digit',
+            month: '2-digit',
             day: '2-digit',
             hour: '2-digit',
             minute: '2-digit',
@@ -373,7 +368,7 @@ analyzeRecordingBtn.addEventListener('click', async () => {
             `${startFreq}-${endFreq}Hz`,
         );
         // 
-        
+
     } catch (error) {
         console.error('Error analyzing recording:', error);
         alert('Error analyzing recording: ' + (error as Error).message);
@@ -395,7 +390,7 @@ window.addEventListener('beforeunload', (e: BeforeUnloadEvent) => {
 // Tab switching
 tabsContainer.addEventListener('click', (e: MouseEvent) => {
     const target = e.target as HTMLElement;
-    
+
     if (target.classList.contains('tab-close')) {
         const tab = target.parentElement as HTMLElement;
         const tabId = tab.dataset.tab;
@@ -405,7 +400,7 @@ tabsContainer.addEventListener('click', (e: MouseEvent) => {
         tab.remove();
         document.querySelector(`[data-content="${tabId}"]`)?.remove();
         storage.removeItem(`analysis-${tabId}`).catch(err => console.error('Failed to remove analysis from storage:', err));
-        
+
         // Activate upload tab if current was closed
         if (tab.classList.contains('active')) {
             switchTab('upload');
@@ -423,7 +418,7 @@ tabsContainer.addEventListener('click', (e: MouseEvent) => {
 function switchTab(tabId: string): void {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-    
+
     document.querySelector(`[data-tab="${tabId}"]`)?.classList.add('active');
     document.querySelector(`[data-content="${tabId}"]`)?.classList.add('active');
 }
@@ -495,16 +490,16 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
     tab.dataset.tab = tabId;
     tab.innerHTML = `<span class="tab-icon-analysis"></span>${shortName} <span class="tab-close">✕</span>`;
     tabsInnerContainer.appendChild(tab);
-    
+
     // Update HTML.
     window.requestAnimationFrame(() => {
-    window.requestAnimationFrame(() => {
-    
-    // Create tab content
-    const content = document.createElement('div');
-    content.className = 'tab-content';
-    content.dataset.content = tabId;
-    content.innerHTML = `
+        window.requestAnimationFrame(() => {
+
+            // Create tab content
+            const content = document.createElement('div');
+            content.className = 'tab-content';
+            content.dataset.content = tabId;
+            content.innerHTML = `
     <!-- nav class="tab-menu-bar">
                 <div>
                     <label for="smoothing-${tabId}">Smoothing</label>
@@ -555,11 +550,11 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
        
         
     `;
-    tabContents.appendChild(content);
+            tabContents.appendChild(content);
 
-    const propertiesElement = document.getElementById(`properties-${tabId}`);
-    if (propertiesElement) {
-        propertiesElement.innerHTML = `
+            const propertiesElement = document.getElementById(`properties-${tabId}`);
+            if (propertiesElement) {
+                propertiesElement.innerHTML = `
             <b>Filename:</b> ${filename}<br>
             ${referenceFilename ? `<b>Reference Filename:</b> ${referenceFilename}<br>` : ''}
             <b>Sample Rate:</b> ${responseData.sampleRate} Hz<br>
@@ -570,347 +565,348 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             <iXML Metadata:</i><br>
             <pre>${(responseData.metadata?.iXMLdata || "" as any).replaceAll("<", "&lt;").replaceAll(">", "&gt;")}</pre>
             `;
-    }
-
-    const sidebarToggleBtn = document.getElementById(`sidebar-toggle-${tabId}`) as HTMLButtonElement;
-    const sidecar = content.querySelector('.sidecar') as HTMLElement;
-    const resizeHandle = content.querySelector('#resize-handle') as HTMLElement;
-
-    sidebarToggleBtn.addEventListener('click', () => {
-        if (sidecar.style.width === '0px') {
-            sidecar.style.width = '21.5rem';
-            sidebarToggleBtn.title = 'Close settings pane';
-        } else {
-            sidecar.style.width = '0px';
-            sidebarToggleBtn.title = 'Open settings pane';
-        }
-    });
-
-    let isResizing = false;
-    let lastDownX = 0;
-
-    resizeHandle.addEventListener('mousedown', (e: MouseEvent) => {
-        isResizing = true;
-        lastDownX = e.clientX;
-        document.body.style.cursor = 'ew-resize';
-        e.preventDefault();
-    });
-
-    document.addEventListener('mousemove', (e: MouseEvent) => {
-        if (!isResizing) return;
-        const offsetRight = tabsContainer.clientWidth - (e.clientX);
-        const newWidth = tabsContainer.clientWidth - offsetRight;
-        if (newWidth >= 200 && newWidth <= 600) {
-            sidecar.style.width = `${newWidth}px`;
-        }
-        e.preventDefault();
-    });
-
-    document.addEventListener('mouseup', () => {
-        if (isResizing) {
-            isResizing = false;
-            document.body.style.cursor = 'default';
-        }
-    });
-
-    // Switch to new tab
-    switchTab(tabId);
-
-    // Compute and plot FFTs
-    const responseSamples = responseData.getChannelData(0);
-    
-    const responseFFT = computeFFT(responseSamples);
-    const smoothedResponseFFT = smoothFFT(responseFFT, 1/6, 1/48);
-
-    let referenceSamples = Float32Array.from([]);
-
-    plot(
-        [
-            {x: responseFFT.frequency, y: db(responseFFT.magnitude), name: 'Recorded signal', line: { color: '#0366d666', width: 0.75}},
-            {x: smoothedResponseFFT.frequency, y: db(smoothedResponseFFT.magnitude), name: 'Recorded signal (Smoothed)', line: { color: '#0366d6', width: 1.5 }}
-        ], 
-        tabId, 
-        'Recorded Spectrum', 
-        'Frequency (Hz)', 
-        'Amplitude (dBFS)',
-        {type: 'log', range: [Math.log10(20), Math.log10(20000)]}, 
-        {range: [-85, 5]},
-        {}, 
-        true
-    );
-    plot(
-        [
-            {x: linspace(0, responseSamples.length/48000, responseSamples.length), y: responseSamples, name: 'Recorded signal', line: { color: '#0366d6ff', width: 0.75}}
-        ],
-        tabId, 
-        'Recorded Waveform', 
-        'Time (s)', 
-        'Amplitude',
-        {}, 
-        {}, 
-        {}, 
-        true
-    );
-
-    setStatusMessage('');
-
-    if (referenceData) {
-        referenceSamples = referenceData.getChannelData(0);
-        const referenceFFT: FFTResult = computeFFT(referenceSamples);
-        const smoothedReferenceFFT = smoothFFT(referenceFFT, 1/6, 1/48);
-        plot(
-            [
-                {x: referenceFFT.frequency, y: db(referenceFFT.magnitude), name: 'Stimulus signal', line: { color: '#0366d666', width: 0.75}},
-                {x: smoothedReferenceFFT.frequency, y: db(smoothedReferenceFFT.magnitude), name: 'Stimulus signal (Smoothed)', line: { color: '#0366d6', width: 1.5 }}
-            ], 
-            tabId, 
-            'Stimulus Spectrum', 
-            'Frequency (Hz)', 
-            'Amplitude (dBFS)',
-            {type: 'log', range: [Math.log10(20), Math.log10(20000)]}, 
-            {range: [-85, 5]},
-            {}, 
-            true
-        );
-        plot(
-            [
-                {x: linspace(0, referenceSamples.length/48000, referenceSamples.length), y: referenceSamples, name: 'Stimulus signal', line: { color: '#0366d6ff', width: 0.75}}
-            ],
-            tabId, 
-            'Stimulus Waveform', 
-            'Time (s)', 
-            'Amplitude',
-            {}, 
-            {}, 
-            {}, 
-            true
-        );
-        const ir: ImpulseResponseResult = twoChannelImpulseResponse(responseSamples, referenceSamples);
-        const farina = new Farina(referenceSamples, 20, 20000, 48000);
-        const farina_ir: ImpulseResponseResult = farina.deconvolvedResponse(responseSamples);
-
-        plotDistortion(farina, 0.1, 5, tabId);
-        plotTHD(farina, 0.1, 5, tabId);
-            
-        console.log('Impulse response peak at', farina.lag_of_harmonic(2));
-
-        plot(
-            [
-                {x: ir.t, y:ir.ir, type: 'scatter', mode: 'lines', name: 'Dual-FFT Impulse Response', line: { color: COLORS[0], width: 0.75}}
-            ],
-            tabId,
-            'Impulse Response',
-            'Time (s)',
-            'Amplitude',
-            {},
-            {},
-            {},
-            false
-        );
-
-        plot(
-            [   
-                {x: [-max(farina_ir.t), max(farina_ir.t)], y: [-200, -200], showlegend: false},
-                {x: farina_ir.t, y:db(farina_ir.ir.map(x => Math.abs(x))), type: 'scatter', mode: 'lines', fill: 'tonexty', name: 'Farina Impulse Response', line: { color: COLORS[0], width: 0.75}, fillcolor: COLORS[0]},
-                {x: [- 0.05, - 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'Fundamental window start', line: { color: '#00000033', width: 0.75}, hoverinfo: 'skip', showlegend: false},
-                {x: [0.05, 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'Fundamental window end', line: { color: '#00000033', width: 0.75}, hoverinfo: 'skip', showlegend: false},
-                {x: [-farina.lag_of_harmonic(2) - 0.05, -farina.lag_of_harmonic(2) - 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H2 window start', line: { color: '#00000033', width: 0.75}, hoverinfo: 'skip', showlegend: false},
-                {x: [-farina.lag_of_harmonic(2) + 0.05, -farina.lag_of_harmonic(2) + 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H2 window end', line: { color: '#00000033', width: 0.75}, hoverinfo: 'skip', showlegend: false},
-                {x: [-farina.lag_of_harmonic(3) - 0.05, -farina.lag_of_harmonic(3) - 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H3 window start', line: { color: '#00000033', width: 0.75}, hoverinfo: 'skip', showlegend: false},
-                {x: [-farina.lag_of_harmonic(3) + 0.05, -farina.lag_of_harmonic(3) + 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H3 window end', line: { color: '#00000033', width: 0.75}, hoverinfo: 'skip', showlegend: false},
-                {x: [-farina.lag_of_harmonic(4) - 0.05, -farina.lag_of_harmonic(4) - 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H4 window start', line: { color: '#00000033', width: 0.75}, hoverinfo: 'skip', showlegend: false},
-                {x: [-farina.lag_of_harmonic(4) + 0.05, -farina.lag_of_harmonic(4) + 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H4 window end', line: { color: '#00000033', width: 0.75}, hoverinfo: 'skip', showlegend: false},
-                {x: [-farina.lag_of_harmonic(5) - 0.05, -farina.lag_of_harmonic(5) - 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H5 window start', line: { color: '#00000033', width: 0.75}, hoverinfo: 'skip', showlegend: false},
-                {x: [-farina.lag_of_harmonic(5) + 0.05, -farina.lag_of_harmonic(5) + 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H5 window end', line: { color: '#00000033', width: 0.75}, hoverinfo: 'skip', showlegend: false},
-                {x: [-farina.lag_of_harmonic(6) - 0.05, -farina.lag_of_harmonic(6) - 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H6 window start', line: { color: '#00000033', width: 0.75}, hoverinfo: 'skip', showlegend: false},
-                {x: [-farina.lag_of_harmonic(6) + 0.05, -farina.lag_of_harmonic(6) + 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H6 window end', line: { color: '#00000033', width: 0.75}, hoverinfo: 'skip', showlegend: false},
-                {x: [-farina.lag_of_harmonic(7) - 0.05, -farina.lag_of_harmonic(7) - 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H7 window start', line: { color: '#00000033', width: 0.75}, hoverinfo: 'skip', showlegend: false},
-                {x: [-farina.lag_of_harmonic(7) + 0.05, -farina.lag_of_harmonic(7) + 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H7 window end', line: { color: '#00000033', width: 0.75}, hoverinfo: 'skip', showlegend: false},
-                
-            ],
-            tabId,
-            'Deconvolved Response',
-            'Time (s)',
-            'Amplitude',
-            { range: [-1, 1]},
-            { range: [-150, 10]},
-            {},
-            false
-        );
-        const transferFunction = computeFFTFromIR(ir);
-        // const dreferenceFFT = twoChannelFFT(responseData.data, referenceSamples, nextPow2(referenceSamples.length), -5627);
-        const smoothedFreqResponse = smoothFFT(transferFunction, 1/6, 1/48);
-        
-        const gd = groupDelays(transferFunction, 1000);
-
-        plot(
-            [
-                {x: transferFunction.frequency, y: db(transferFunction.magnitude), name: 'Magnitude', line: { color: '#0366d666', width: 0.75}},
-                {x: smoothedFreqResponse.frequency, y: db(smoothedFreqResponse.magnitude), name: 'Magnitude (Smoothed)', line: { color: '#0366d6', width: 1.5 }}
-            ], 
-            tabId, 
-            'Transfer Function', 
-            'Frequency (Hz)', 
-            'Amplitude (dBFS)',
-            {type: 'log', range: [Math.log10(20), Math.log10(20000)]}, 
-            {range: [-85, 5]},
-            {}, 
-            false
-        );
-        
-        plot(
-            [
-                {x: transferFunction.frequency, y: transferFunction.phase, name: 'Phase', line: { color: '#0366d666', width: 0.75}},
-                {x: smoothedFreqResponse.frequency, y: smoothedFreqResponse.phase, name: 'Phase (Smoothed)', line: { color: '#0366d6', width: 1.5 }}
-            ], 
-            tabId, 
-            'Phase', 
-            'Frequency (Hz)', 
-            'Amplitude (dBFS)',
-            {type: 'log', range: [Math.log10(20), Math.log10(20000)]}, 
-            {range: [-720, 720]}, 
-            {}, 
-            false
-        );
-        plot(
-            [
-                {x: transferFunction.frequency, y: gd, name: 'Group Delay', line: { color: COLORS[0], width: 1.5, dash: 'dot' }}
-            ], 
-            tabId, 
-            'Group Delay', 
-            'Frequency (Hz)', 
-            'Group Delay (ms)',
-            {type: 'log', range: [Math.log10(20), Math.log10(20000)]}, 
-            {range: [-20, 20]}, 
-            {}, 
-            false
-        );
-
-        // --- Colormap / Spectrogram (Plotly heatmap) ---
-        (() => {
-            const sr =
-                (responseData as any).sampleRate ??
-                (referenceData as any)?.sampleRate ??
-                48000;
-
-            const n = responseSamples.length;
-            if (n < 4096) return;
-
-            const windowSize = 2048;
-            const targetFrames = 320;
-            const minHop = 256;
-
-            const rawFrames = Math.max(1, Math.floor((n - windowSize) / minHop) + 1);
-            const hop =
-                rawFrames > targetFrames
-                    ? Math.max(minHop, Math.ceil((n - windowSize) / targetFrames))
-                    : minHop;
-
-            const frames = Math.max(1, Math.floor((n - windowSize) / hop) + 1);
-
-            // Hann window
-            const win = new Float32Array(windowSize);
-            for (let i = 0; i < windowSize; i++) {
-                win[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (windowSize - 1)));
             }
 
-            // Determine frequency bins from first frame
-            const firstFrame = new Float32Array(windowSize);
-            firstFrame.set(responseSamples.subarray(0, windowSize));
-            for (let i = 0; i < windowSize; i++) firstFrame[i] *= win[i];
+            const sidebarToggleBtn = document.getElementById(`sidebar-toggle-${tabId}`) as HTMLButtonElement;
+            const sidecar = content.querySelector('.sidecar') as HTMLElement;
+            const resizeHandle = content.querySelector('#resize-handle') as HTMLElement;
 
-            const firstFFT = computeFFT(firstFrame);
-            const freqs = Array.from(firstFFT.frequency);
-            const bins = freqs.length;
-
-            // z[freqIndex][timeIndex]
-            const z: number[][] = Array.from({ length: bins }, () => []);
-
-            const times: number[] = [];
-            for (let frame = 0; frame < frames; frame++) {
-                const start = frame * hop;
-                const slice = responseSamples.subarray(start, start + windowSize);
-
-                const windowed = new Float32Array(windowSize);
-                windowed.set(slice);
-                for (let i = 0; i < windowSize; i++) windowed[i] *= win[i];
-
-                const fft = computeFFT(windowed);
-                const magDb = db(fft.magnitude);
-
-                for (let k = 0; k < bins; k++) {
-                    z[k].push(magDb[k]);
+            sidebarToggleBtn.addEventListener('click', () => {
+                if (sidecar.style.width === '0px') {
+                    sidecar.style.width = '21.5rem';
+                    sidebarToggleBtn.title = 'Close settings pane';
+                } else {
+                    sidecar.style.width = '0px';
+                    sidebarToggleBtn.title = 'Open settings pane';
                 }
+            });
 
-                // Use center-of-window time for x axis
-                times.push((start + windowSize / 2) / sr);
-            }
+            let isResizing = false;
+            let lastDownX = 0;
+
+            resizeHandle.addEventListener('mousedown', (e: MouseEvent) => {
+                isResizing = true;
+                lastDownX = e.clientX;
+                document.body.style.cursor = 'ew-resize';
+                e.preventDefault();
+            });
+
+            document.addEventListener('mousemove', (e: MouseEvent) => {
+                if (!isResizing) return;
+                const offsetRight = tabsContainer.clientWidth - (e.clientX);
+                const newWidth = tabsContainer.clientWidth - offsetRight;
+                if (newWidth >= 200 && newWidth <= 600) {
+                    sidecar.style.width = `${newWidth}px`;
+                }
+                e.preventDefault();
+            });
+
+            document.addEventListener('mouseup', () => {
+                if (isResizing) {
+                    isResizing = false;
+                    document.body.style.cursor = 'default';
+                }
+            });
+
+            // Switch to new tab
+            switchTab(tabId);
+
+            // Compute and plot FFTs
+            const responseSamples = responseData.getChannelData(0);
+
+            const responseFFT = computeFFT(responseSamples);
+            const smoothedResponseFFT = smoothFFT(responseFFT, 1 / 6, 1 / 48);
+
+            let referenceSamples = Float32Array.from([]);
 
             plot(
                 [
-                    {
-                        type: 'heatmap',
-                        x: times,
-                        y: freqs,
-                        z,
-                        colorscale: 'Electric',
-                        zmin: -120,
-                        zmax: 0,
-                        colorbar: { title: 'dBFS' }
-                    } as any
+                    { x: responseFFT.frequency, y: db(responseFFT.magnitude), name: 'Recorded signal', line: { color: '#0366d666', width: 0.75 } },
+                    { x: smoothedResponseFFT.frequency, y: db(smoothedResponseFFT.magnitude), name: 'Recorded signal (Smoothed)', line: { color: '#0366d6', width: 1.5 } }
                 ],
                 tabId,
-                'Recorded Spectrogram',
-                'Time (s)',
+                'Recorded Spectrum',
                 'Frequency (Hz)',
-                {},
+                'Amplitude (dBFS)',
                 { type: 'log', range: [Math.log10(20), Math.log10(20000)] },
-                { margin: { l: 60, r: 20, t: 40, b: 50 } },
-                false
+                { range: [-85, 5] },
+                {},
+                true
             );
-        })();
-    }
+            plot(
+                [
+                    { x: linspace(0, responseSamples.length / 48000, responseSamples.length), y: responseSamples, name: 'Recorded signal', line: { color: '#0366d6ff', width: 0.75 } }
+                ],
+                tabId,
+                'Recorded Waveform',
+                'Time (s)',
+                'Amplitude',
+                {},
+                {},
+                {},
+                true
+            );
 
-    saveState();
+            setStatusMessage('');
 
-    // Persist analysis using IndexedDB (mirrored to sessionStorage for compatibility)
-    storage.setItem(`${tabId}`, JSON.stringify({
-        filename,
-        referenceFilename,
-        responseSamples: Array.from(responseSamples),
-        referenceSamples: referenceSamples.length > 0 ? Array.from(referenceSamples) : null,
-    })).catch(err => console.error('Failed to persist analysis:', err));
+            if (referenceData) {
+                referenceSamples = referenceData.getChannelData(0);
+                const referenceFFT: FFTResult = computeFFT(referenceSamples);
+                const smoothedReferenceFFT = smoothFFT(referenceFFT, 1 / 6, 1 / 48);
+                plot(
+                    [
+                        { x: referenceFFT.frequency, y: db(referenceFFT.magnitude), name: 'Stimulus signal', line: { color: '#0366d666', width: 0.75 } },
+                        { x: smoothedReferenceFFT.frequency, y: db(smoothedReferenceFFT.magnitude), name: 'Stimulus signal (Smoothed)', line: { color: '#0366d6', width: 1.5 } }
+                    ],
+                    tabId,
+                    'Stimulus Spectrum',
+                    'Frequency (Hz)',
+                    'Amplitude (dBFS)',
+                    { type: 'log', range: [Math.log10(20), Math.log10(20000)] },
+                    { range: [-85, 5] },
+                    {},
+                    true
+                );
+                plot(
+                    [
+                        { x: linspace(0, referenceSamples.length / 48000, referenceSamples.length), y: referenceSamples, name: 'Stimulus signal', line: { color: '#0366d6ff', width: 0.75 } }
+                    ],
+                    tabId,
+                    'Stimulus Waveform',
+                    'Time (s)',
+                    'Amplitude',
+                    {},
+                    {},
+                    {},
+                    true
+                );
+                const ir: ImpulseResponseResult = twoChannelImpulseResponse(responseSamples, referenceSamples);
+                const farina = new Farina(referenceSamples, 20, 20000, 48000);
+                const farina_ir: ImpulseResponseResult = farina.deconvolvedResponse(responseSamples);
 
-    function initResize(e: MouseEvent): void {
-        e.preventDefault();
-        window.addEventListener('mousemove', resize, false);
-        window.addEventListener('mouseup', stopResize, false);
-        console.log('Init resize');
-        document.body.style.cursor = 'col-resize';
-    }
+                plotDistortion(farina, 0.1, 5, tabId);
+                plotTHD(farina, 0.1, 5, tabId);
 
-    function resize(e: MouseEvent): void {
-        const container = content.querySelector<HTMLElement>('.flex')!;
-        const handle = document.getElementById('resize-handle')?.parentElement!;
-        const rect = container.getBoundingClientRect();
-        const newWidth = e.clientX - rect.left;
-        if (newWidth > 150 && newWidth < rect.width - 150) {
-            handle.style.width = `${newWidth}px`;
-        }
-    }
+                console.log('Impulse response peak at', farina.lag_of_harmonic(2));
 
-    function stopResize(): void {
-        window.removeEventListener('mousemove', resize, false);
-        window.removeEventListener('mouseup', stopResize, false);
-        window.dispatchEvent(new Event('resize'));
-        document.body.style.cursor = 'default';
-    }       
+                plot(
+                    [
+                        { x: ir.t, y: ir.ir, type: 'scatter', mode: 'lines', name: 'Dual-FFT Impulse Response', line: { color: COLORS[0], width: 0.75 } }
+                    ],
+                    tabId,
+                    'Impulse Response',
+                    'Time (s)',
+                    'Amplitude',
+                    {},
+                    {},
+                    {},
+                    false
+                );
 
-    document.getElementById('resize-handle')?.addEventListener('mousedown', initResize, false);
+                plot(
+                    [
+                        { x: [-max(farina_ir.t), max(farina_ir.t)], y: [-200, -200], showlegend: false },
+                        { x: farina_ir.t, y: db(farina_ir.ir.map(x => Math.abs(x))), type: 'scatter', mode: 'lines', fill: 'tonexty', name: 'Farina Impulse Response', line: { color: COLORS[0], width: 0.75 }, fillcolor: COLORS[0] },
+                        { x: [- 0.05, - 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'Fundamental window start', line: { color: '#00000033', width: 0.75 }, hoverinfo: 'skip', showlegend: false },
+                        { x: [0.05, 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'Fundamental window end', line: { color: '#00000033', width: 0.75 }, hoverinfo: 'skip', showlegend: false },
+                        { x: [-farina.lag_of_harmonic(2) - 0.05, -farina.lag_of_harmonic(2) - 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H2 window start', line: { color: '#00000033', width: 0.75 }, hoverinfo: 'skip', showlegend: false },
+                        { x: [-farina.lag_of_harmonic(2) + 0.05, -farina.lag_of_harmonic(2) + 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H2 window end', line: { color: '#00000033', width: 0.75 }, hoverinfo: 'skip', showlegend: false },
+                        { x: [-farina.lag_of_harmonic(3) - 0.05, -farina.lag_of_harmonic(3) - 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H3 window start', line: { color: '#00000033', width: 0.75 }, hoverinfo: 'skip', showlegend: false },
+                        { x: [-farina.lag_of_harmonic(3) + 0.05, -farina.lag_of_harmonic(3) + 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H3 window end', line: { color: '#00000033', width: 0.75 }, hoverinfo: 'skip', showlegend: false },
+                        { x: [-farina.lag_of_harmonic(4) - 0.05, -farina.lag_of_harmonic(4) - 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H4 window start', line: { color: '#00000033', width: 0.75 }, hoverinfo: 'skip', showlegend: false },
+                        { x: [-farina.lag_of_harmonic(4) + 0.05, -farina.lag_of_harmonic(4) + 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H4 window end', line: { color: '#00000033', width: 0.75 }, hoverinfo: 'skip', showlegend: false },
+                        { x: [-farina.lag_of_harmonic(5) - 0.05, -farina.lag_of_harmonic(5) - 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H5 window start', line: { color: '#00000033', width: 0.75 }, hoverinfo: 'skip', showlegend: false },
+                        { x: [-farina.lag_of_harmonic(5) + 0.05, -farina.lag_of_harmonic(5) + 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H5 window end', line: { color: '#00000033', width: 0.75 }, hoverinfo: 'skip', showlegend: false },
+                        { x: [-farina.lag_of_harmonic(6) - 0.05, -farina.lag_of_harmonic(6) - 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H6 window start', line: { color: '#00000033', width: 0.75 }, hoverinfo: 'skip', showlegend: false },
+                        { x: [-farina.lag_of_harmonic(6) + 0.05, -farina.lag_of_harmonic(6) + 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H6 window end', line: { color: '#00000033', width: 0.75 }, hoverinfo: 'skip', showlegend: false },
+                        { x: [-farina.lag_of_harmonic(7) - 0.05, -farina.lag_of_harmonic(7) - 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H7 window start', line: { color: '#00000033', width: 0.75 }, hoverinfo: 'skip', showlegend: false },
+                        { x: [-farina.lag_of_harmonic(7) + 0.05, -farina.lag_of_harmonic(7) + 0.05], y: [-999, 999], type: 'scatter', mode: 'lines', name: 'H7 window end', line: { color: '#00000033', width: 0.75 }, hoverinfo: 'skip', showlegend: false },
 
-    tab.classList.remove('tab-loading');
+                    ],
+                    tabId,
+                    'Deconvolved Response',
+                    'Time (s)',
+                    'Amplitude',
+                    { range: [-1, 1] },
+                    { range: [-150, 10] },
+                    {},
+                    false
+                );
+                const transferFunction = computeFFTFromIR(ir);
+                // const dreferenceFFT = twoChannelFFT(responseData.data, referenceSamples, nextPow2(referenceSamples.length), -5627);
+                const smoothedFreqResponse = smoothFFT(transferFunction, 1 / 6, 1 / 48);
 
-    });});
+                const gd = groupDelays(transferFunction, 1000);
+
+                plot(
+                    [
+                        { x: transferFunction.frequency, y: db(transferFunction.magnitude), name: 'Magnitude', line: { color: '#0366d666', width: 0.75 } },
+                        { x: smoothedFreqResponse.frequency, y: db(smoothedFreqResponse.magnitude), name: 'Magnitude (Smoothed)', line: { color: '#0366d6', width: 1.5 } }
+                    ],
+                    tabId,
+                    'Transfer Function',
+                    'Frequency (Hz)',
+                    'Amplitude (dBFS)',
+                    { type: 'log', range: [Math.log10(20), Math.log10(20000)] },
+                    { range: [-85, 5] },
+                    {},
+                    false
+                );
+
+                plot(
+                    [
+                        { x: transferFunction.frequency, y: transferFunction.phase, name: 'Phase', line: { color: '#0366d666', width: 0.75 } },
+                        { x: smoothedFreqResponse.frequency, y: smoothedFreqResponse.phase, name: 'Phase (Smoothed)', line: { color: '#0366d6', width: 1.5 } }
+                    ],
+                    tabId,
+                    'Phase',
+                    'Frequency (Hz)',
+                    'Amplitude (dBFS)',
+                    { type: 'log', range: [Math.log10(20), Math.log10(20000)] },
+                    { range: [-720, 720] },
+                    {},
+                    false
+                );
+                plot(
+                    [
+                        { x: transferFunction.frequency, y: gd, name: 'Group Delay', line: { color: COLORS[0], width: 1.5, dash: 'dot' } }
+                    ],
+                    tabId,
+                    'Group Delay',
+                    'Frequency (Hz)',
+                    'Group Delay (ms)',
+                    { type: 'log', range: [Math.log10(20), Math.log10(20000)] },
+                    { range: [-20, 20] },
+                    {},
+                    false
+                );
+
+                // --- Colormap / Spectrogram (Plotly heatmap) ---
+                (() => {
+                    const sr =
+                        (responseData as any).sampleRate ??
+                        (referenceData as any)?.sampleRate ??
+                        48000;
+
+                    const n = responseSamples.length;
+                    if (n < 4096) return;
+
+                    const windowSize = 2048;
+                    const targetFrames = 320;
+                    const minHop = 256;
+
+                    const rawFrames = Math.max(1, Math.floor((n - windowSize) / minHop) + 1);
+                    const hop =
+                        rawFrames > targetFrames
+                            ? Math.max(minHop, Math.ceil((n - windowSize) / targetFrames))
+                            : minHop;
+
+                    const frames = Math.max(1, Math.floor((n - windowSize) / hop) + 1);
+
+                    // Hann window
+                    const win = new Float32Array(windowSize);
+                    for (let i = 0; i < windowSize; i++) {
+                        win[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (windowSize - 1)));
+                    }
+
+                    // Determine frequency bins from first frame
+                    const firstFrame = new Float32Array(windowSize);
+                    firstFrame.set(responseSamples.subarray(0, windowSize));
+                    for (let i = 0; i < windowSize; i++) firstFrame[i] *= win[i];
+
+                    const firstFFT = computeFFT(firstFrame);
+                    const freqs = Array.from(firstFFT.frequency);
+                    const bins = freqs.length;
+
+                    // z[freqIndex][timeIndex]
+                    const z: number[][] = Array.from({ length: bins }, () => []);
+
+                    const times: number[] = [];
+                    for (let frame = 0; frame < frames; frame++) {
+                        const start = frame * hop;
+                        const slice = responseSamples.subarray(start, start + windowSize);
+
+                        const windowed = new Float32Array(windowSize);
+                        windowed.set(slice);
+                        for (let i = 0; i < windowSize; i++) windowed[i] *= win[i];
+
+                        const fft = computeFFT(windowed);
+                        const magDb = db(fft.magnitude);
+
+                        for (let k = 0; k < bins; k++) {
+                            z[k].push(magDb[k]);
+                        }
+
+                        // Use center-of-window time for x axis
+                        times.push((start + windowSize / 2) / sr);
+                    }
+
+                    plot(
+                        [
+                            {
+                                type: 'heatmap',
+                                x: times,
+                                y: freqs,
+                                z,
+                                colorscale: 'Electric',
+                                zmin: -120,
+                                zmax: 0,
+                                colorbar: { title: 'dBFS' }
+                            } as any
+                        ],
+                        tabId,
+                        'Recorded Spectrogram',
+                        'Time (s)',
+                        'Frequency (Hz)',
+                        {},
+                        { type: 'log', range: [Math.log10(20), Math.log10(20000)] },
+                        { margin: { l: 60, r: 20, t: 40, b: 50 } },
+                        false
+                    );
+                })();
+            }
+
+            saveState();
+
+            // Persist analysis using IndexedDB (mirrored to sessionStorage for compatibility)
+            storage.setItem(`${tabId}`, JSON.stringify({
+                filename,
+                referenceFilename,
+                responseSamples: Array.from(responseSamples),
+                referenceSamples: referenceSamples.length > 0 ? Array.from(referenceSamples) : null,
+            })).catch(err => console.error('Failed to persist analysis:', err));
+
+            function initResize(e: MouseEvent): void {
+                e.preventDefault();
+                window.addEventListener('mousemove', resize, false);
+                window.addEventListener('mouseup', stopResize, false);
+                console.log('Init resize');
+                document.body.style.cursor = 'col-resize';
+            }
+
+            function resize(e: MouseEvent): void {
+                const container = content.querySelector<HTMLElement>('.flex')!;
+                const handle = document.getElementById('resize-handle')?.parentElement!;
+                const rect = container.getBoundingClientRect();
+                const newWidth = e.clientX - rect.left;
+                if (newWidth > 150 && newWidth < rect.width - 150) {
+                    handle.style.width = `${newWidth}px`;
+                }
+            }
+
+            function stopResize(): void {
+                window.removeEventListener('mousemove', resize, false);
+                window.removeEventListener('mouseup', stopResize, false);
+                window.dispatchEvent(new Event('resize'));
+                document.body.style.cursor = 'default';
+            }
+
+            document.getElementById('resize-handle')?.addEventListener('mousedown', initResize, false);
+
+            tab.classList.remove('tab-loading');
+
+        });
+    });
 }
 
 
@@ -974,223 +970,223 @@ function createDirectivityPlotTab(responseDatas: Audio[], referenceData: Audio, 
     tabContents.appendChild(content);
 
     window.requestAnimationFrame(() => {
-    window.requestAnimationFrame(() => {
-    
-    //switchTab(tabId);
+        window.requestAnimationFrame(() => {
 
-    const startTime = performance.now()
+            //switchTab(tabId);
 
-    const useCustomAngles = !!anglesDeg && anglesDeg.length === responseDatas.length;
-    const angles = useCustomAngles
-        ? anglesDeg!.map(normalizeAngleDeg)
-        : responseDatas.map((_, i) => (360 * i) / responseDatas.length);
+            const startTime = performance.now()
 
-    const referenceSamples = Float32Array.from(referenceData.getChannelData(0));
-    
-    const len = Math.min(7.5*48000, referenceSamples.length);
-    const referenceFFT = updatedFFT(referenceSamples.subarray(0, len), len);
-    
-    const calcStartTime = performance.now()
-    const transfers: FFTResult[] = [];
-    const smoothTransfers: FFTResult[] = [];
-    for (let i = 0; i < responseDatas.length; i++) {
-        const resp = responseDatas[i];
-        const loopStartTime = performance.now()
-        const fftr = twoChannelFFT(
-            resp.getChannelData(0).subarray(0, len),
-            referenceSamples.subarray(0, len),
-            nextPow2(len),
-            0,
-            referenceFFT,
-        );
-        //
-        fftr.magnitude = fftr.magnitude.map((v, i) => Math.abs(v));
-        
-        const ffto = smoothFFT(fftr, 1/3, 1/48);
-        smoothTransfers.push(ffto);
-        transfers.push(fftr);
-    }
-    const calcEndTime = performance.now()
-    console.warn(`CALC TOOK ${calcEndTime - calcStartTime} milliseconds`)
+            const useCustomAngles = !!anglesDeg && anglesDeg.length === responseDatas.length;
+            const angles = useCustomAngles
+                ? anglesDeg!.map(normalizeAngleDeg)
+                : responseDatas.map((_, i) => (360 * i) / responseDatas.length);
 
-        
-    const baseFreq = transfers[0]?.frequency;
-    if (!baseFreq || baseFreq.length === 0) return;
+            const referenceSamples = Float32Array.from(referenceData.getChannelData(0));
 
-    const normHz = 1000;
-    let normIdx = 0;
-    let best = Number.POSITIVE_INFINITY;
-    for (let i = 0; i < baseFreq.length; i++) {
-        const d = Math.abs(baseFreq[i] - normHz);
-        if (d < best) {
-        best = d;
-        normIdx = i;
-        }
-    }
-    
-    transfers.push(transfers[0]); // close the circle
-    angles.push(360); // close the circle
+            const len = Math.min(7.5 * 48000, referenceSamples.length);
+            const referenceFFT = updatedFFT(referenceSamples.subarray(0, len), len);
 
-    // cycle array by 16 indices to center front at 0 deg
-    const cycleBy = 18;
-    const cycleTransfers = smoothTransfers.slice(cycleBy).concat(smoothTransfers.slice(0, cycleBy));
+            const calcStartTime = performance.now()
+            const transfers: FFTResult[] = [];
+            const smoothTransfers: FFTResult[] = [];
+            for (let i = 0; i < responseDatas.length; i++) {
+                const resp = responseDatas[i];
+                const loopStartTime = performance.now()
+                const fftr = twoChannelFFT(
+                    resp.getChannelData(0).subarray(0, len),
+                    referenceSamples.subarray(0, len),
+                    nextPow2(len),
+                    0,
+                    referenceFFT,
+                );
+                //
+                fftr.magnitude = fftr.magnitude.map((v, i) => Math.abs(v));
+
+                const ffto = smoothFFT(fftr, 1 / 3, 1 / 48);
+                smoothTransfers.push(ffto);
+                transfers.push(fftr);
+            }
+            const calcEndTime = performance.now()
+            console.warn(`CALC TOOK ${calcEndTime - calcStartTime} milliseconds`)
 
 
-    const asngles = angles.map(a => a-180);
+            const baseFreq = transfers[0]?.frequency;
+            if (!baseFreq || baseFreq.length === 0) return;
 
-    // z[angleIndex][freqIndex]
-    const z: any = cycleTransfers.map((tf) => {
-        const magDb = db(tf.magnitude);
-        return magDb.map((v, i) => v - db(smoothTransfers[0].magnitude)[i]);
-    });
-
-        
-    const endTime = performance.now()
-
-    console.warn(`TOOK ${endTime - startTime} milliseconds`)
-
-    plot(
-        [
-        {
-            type: 'heatmap',
-            x: smoothTransfers[0].frequency,
-            y: asngles,
-            z,
-            colorscale: 'Portland',
-            zmin: -24,
-            contours: { coloring: '#fff', showlines: true, start: -36, end: 0, size: 6 },
-            zmax: 6,
-            zsmooth: 'best',
-            colorbar: { title: 'dB (norm @ 1 kHz)' }
-        } as any
-        ],
-        tabId,
-        'Directivity Map',
-        'Frequency (Hz)',
-        'Angle (deg)',
-        { type: 'log', range: [Math.log10(20), Math.log10(20000)] },
-        { range: [-180, 180] },
-        { margin: { l: 60, r: 20, t: 40, b: 50 } },
-        false
-    );
-
-    // Calculate the average response.
-    const avgMagnitude = new Float32Array(baseFreq.length);
-    for (let i = 0; i < baseFreq.length; i++) {
-        let sum = 0;
-        for (let j = 0; j < transfers.length - 1; j++) {
-            sum += transfers[j].magnitude[i];
-        }
-        avgMagnitude[i] = sum / (transfers.length - 1);
-    }
-    
-    const smoothAvgMagnitude = smoothFFT({frequency: baseFreq, magnitude: avgMagnitude, phase: new Float32Array(baseFreq.length), fftSize: nextPow2(baseFreq.length)}, 1/6, 1/48);
-    const on = smoothFFT(transfers[0], 1/6, 1/48);
-
-    const anglesToPlot = [0, 30, 60, 90, 180];
-
-    plot(
-        [
-            ...anglesToPlot.map((angle, i) => {
-                const idx = angles.findIndex(a => Math.abs(a - angle) < 0.1);
-                if (idx === -1) {
-                    return null;
-                }
-                return {x: smoothFFT(transfers[idx], 1/6, 1/48).frequency, y: db(smoothFFT(transfers[idx], 1/6, 1/48).magnitude), name: `${angle} deg response`, line: { width: 1.5, color: COLORS[i] }};
-            }),
-            {x: smoothAvgMagnitude.frequency, y: db(smoothAvgMagnitude.magnitude), name: 'Average Response', line: { width: 2, color: '#000000' }},
-        
-        ], 
-        tabId, 
-        'Transfer Function', 
-        'Frequency (Hz)', 
-        'Amplitude (dB)',
-        {type: 'log', range: [Math.log10(20), Math.log10(20000)]}, 
-        {range: [-85, 5]},
-        {}, 
-        false
-    );
-
-    // Plot directivity index.
-    plot(
-        [
-            {x: on.frequency, y: db(smoothAvgMagnitude.magnitude).map((v, i) => db(on.magnitude)[i] - v), name: 'Average Response', line: { width: 2, color: '#000000' }},
-        ], 
-        tabId, 
-        'Directivity Index', 
-        'Frequency (Hz)', 
-        'DI (dB)',
-        {type: 'log', range: [Math.log10(20), Math.log10(20000)]}, 
-        {range: [-10, 50]},
-        {}, 
-        false
-    );
-
-    // Polar directivity plots (add several frequency slices)
-    (() => {
-        const freqsToPlot = [62.5, 125, 250, 500, 1_000, 2_000, 4_000, 8_000, 16_000];
-        const uniqueTransfers = smoothTransfers; // last entry is duplicate to close circle
-        const uniqueAngles = angles;
-
-        const traces: any[] = [];
-        const aseFreq = uniqueTransfers[0].frequency;
-
-        for (let fi = 0; fi < freqsToPlot.length; fi++) {
-            const hz = freqsToPlot[fi];
-            // find nearest frequency index
-            let idx = 0;
+            const normHz = 1000;
+            let normIdx = 0;
             let best = Number.POSITIVE_INFINITY;
-            for (let i = 0; i < aseFreq.length; i++) {
-                const d = Math.abs(aseFreq[i] - hz);
+            for (let i = 0; i < baseFreq.length; i++) {
+                const d = Math.abs(baseFreq[i] - normHz);
                 if (d < best) {
                     best = d;
-                    idx = i;
+                    normIdx = i;
                 }
             }
 
-            // collect magnitude (dB) across angles
-            const magDb = uniqueTransfers.map(tf => db(tf.magnitude)[idx] ?? -999);
-            // normalize so max = 0 dB
-            const maxVal = Math.max(...magDb);
-            const r = magDb.map(v => v - maxVal);
+            transfers.push(transfers[0]); // close the circle
+            angles.push(360); // close the circle
 
-            // close the loop for polar plot
-            const theta = [...uniqueAngles, 360];
-            const rClosed = [...r];
+            // cycle array by 16 indices to center front at 0 deg
+            const cycleBy = 18;
+            const cycleTransfers = smoothTransfers.slice(cycleBy).concat(smoothTransfers.slice(0, cycleBy));
 
-            traces.push({
-                type: 'scatterpolar',
-                r: rClosed,
-                theta,
-                mode: 'lines+markers',
-                name: `${hz} Hz`,
-                line: { color: COLORS[fi % COLORS.length], width: 2 },
-                marker: { size: 4 }
+
+            const asngles = angles.map(a => a - 180);
+
+            // z[angleIndex][freqIndex]
+            const z: any = cycleTransfers.map((tf) => {
+                const magDb = db(tf.magnitude);
+                return magDb.map((v, i) => v - db(smoothTransfers[0].magnitude)[i]);
             });
-        }
 
-        plot(
-            traces,
-            tabId,
-            'Polar Directivity',
-            'Frequency (Hz)',
-            'Angle (deg)',
-            {}, // x-axis options unused for polar
-            {}, // y-axis options unused for polar
-            { 
-                polar: {
-                    radialaxis: { title: { text: 'Relative dB (max = 0 dB)' }, angle: 90, dtick: 10, range: [-50, 0]  },
-                    angularaxis: { direction: 'clockwise', rotation: 90, tickmode: 'array' }
-                },
-                margin: { l: 60, r: 20, t: 40, b: 50 }
-            },
-            false
-        );
-    })();
 
-        
-    tab.classList.remove('tab-loading');
-    });
+            const endTime = performance.now()
+
+            console.warn(`TOOK ${endTime - startTime} milliseconds`)
+
+            plot(
+                [
+                    {
+                        type: 'heatmap',
+                        x: smoothTransfers[0].frequency,
+                        y: asngles,
+                        z,
+                        colorscale: 'Portland',
+                        zmin: -24,
+                        contours: { coloring: '#fff', showlines: true, start: -36, end: 0, size: 6 },
+                        zmax: 6,
+                        zsmooth: 'best',
+                        colorbar: { title: 'dB (norm @ 1 kHz)' }
+                    } as any
+                ],
+                tabId,
+                'Directivity Map',
+                'Frequency (Hz)',
+                'Angle (deg)',
+                { type: 'log', range: [Math.log10(20), Math.log10(20000)] },
+                { range: [-180, 180] },
+                { margin: { l: 60, r: 20, t: 40, b: 50 } },
+                false
+            );
+
+            // Calculate the average response.
+            const avgMagnitude = new Float32Array(baseFreq.length);
+            for (let i = 0; i < baseFreq.length; i++) {
+                let sum = 0;
+                for (let j = 0; j < transfers.length - 1; j++) {
+                    sum += transfers[j].magnitude[i];
+                }
+                avgMagnitude[i] = sum / (transfers.length - 1);
+            }
+
+            const smoothAvgMagnitude = smoothFFT({ frequency: baseFreq, magnitude: avgMagnitude, phase: new Float32Array(baseFreq.length), fftSize: nextPow2(baseFreq.length) }, 1 / 6, 1 / 48);
+            const on = smoothFFT(transfers[0], 1 / 6, 1 / 48);
+
+            const anglesToPlot = [0, 30, 60, 90, 180];
+
+            plot(
+                [
+                    ...anglesToPlot.map((angle, i) => {
+                        const idx = angles.findIndex(a => Math.abs(a - angle) < 0.1);
+                        if (idx === -1) {
+                            return null;
+                        }
+                        return { x: smoothFFT(transfers[idx], 1 / 6, 1 / 48).frequency, y: db(smoothFFT(transfers[idx], 1 / 6, 1 / 48).magnitude), name: `${angle} deg response`, line: { width: 1.5, color: COLORS[i] } };
+                    }),
+                    { x: smoothAvgMagnitude.frequency, y: db(smoothAvgMagnitude.magnitude), name: 'Average Response', line: { width: 2, color: '#000000' } },
+
+                ],
+                tabId,
+                'Transfer Function',
+                'Frequency (Hz)',
+                'Amplitude (dB)',
+                { type: 'log', range: [Math.log10(20), Math.log10(20000)] },
+                { range: [-85, 5] },
+                {},
+                false
+            );
+
+            // Plot directivity index.
+            plot(
+                [
+                    { x: on.frequency, y: db(smoothAvgMagnitude.magnitude).map((v, i) => db(on.magnitude)[i] - v), name: 'Average Response', line: { width: 2, color: '#000000' } },
+                ],
+                tabId,
+                'Directivity Index',
+                'Frequency (Hz)',
+                'DI (dB)',
+                { type: 'log', range: [Math.log10(20), Math.log10(20000)] },
+                { range: [-10, 50] },
+                {},
+                false
+            );
+
+            // Polar directivity plots (add several frequency slices)
+            (() => {
+                const freqsToPlot = [62.5, 125, 250, 500, 1_000, 2_000, 4_000, 8_000, 16_000];
+                const uniqueTransfers = smoothTransfers; // last entry is duplicate to close circle
+                const uniqueAngles = angles;
+
+                const traces: any[] = [];
+                const aseFreq = uniqueTransfers[0].frequency;
+
+                for (let fi = 0; fi < freqsToPlot.length; fi++) {
+                    const hz = freqsToPlot[fi];
+                    // find nearest frequency index
+                    let idx = 0;
+                    let best = Number.POSITIVE_INFINITY;
+                    for (let i = 0; i < aseFreq.length; i++) {
+                        const d = Math.abs(aseFreq[i] - hz);
+                        if (d < best) {
+                            best = d;
+                            idx = i;
+                        }
+                    }
+
+                    // collect magnitude (dB) across angles
+                    const magDb = uniqueTransfers.map(tf => db(tf.magnitude)[idx] ?? -999);
+                    // normalize so max = 0 dB
+                    const maxVal = Math.max(...magDb);
+                    const r = magDb.map(v => v - maxVal);
+
+                    // close the loop for polar plot
+                    const theta = [...uniqueAngles, 360];
+                    const rClosed = [...r];
+
+                    traces.push({
+                        type: 'scatterpolar',
+                        r: rClosed,
+                        theta,
+                        mode: 'lines+markers',
+                        name: `${hz} Hz`,
+                        line: { color: COLORS[fi % COLORS.length], width: 2 },
+                        marker: { size: 4 }
+                    });
+                }
+
+                plot(
+                    traces,
+                    tabId,
+                    'Polar Directivity',
+                    'Frequency (Hz)',
+                    'Angle (deg)',
+                    {}, // x-axis options unused for polar
+                    {}, // y-axis options unused for polar
+                    {
+                        polar: {
+                            radialaxis: { title: { text: 'Relative dB (max = 0 dB)' }, angle: 90, dtick: 10, range: [-50, 0] },
+                            angularaxis: { direction: 'clockwise', rotation: 90, tickmode: 'array' }
+                        },
+                        margin: { l: 60, r: 20, t: 40, b: 50 }
+                    },
+                    false
+                );
+            })();
+
+
+            tab.classList.remove('tab-loading');
+        });
     });
 }
 
@@ -1200,7 +1196,7 @@ function saveState(): void {
         id: (tab as HTMLElement).dataset.tab,
         name: (tab as HTMLElement).textContent?.replace('×', '').trim()
     }));
-    
+
     storage.setItem('tabs', JSON.stringify(tabs));
     console.log('Saved state with tabs:', tabs);
 }
@@ -1236,7 +1232,7 @@ function normalizesAngleDeg(angle: number): number {
 async function loadTestPolarData(): Promise<void> {
     // Load some test data for polar analysis
     const angles = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200, 210, 220, 230, 240, 250, 260, 270, 280, 290, 300, 310, 320, 330, 340, 350];
-    
+
     const files = angles.map(a => `testdata/${a}.wav`);
     createDirectivityPlotTab(
         await Promise.all(files.map(f => loadAudioFromFilename(f))),
@@ -1245,88 +1241,132 @@ async function loadTestPolarData(): Promise<void> {
     );
 }
 
-const fileMap = new Map();
-function createListItem(file: File, id: string, audioObject: Audio): HTMLLIElement {
+async function loadWaveformsFromStorage(): Promise<Audio[]> {
+    // Load waveforms from IndexedDB (mirrored to sessionStorage for compatibility)
+    const waveforms = storage.getItem('waveforms');
+    console.log('Attempting:', waveforms);
+
+    const items: Audio[] = [];
+
+    await waveforms.then(raw => {
+        const decoded = JSON.parse(raw || '[]');
+        console.log('f ', decoded[0], decoded[0].length, decoded[0].data?.length, decoded[0].metadata);
+        console.log('Decoded waveforms from storage:', decoded);
+
+        const startLoadTime = performance.now();
+        for (const item of decoded) {
+            items.push(Audio.fromObject(item));
+        }
+        console.log(`Loaded ${items.length} waveforms from storage in ${performance.now() - startLoadTime} milliseconds`);
+        console.log('Loaded waveforms from storage:', items);
+    }).catch(err => {
+        console.warn('Failed to load waveforms from storage:', err);
+    });
+
+    console.log('Returning loaded waveforms:', items);
+
+    return items;
+}
+
+function saveWaveformsToStorage(waveforms: Audio[]): void {
+    // Save waveforms to IndexedDB (mirrored to sessionStorage for compatibility)
+    console.warn('Saving waveforms to storage:', waveforms);
+    const toSave = waveforms.map(wf => wf.toObject());
+    storage.setItem('waveforms', JSON.stringify(toSave)).catch(err => {
+        console.error('Failed to save waveforms to storage:', err);
+    });
+}
+
+function createListItem(audioObject: Audio): HTMLLIElement {
     const li = document.createElement('li');
-    li.dataset.id = id;
+    //li.dataset.id = id;
     li.style.display = 'flex';
     li.classList.add('file-list-item');
     li.innerHTML = `
         <div style="flex:1;min-width:0;">
-            <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${file.name}</div>
-            <div style="font-size:12px;color:#666;">${(file.size/1024).toFixed(1)} KB • ${file.type || 'audio/*'}</div>
+            <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${audioObject.metadata?.filename || 'Unknown'}</div>
+            <div style="font-size:12px;color:#666;">${audioObject.metadata?.mime || 'audio/*'}</div>
             <div style="font-size:12px;color:#666;">Duration: ${audioObject.duration.toFixed(2)} seconds</div>
             <div style="font-size:12px;color:#666;">Angle: ${audioObject?.metadata?.iXML?.angle ?? 'N/A'} deg</div>
             <div style="font-size:12px;color:#666;">Origin: ${audioObject?.metadata?.iXML?.origin ?? 'Imported'}</div>
         </div>
         <div class="file-list-item-controls flex:1;min-width:0;">
-            <div><label style="font-size:13px;"><input type="radio" name="selectedResponse" value="${id}"> Response</label></div>
-            <div><label style="font-size:13px;"><input type="radio" name="selectedReference" value="${id}"> Reference</label></div>
+            <div><label style="font-size:13px;"><input type="radio" name="selectedResponse" value=""> Response</label></div>
+            <div><label style="font-size:13px;"><input type="radio" name="selectedReference" value=""> Reference</label></div>
             <div><button type="button" data-action="remove" style="margin-left:8px;">Remove</button></div>
         </div>
     `;
     return li;
 }
 
-function updateAnalyzeState(){
+function updateAnalyzeState() {
     const hasResponse = !!document.querySelector('input[name="selectedResponse"]:checked');
     const analyzeBtn = document.getElementById('analyzeUploadBtn');
 }
 
-function addFilesFromInput(fileList: FileList){
-    Array.from(fileList).forEach(async f=>{
-        const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
-        const a = await audio.loadAudioFile(f).catch(err=>{
-            alert(`Failed to load audio file "${f.name}": ${err.message || err}`);
-        });
-        fileMap.set(id, f);
-        const li = createListItem(f, id, a);
+async function addFilesFromInput(fileList: FileList) {
+    await Promise.all(Array.from(fileList).map(async f => {
+        const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+        const a = await audio.loadAudioFile(f);
+        fileMap.push(a); 
+        console.log('Added file:', id, a);
+        console.log('Current file map:', fileMap);
+        const li = createListItem(a);
         document.getElementById('fileList')?.appendChild(li);
+    })).then(() => {
+        console.log('All files added. Current file map:', fileMap);
+        saveWaveformsToStorage(fileMap);
     });
     updateAnalyzeState();
 }
 
-document.addEventListener('DOMContentLoaded', ()=>{
+document.addEventListener('DOMContentLoaded', () => {
     const respInput = document.getElementById('responseFileUpload');
     const refInput = document.getElementById('referenceFileUpload'); // exists below
-    if(respInput) respInput.addEventListener('change', e => {
-        if(e?.target?.files?.length) addFilesFromInput(e.target.files);
-        e.target.value = '';
-    });
-    if(refInput) refInput.addEventListener('change', e => {
-        if(e?.target?.files?.length) addFilesFromInput(e.target.files);
+    if (respInput) respInput.addEventListener('change', e => {
+        if (e?.target?.files?.length) addFilesFromInput(e.target.files);
         e.target.value = '';
     });
 
-    document.getElementById('fileList').addEventListener('click', e=>{
+    document.getElementById('fileList').addEventListener('click', e => {
         const li = e.target.closest('li');
-        if(!li) return;
+        if (!li) return;
         const id = li.dataset.id;
-        if(e.target.matches('button[data-action="remove"]')){
+        if (e.target.matches('button[data-action="remove"]')) {
             // remove
             // if removed file was chosen in underlying file inputs, clear radios
             const responseRadio = document.querySelector(`input[name="selectedResponse"][value="${id}"]`);
             const referenceRadio = document.querySelector(`input[name="selectedReference"][value="${id}"]`);
-            if(responseRadio && responseRadio.checked) responseRadio.checked = false;
-            if(referenceRadio && referenceRadio.checked) referenceRadio.checked = false;
-            fileMap.delete(id);
+            if (responseRadio && responseRadio.checked) responseRadio.checked = false;
+            if (referenceRadio && referenceRadio.checked) referenceRadio.checked = false;
+            const index = fileMap.findIndex(a => a.id === id);
+            if (index !== -1) fileMap.splice(index, 1);
             li.remove();
-            updateAnalyzeState();
-        }
-    });
-
-    document.getElementById('fileList').addEventListener('change', e=>{
-        if(e.target.name === 'selectedResponse'){
+            fileMap.pop()
+            saveWaveformsToStorage(fileMap);
             // ensure analyze button is enabled/disabled
             updateAnalyzeState();
         }
     });
+
+    document.getElementById('fileList').addEventListener('change', e => {
+        if (e.target.name === 'selectedResponse') {
+            // ensure analyze button is enabled/disabled
+            updateAnalyzeState();
+        }
+    });
+
+    loadWaveformsFromStorage().then(waveforms => {
+        console.log('Loaded waveforms from storage on startup:', waveforms);
+        for (const a of waveforms) {
+            console.log('Creating list item for loaded waveform:', a);
+            const li = createListItem(a);
+            fileMap.push(a);
+            document.getElementById('fileList')?.appendChild(li);
+        }
+    });
 });
 
-loadTestPolarData();
+// loadTestPolarData();
 // Load state on page load
 loadState();
-
-function solve() {
-    throw new Error("Function not implemented.");
-}
