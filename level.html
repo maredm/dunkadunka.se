@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ITU-T P.56 Speech Voltmeter Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 2rem;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+        
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+        }
+        
+        h1 {
+            font-size: 2rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+        
+        .subtitle {
+            opacity: 0.9;
+            font-size: 0.95rem;
+        }
+        
+        .content {
+            padding: 2rem;
+        }
+        
+        .upload-section {
+            background: #f8f9fa;
+            border: 2px dashed #cbd5e0;
+            border-radius: 12px;
+            padding: 3rem 2rem;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            margin-bottom: 2rem;
+        }
+        
+        .upload-section:hover {
+            border-color: #667eea;
+            background: #f0f4ff;
+        }
+        
+        .upload-section.dragover {
+            border-color: #667eea;
+            background: #e6edff;
+            transform: scale(1.02);
+        }
+        
+        #fileInput {
+            display: none;
+        }
+        
+        .upload-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            color: #667eea;
+        }
+        
+        .upload-text {
+            font-size: 1.1rem;
+            color: #4a5568;
+            margin-bottom: 0.5rem;
+        }
+        
+        .upload-hint {
+            font-size: 0.9rem;
+            color: #718096;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 0.75rem 2rem;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(102, 126, 234, 0.5);
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .file-info {
+            background: #e6edff;
+            border-left: 4px solid #667eea;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+        }
+        
+        .file-info-title {
+            font-weight: 600;
+            color: #667eea;
+            margin-bottom: 0.5rem;
+        }
+        
+        .file-info-detail {
+            font-size: 0.9rem;
+            color: #4a5568;
+            margin: 0.25rem 0;
+        }
+        
+        .results {
+            display: none;
+            margin-top: 2rem;
+        }
+        
+        .results.visible {
+            display: block;
+            animation: fadeIn 0.5s ease;
+        }
+        
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .result-card {
+            background: linear-gradient(135deg, #f6f8fb 0%, #ffffff 100%);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .result-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .result-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+        
+        .result-item {
+            background: white;
+            padding: 1rem;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+        }
+        
+        .result-label {
+            font-size: 0.85rem;
+            color: #718096;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 0.5rem;
+        }
+        
+        .result-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #667eea;
+        }
+        
+        .result-unit {
+            font-size: 0.9rem;
+            color: #a0aec0;
+            font-weight: 400;
+        }
+        
+        .status-message {
+            text-align: center;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            display: none;
+        }
+        
+        .status-message.visible {
+            display: block;
+        }
+        
+        .status-message.error {
+            background: #fee;
+            color: #c53030;
+            border: 1px solid #fc8181;
+        }
+        
+        .status-message.processing {
+            background: #fffaf0;
+            color: #744210;
+            border: 1px solid #f6ad55;
+        }
+        
+        .loader {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>ITU-T P.56 Speech Voltmeter</h1>
+            <div class="subtitle">Active Speech Level Measurement Tool</div>
+        </header>
+        
+        <div class="content">
+            <div class="status-message" id="statusMessage"></div>
+            
+            <div class="upload-section" id="uploadSection">
+                <div class="upload-icon">🎵</div>
+                <div class="upload-text">Drop WAV file here or click to browse</div>
+                <div class="upload-hint">Supports WAV, MP3, FLAC, OGG and other audio formats</div>
+                <input type="file" id="fileInput" accept="audio/*,.wav,.mp3,.flac,.ogg">
+            </div>
+            
+            <div id="fileInfo" class="file-info" style="display: none;">
+                <div class="file-info-title">📄 File Information</div>
+                <div class="file-info-detail" id="fileName"></div>
+                <div class="file-info-detail" id="fileSize"></div>
+                <div class="file-info-detail" id="fileDuration"></div>
+                <div class="file-info-detail" id="fileSampleRate"></div>
+                <div class="file-info-detail" id="fileChannels"></div>
+            </div>
+            
+            <div style="text-align: center;">
+                <button id="analyzeBtn" disabled>Analyze Audio</button>
+            </div>
+            
+            <div class="results" id="results">
+                <div class="result-card">
+                    <div class="result-title">
+                        <span>📊</span> Active Speech Level Measurements
+                    </div>
+                    <div class="result-grid">
+                        <div class="result-item">
+                            <div class="result-label">Active Speech Level</div>
+                            <div class="result-value" id="activeSpeechLevel">--</div>
+                            <div class="result-unit">dBov</div>
+                        </div>
+                        <div class="result-item">
+                            <div class="result-label">Activity Factor</div>
+                            <div class="result-value" id="activityFactor">--</div>
+                            <div class="result-unit">%</div>
+                        </div>
+                        <div class="result-item">
+                            <div class="result-label">RMS Level</div>
+                            <div class="result-value" id="rmsLevel">--</div>
+                            <div class="result-unit">dBov</div>
+                        </div>
+                        <div class="result-item">
+                            <div class="result-label">DC Level</div>
+                            <div class="result-value" id="dcLevel">--</div>
+                            <div class="result-unit"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="result-card">
+                    <div class="result-title">
+                        <span>📈</span> Peak Statistics
+                    </div>
+                    <div class="result-grid">
+                        <div class="result-item">
+                            <div class="result-label">Max Absolute</div>
+                            <div class="result-value" id="maxAbs">--</div>
+                            <div class="result-unit">dBFS</div>
+                        </div>
+                        <div class="result-item">
+                            <div class="result-label">Max Positive</div>
+                            <div class="result-value" id="maxPos">--</div>
+                            <div class="result-unit"></div>
+                        </div>
+                        <div class="result-item">
+                            <div class="result-label">Max Negative</div>
+                            <div class="result-value" id="maxNeg">--</div>
+                            <div class="result-unit"></div>
+                        </div>
+                        <div class="result-item">
+                            <div class="result-label">Headroom</div>
+                            <div class="result-value" id="headroom">--</div>
+                            <div class="result-unit">dB</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="result-card">
+                    <div class="result-title">
+                        <span>🔊</span> ITU-R BS.1770-4 Loudness
+                    </div>
+                    <div class="result-grid">
+                        <div class="result-item">
+                            <div class="result-label">Integrated Loudness</div>
+                            <div class="result-value" id="bs1770Loudness">--</div>
+                            <div class="result-unit">LKFS</div>
+                        </div>
+                        <div class="result-item">
+                            <div class="result-label">Loudness Range</div>
+                            <div class="result-value" id="bs1770Range">--</div>
+                            <div class="result-unit">LU</div>
+                        </div>
+                        <div class="result-item">
+                            <div class="result-label">EBU R128 Loudness</div>
+                            <div class="result-value" id="ebuLoudness">--</div>
+                            <div class="result-unit">LUFS</div>
+                        </div>
+                        <div class="result-item">
+                            <div class="result-label">Target Offset</div>
+                            <div class="result-value" id="targetOffset">--</div>
+                            <div class="result-unit">dB</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script type="module">
+        import { SpeechVoltmeter } from './src/volt-meter.js';
+        import { BS1770Meter } from './src/bs1770.js';
+        
+        const fileInput = document.getElementById('fileInput');
+        const uploadSection = document.getElementById('uploadSection');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const results = document.getElementById('results');
+        const fileInfo = document.getElementById('fileInfo');
+        const statusMessage = document.getElementById('statusMessage');
+        
+        let audioBuffer = null;
+        let selectedFile = null;
+        
+        // Upload section click handler
+        uploadSection.addEventListener('click', () => {
+            fileInput.click();
+        });
+        
+        // Prevent default drag behaviors
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            uploadSection.addEventListener(eventName, preventDefaults, false);
+            document.body.addEventListener(eventName, preventDefaults, false);
+        });
+        
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        
+        // Highlight drop area when item is dragged over it
+        ['dragenter', 'dragover'].forEach(eventName => {
+            uploadSection.addEventListener(eventName, () => {
+                uploadSection.classList.add('dragover');
+            }, false);
+        });
+        
+        ['dragleave', 'drop'].forEach(eventName => {
+            uploadSection.addEventListener(eventName, () => {
+                uploadSection.classList.remove('dragover');
+            }, false);
+        });
+        
+        // Handle dropped files
+        uploadSection.addEventListener('drop', (e) => {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        }, false);
+        
+        // Handle file selection
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+        
+        function handleFile(file) {
+            selectedFile = file;
+            showStatus(`Loading ${file.name}...`, 'processing');
+            
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    audioBuffer = await audioContext.decodeAudioData(e.target.result);
+                    
+                    // Display file info
+                    document.getElementById('fileName').textContent = `Name: ${file.name}`;
+                    document.getElementById('fileSize').textContent = `Size: ${(file.size / 1024 / 1024).toFixed(2)} MB`;
+                    document.getElementById('fileDuration').textContent = `Duration: ${audioBuffer.duration.toFixed(2)} seconds`;
+                    document.getElementById('fileSampleRate').textContent = `Sample Rate: ${audioBuffer.sampleRate} Hz`;
+                    document.getElementById('fileChannels').textContent = `Channels: ${audioBuffer.numberOfChannels}`;
+                    
+                    fileInfo.style.display = 'block';
+                    analyzeBtn.disabled = false;
+                    hideStatus();
+                    
+                } catch (error) {
+                    showStatus(`Error loading audio file: ${error.message}`, 'error');
+                    console.error(error);
+                }
+            };
+            
+            reader.onerror = () => {
+                showStatus('Error reading file', 'error');
+            };
+            
+            reader.readAsArrayBuffer(file);
+        }
+        
+        // Analyze button handler
+        analyzeBtn.addEventListener('click', async () => {
+            if (!audioBuffer) return;
+            
+            showStatus('Analyzing audio...', 'processing');
+            analyzeBtn.disabled = true;
+            results.classList.remove('visible');
+            
+            // Small delay to allow UI to update
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            try {
+                // ============ ITU-T P.56 Speech Voltmeter ============
+                const voltmeter = new SpeechVoltmeter(audioBuffer.sampleRate);
+                
+                // Get audio data from first channel
+                const channelData = audioBuffer.getChannelData(0);
+                
+                // Process audio
+                const activeSpeechLevel = voltmeter.measure(channelData);
+                const state = voltmeter.getState();
+                
+                // Display P.56 results
+                document.getElementById('activeSpeechLevel').textContent = 
+                    activeSpeechLevel.toFixed(2);
+                
+                document.getElementById('activityFactor').textContent = 
+                    (state.ActivityFactor * 100).toFixed(1);
+                
+                document.getElementById('rmsLevel').textContent = 
+                    state.rmsdB.toFixed(2);
+                
+                document.getElementById('dcLevel').textContent = 
+                    state.DClevel.toFixed(6);
+                
+                // Peak statistics
+                const maxAbsdB = state.max > 0 ? 20 * Math.log10(state.max) : -Infinity;
+                document.getElementById('maxAbs').textContent = 
+                    maxAbsdB.toFixed(2);
+                
+                document.getElementById('maxPos').textContent = 
+                    state.maxP.toFixed(6);
+                
+                document.getElementById('maxNeg').textContent = 
+                    state.maxN.toFixed(6);
+                
+                const headroom = -maxAbsdB;
+                document.getElementById('headroom').textContent = 
+                    headroom.toFixed(2);
+                
+                // ============ ITU-R BS.1770-4 Loudness Measurement ============
+                try {
+                    // Create BS.1770 meter
+                    const bs1770Meter = new BS1770Meter(
+                        audioBuffer.sampleRate, 
+                        audioBuffer.numberOfChannels
+                    );
+                    
+                    // Prepare interleaved audio data
+                    const numChannels = audioBuffer.numberOfChannels;
+                    const length = audioBuffer.length;
+                    const interleavedData = new Float32Array(length * numChannels);
+                    
+                    for (let ch = 0; ch < numChannels; ch++) {
+                        const channelData = audioBuffer.getChannelData(ch);
+                        for (let i = 0; i < length; i++) {
+                            interleavedData[i * numChannels + ch] = channelData[i];
+                        }
+                    }
+                    
+                    // Measure loudness
+                    const loudness = bs1770Meter.measure(interleavedData);
+                    
+                    // Display BS.1770 results
+                    if (loudness.zeroPassed || loudness.zeroInput) {
+                        document.getElementById('bs1770Loudness').textContent = '-∞';
+                        document.getElementById('ebuLoudness').textContent = '-∞';
+                        document.getElementById('bs1770Range').textContent = '0.0';
+                        document.getElementById('targetOffset').textContent = '--';
+                    } else {
+                        document.getElementById('bs1770Loudness').textContent = 
+                            loudness.integratedLoudness.toFixed(1);
+                        
+                        // LKFS and LUFS are numerically the same, just different names
+                        document.getElementById('ebuLoudness').textContent = 
+                            loudness.integratedLoudness.toFixed(1);
+                        
+                        document.getElementById('bs1770Range').textContent = 
+                            loudness.loudnessRange.toFixed(1);
+                        
+                        // Calculate offset from EBU R128 target (-23 LUFS)
+                        const targetOffset = loudness.integratedLoudness - (-23);
+                        document.getElementById('targetOffset').textContent = 
+                            (targetOffset >= 0 ? '+' : '') + targetOffset.toFixed(1);
+                    }
+                } catch (bs1770Error) {
+                    console.warn('BS.1770 measurement failed:', bs1770Error);
+                    document.getElementById('bs1770Loudness').textContent = 'Error';
+                    document.getElementById('ebuLoudness').textContent = 'Error';
+                    document.getElementById('bs1770Range').textContent = '--';
+                    document.getElementById('targetOffset').textContent = '--';
+                }
+                
+                // Show results
+                results.classList.add('visible');
+                hideStatus();
+                analyzeBtn.disabled = false;
+                
+            } catch (error) {
+                showStatus(`Analysis error: ${error.message}`, 'error');
+                console.error(error);
+                analyzeBtn.disabled = false;
+            }
+        });
+        
+        function showStatus(message, type) {
+            statusMessage.textContent = type === 'processing' ? '⏳ ' + message : '❌ ' + message;
+            statusMessage.className = 'status-message visible ' + type;
+        }
+        
+        function hideStatus() {
+            statusMessage.className = 'status-message';
+        }
+    </script>
+</body>
+</html>
