@@ -20,7 +20,7 @@
        =============================================================
 
 
-MODULE:         VOLT-METER.TS, FUNCTIONS RELATED TO ACTIVE LEVEL CALCULATIONS
+MODULE:         p58.TS, FUNCTIONS RELATED TO ACTIVE LEVEL CALCULATIONS
 
 ORIGINAL BY:
    Simao Ferraz de Campos Neto   CPqD/Telebras Brazil
@@ -75,22 +75,22 @@ const MIN_LOG_OFFSET = 1.0e-20;   // To eliminate singularity with log(0.0)
  * State structure for ITU-T P.56 speech voltmeter
  */
 interface SVP56State {
-    f: number;           // Sampling frequency
-    c: number[];         // Threshold vector [THRESHOLD_COUNT]
-    a: number[];         // Activity counter vector [THRESHOLD_COUNT]
-    hang: number[];      // Hangover counter vector [THRESHOLD_COUNT]
-    s: number;           // Sum of samples (for DC level)
-    sq: number;          // Sum of squared samples (for RMS)
-    n: number;           // Number of samples processed
-    p: number;           // Intermediate quantity (P.56 process 2)
-    q: number;           // Envelope (P.56 process 2)
-    max: number;         // Maximum absolute value
-    maxP: number;        // Maximum positive value
-    maxN: number;        // Maximum negative value
-    refdB: number;       // Reference dB level (0 dBov)
-    DClevel: number;     // DC level (output)
-    rmsdB: number;       // RMS level in dB (output)
-    ActivityFactor: number;  // Activity factor (output)
+    fs: number;                    // Sampling frequency
+    threshold: number[];           // Threshold vector [THRESHOLD_COUNT]
+    activity: number[];            // Activity counter vector [THRESHOLD_COUNT]
+    hangover: number[];            // Hangover counter vector [THRESHOLD_COUNT]
+    samplesSum: number;            // Sum of samples (for DC level)
+    samplesSquaredSum: number;     // Sum of squared samples (for RMS)
+    samplesProcessedCount: number; // Number of samples processed
+    intermediateQuantity: number;  // Intermediate quantity (P.56 process 2)
+    envelope: number;              // Envelope (P.56 process 2)
+    max: number;                   // Maximum absolute value
+    maxPositive: number;           // Maximum positive value
+    maxNegative: number;           // Maximum negative value
+    dBReference: number;           // Reference dB level (0 dBov)
+    dcLevel: number;               // DC level (output)
+    rmsdB: number;                 // RMS level in dB (output)
+    activityFactor: number;        // Activity factor (output)
 }
 
 /**
@@ -184,36 +184,36 @@ function binInterp(
  */
 export function initSpeechVoltmeter(samplFreq: number): SVP56State {
     const state: SVP56State = {
-        f: samplFreq,
-        c: new Array(THRESHOLD_COUNT),
-        a: new Array(THRESHOLD_COUNT),
-        hang: new Array(THRESHOLD_COUNT),
-        s: 0,
-        sq: 0,
-        n: 0,
-        p: 0,
-        q: 0,
+        fs: samplFreq,
+        threshold: new Array(THRESHOLD_COUNT),
+        activity: new Array(THRESHOLD_COUNT),
+        hangover: new Array(THRESHOLD_COUNT),
+        samplesSum: 0,
+        samplesSquaredSum: 0,
+        samplesProcessedCount: 0,
+        intermediateQuantity: 0,
+        envelope: 0,
         max: 0,
-        maxP: -32768.0,
-        maxN: 32767.0,
-        refdB: 0,  // dBov
-        DClevel: 0,
+        maxPositive: -32768.0,
+        maxNegative: 32767.0,
+        dBReference: 0,  // dBov
+        dcLevel: 0,
         rmsdB: 0,
-        ActivityFactor: 0
+        activityFactor: 0
     };
 
-    const I = Math.floor(HANGOVER_TIME * state.f + 0.5);
+    const I = Math.floor(HANGOVER_TIME * state.fs + 0.5);
 
     // Initialization of threshold vector
     let x = 0.5;
     for (let j = 1; j <= THRESHOLD_COUNT; j++, x /= 2.0) {
-        state.c[THRESHOLD_COUNT - j] = x;
+        state.threshold[THRESHOLD_COUNT - j] = x;
     }
 
     // Initialization of activity and hangover count vectors
     for (let j = 0; j < THRESHOLD_COUNT; j++) {
-        state.a[j] = 0;
-        state.hang[j] = I;
+        state.activity[j] = 0;
+        state.hangover[j] = I;
     }
 
     return state;
@@ -242,8 +242,8 @@ export function speechVoltmeter(
     let activeSpeechLevel = -100.0;
 
     // Some initializations
-    const I = Math.floor(HANGOVER_TIME * state.f + 0.5);
-    const g = Math.exp(-1.0 / (state.f * TIME_CONSTANT));
+    const I = Math.floor(HANGOVER_TIME * state.fs + 0.5);
+    const g = Math.exp(-1.0 / (state.fs * TIME_CONSTANT));
 
     // Calculate statistics for all given data points
     for (let k = 0; k < smpno; k++) {
@@ -256,77 +256,83 @@ export function speechVoltmeter(
         }
 
         // Check for the max positive value
-        if (x > state.maxP) {
-            state.maxP = x;
+        if (x > state.maxPositive) {
+            state.maxPositive = x;
         }
 
         // Check for the max negative value
-        if (x < state.maxN) {
-            state.maxN = x;
+        if (x < state.maxNegative) {
+            state.maxNegative = x;
         }
 
         // Implements Process 1 of P.56
-        state.sq += x * x;
-        state.s += x;
-        state.n++;
+        state.samplesSquaredSum += x * x;
+        state.samplesSum += x;
+        state.samplesProcessedCount++;
 
         // Implements Process 2 of P.56
-        state.p = g * state.p + (1 - g) * absX;
-        state.q = g * state.q + (1 - g) * state.p;
+        state.intermediateQuantity = (
+            g * state.intermediateQuantity + (1 - g) * absX);
+        state.envelope = (
+            g * state.envelope + (1 - g) * state.intermediateQuantity);
 
         // Apply threshold to the envelope q
         for (let j = 0; j < THRESHOLD_COUNT; j++) {
-            if (state.q >= state.c[j]) {
-                state.a[j]++;
-                state.hang[j] = 0;
-            } else if (state.hang[j] < I) {
-                state.a[j]++;
-                state.hang[j]++;
+            if (state.envelope >= state.threshold[j]) {
+                state.activity[j]++;
+                state.hangover[j] = 0;
+            } else if (state.hangover[j] < I) {
+                state.activity[j]++;
+                state.hangover[j]++;
             }
             // if (state.q < state.c[j] && state.hang[j] === I), do nothing
         }
     }
 
     // Compute the statistics
-    state.DClevel = state.s / state.n;
-    const longTermLevel = 10 * Math.log10(state.sq / state.n + MIN_LOG_OFFSET);
-    state.rmsdB = longTermLevel - state.refdB;
-    state.ActivityFactor = 0;
+    state.dcLevel = state.samplesSum / state.samplesProcessedCount;
+    const longTermLevel = 10 * Math.log10(
+        state.samplesSquaredSum / state.samplesProcessedCount + MIN_LOG_OFFSET);
+    state.rmsdB = longTermLevel - state.dBReference;
+    state.activityFactor = 0;
 
     // Test the lower active counter; if 0, is silence
-    if (state.a[0] === 0) {
+    if (state.activity[0] === 0) {
         return activeSpeechLevel;
     }
 
-    let AdB = 10 * Math.log10(state.sq / state.a[0] + MIN_LOG_OFFSET);
+    let AdB = 10 * Math.log10(
+        state.samplesSquaredSum / state.activity[0] + MIN_LOG_OFFSET);
 
     // Test if the lower act.counter is below the margin: if yes, is silence
-    let CdB = 20 * Math.log10(state.c[0]);
+    let CdB = 20 * Math.log10(state.threshold[0]);
     if (AdB - CdB < MARGIN) {
         return activeSpeechLevel;
     }
 
     // Proceed serially for steps 2 and up -- this is the most common case
     for (let j = 1; j < THRESHOLD_COUNT; j++) {
-        if (state.a[j] !== 0) {
-            AdB = 10 * Math.log10(state.sq / state.a[j] + MIN_LOG_OFFSET);
-            CdB = 20 * Math.log10(state.c[j] + MIN_LOG_OFFSET);
+        if (state.activity[j] !== 0) {
+            AdB = 10 * Math.log10(
+                state.samplesSquaredSum / state.activity[j] + MIN_LOG_OFFSET);
+            CdB = 20 * Math.log10(state.threshold[j] + MIN_LOG_OFFSET);
             const delta = AdB - CdB;
 
             if (delta <= MARGIN) {
                 // Then interpolate to find the active level and activity factor
                 // AmdB is AdB for j-1, CmdB is CdB for j-1
                 const AmdB = 10 * Math.log10(
-                    state.sq / state.a[j - 1] + MIN_LOG_OFFSET);
+                    state.samplesSquaredSum /
+                    state.activity[j - 1] + MIN_LOG_OFFSET);
                 const CmdB = 20 * Math.log10(
-                    state.c[j - 1] + MIN_LOG_OFFSET);
+                    state.threshold[j - 1] + MIN_LOG_OFFSET);
 
                 activeSpeechLevel = binInterp(
                     AdB, AmdB, CdB, CmdB, MARGIN, 0.5);
 
-                state.ActivityFactor = Math.pow(
+                state.activityFactor = Math.pow(
                     10.0, (longTermLevel - activeSpeechLevel) / 10);
-                activeSpeechLevel -= state.refdB;
+                activeSpeechLevel -= state.dBReference;
                 break;
             }
         }
@@ -375,7 +381,7 @@ export class SpeechVoltmeter {
      * @returns Activity factor
      */
     getActivityFactor(): number {
-        return this.state.ActivityFactor;
+        return this.state.activityFactor;
     }
 
     /**
@@ -391,7 +397,7 @@ export class SpeechVoltmeter {
      * @returns DC level
      */
     getDCLevel(): number {
-        return this.state.DClevel;
+        return this.state.dcLevel;
     }
 
     /**
@@ -407,7 +413,7 @@ export class SpeechVoltmeter {
      * @returns Maximum positive value
      */
     getMaxPositive(): number {
-        return this.state.maxP;
+        return this.state.maxPositive;
     }
 
     /**
@@ -415,7 +421,7 @@ export class SpeechVoltmeter {
      * @returns Maximum negative value
      */
     getMaxNegative(): number {
-        return this.state.maxN;
+        return this.state.maxNegative;
     }
 
     /**
@@ -423,7 +429,7 @@ export class SpeechVoltmeter {
      * @param sampleRate - Optional new sample rate
      */
     reset(sampleRate?: number): void {
-        const rate = sampleRate ?? this.state.f;
+        const rate = sampleRate ?? this.state.fs;
         this.state = initSpeechVoltmeter(rate);
     }
 }
