@@ -10,7 +10,7 @@ import { download, BextChunk, convertToIXML } from "./wave";
 
 console.debug("App module loaded");
 
-const fileMap: Audio[] = [];
+const fileMap: Map<string, Audio> = new Map();
 const root = document.documentElement;
 const uiColor = "#0366d6";
 root.style.setProperty('--color', uiColor);
@@ -160,8 +160,6 @@ async function startRecordingAndPlayback(): Promise<void> {
 
         const [sweepSignal, ,] = audio.chirp(startFreq, endFreq, duration);
 
-        download(sweepSignal, 48000, 'sweep_signal.wav');
-
         // Create audio buffer from sweep signal
         const audioBuffer = audioContext.createBuffer(1, sweepSignal.length, audioContext.sampleRate);
         const channelData = audioBuffer.getChannelData(0);
@@ -174,11 +172,12 @@ async function startRecordingAndPlayback(): Promise<void> {
         // Start recording
         recordingStatusEl.textContent = `Recording for ${totalRecordTime.toFixed(1)}s...`;
 
-        const recorder = new AudioRecorder(audioContext);
-        recorder.record(totalRecordTime).then((recordingData) => {
-            recorded = recordingData;
-            stopRecording();
+        const stream = await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
         });
+
+        const recorder = new AudioRecorder(audioContext.createMediaStreamSource(stream));
+        const recorded = recorder.record(totalRecordTime);
 
         // Update UI
         startBtn.disabled = true;
@@ -197,11 +196,20 @@ async function startRecordingAndPlayback(): Promise<void> {
             acquisitionState.playbackSource.start();
         }, preRecordTime * 1000);
 
-        // Stop recording after total time (pre + sweep + post)
-        setTimeout(() => {
-            stopRecording();
-        }, totalRecordTime * 1000);
+        await recorded.then(data => {
+            const audio = Audio.fromSamples(data[0], 48000, { filename: `Recording ${new Date().toISOString()}` });
+            const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+            const li = createListItem(audio, id);
+            document.getElementById('fileList')?.appendChild(li);
+            console.log('Recorded audio saved with id:', id);
+            saveWaveformsToStorage(fileMap);
 
+            switchTab('upload');
+        }).then(() => {
+            // Any cleanup code if needed
+            stopRecording();
+            // Create Audio object and save.
+        });
     } catch (error) {
         console.error('Error starting recording:', error);
         recordingStatusEl.textContent = `Error: ${(error as Error).message}`;
@@ -367,7 +375,7 @@ analyzeRecordingBtn.addEventListener('click', async () => {
             recordingName,
             `${startFreq}-${endFreq}Hz`,
         );
-        // 
+        //
 
     } catch (error) {
         console.error('Error analyzing recording:', error);
@@ -447,32 +455,6 @@ function compute(computation: Function, ...message: any[]): Promise<any> {
     });
 }
 
-analyzeUploadBtn.addEventListener('click', async () => {
-    const responseFile = responseFileUploadInput.files?.[0];
-    const referenceFile = referenceFileUploadInput.files?.[0];
-
-    if (!responseFile) return;
-
-    analyzeUploadBtn.disabled = true;
-    analyzeUploadBtn.textContent = 'Analyzing...';
-
-    try {
-        const responseData = await audio.loadAudioFile(responseFile);
-        const referenceData = referenceFile ? await audio.loadAudioFile(referenceFile) : null;
-
-        createAnalysisTab(
-            responseData.applyGain(1 / 16384),
-            referenceData ? referenceData.applyGain(1 / 16384) : null,
-            responseFile.name,
-            referenceFile?.name || null
-        );
-    } catch (error) {
-        alert('Error analyzing files: ' + (error as Error).message);
-    } finally {
-        analyzeUploadBtn.disabled = false;
-        analyzeUploadBtn.textContent = 'Analyze Frequency Response';
-    }
-});
 
 function createAnalysisTab(responseData: Audio, referenceData: Audio | null, filename: string, referenceFilename: string | null): void {
     setStatusMessage('Creating analysis tab...');
@@ -547,8 +529,8 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
                 </div>
             </div>
         </div>
-       
-        
+
+
     `;
             tabContents.appendChild(content);
 
@@ -964,8 +946,8 @@ function createDirectivityPlotTab(responseDatas: Audio[], referenceData: Audio, 
                 </div>
             </div>
         </div>
-       
-        
+
+
     `;
     tabContents.appendChild(content);
 
@@ -1231,7 +1213,11 @@ function normalizesAngleDeg(angle: number): number {
 
 async function loadTestPolarData(): Promise<void> {
     // Load some test data for polar analysis
-    const angles = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200, 210, 220, 230, 240, 250, 260, 270, 280, 290, 300, 310, 320, 330, 340, 350];
+    const angles = [
+        0, 10, 20, 30, 40, 50, 60, 70, 80,
+        90, 100, 110, 120, 130, 140, 150, 160, 170,
+        180, 190, 200, 210, 220, 230, 240, 250, 260,
+        270, 280, 290, 300, 310, 320, 330, 340, 350];
 
     const files = angles.map(a => `testdata/${a}.wav`);
     createDirectivityPlotTab(
@@ -1241,45 +1227,56 @@ async function loadTestPolarData(): Promise<void> {
     );
 }
 
-async function loadWaveformsFromStorage(): Promise<Audio[]> {
+async function loadWaveformsFromStorage(): Promise<Map<string, Audio>> {
     // Load waveforms from IndexedDB (mirrored to sessionStorage for compatibility)
-    const waveforms = storage.getItem('waveforms');
-    console.log('Attempting:', waveforms);
+    try {
+        const raw = await storage.getItem('waveforms');
+        console.log('Attempting:', raw);
 
-    const items: Audio[] = [];
-
-    await waveforms.then(raw => {
+        const items: Map<string, Audio> = new Map();
         const decoded = JSON.parse(raw || '[]');
-        console.log('f ', decoded[0], decoded[0].length, decoded[0].data?.length, decoded[0].metadata);
         console.log('Decoded waveforms from storage:', decoded);
 
         const startLoadTime = performance.now();
         for (const item of decoded) {
-            items.push(Audio.fromObject(item));
+            // Convert numeric arrays back to typed arrays so Audio.fromObject gets proper buffers.
+            if (item.data && Array.isArray(item.data)) {
+                item.data = Float32Array.from(item.data);
+            }
+            if (item.channelData && Array.isArray(item.channelData)) {
+                item.channelData = item.channelData.map((ch: any) => Array.isArray(ch) ? Float32Array.from(ch) : ch);
+            }
+            if (item.samples && Array.isArray(item.samples)) {
+                item.samples = Float32Array.from(item.samples);
+            }
+            items.set(item.id, Audio.fromObject(item));
         }
-        console.log(`Loaded ${items.length} waveforms from storage in ${performance.now() - startLoadTime} milliseconds`);
+        console.log(`Loaded ${items.size} waveforms from storage in ${performance.now() - startLoadTime} milliseconds`);
         console.log('Loaded waveforms from storage:', items);
-    }).catch(err => {
+
+        return items;
+    } catch (err) {
         console.warn('Failed to load waveforms from storage:', err);
-    });
-
-    console.log('Returning loaded waveforms:', items);
-
-    return items;
+        return new Map();
+    }
 }
 
-function saveWaveformsToStorage(waveforms: Audio[]): void {
+function saveWaveformsToStorage(waveforms: Map<string, Audio>): void {
     // Save waveforms to IndexedDB (mirrored to sessionStorage for compatibility)
     console.warn('Saving waveforms to storage:', waveforms);
-    const toSave = waveforms.map(wf => wf.toObject());
+    const toSave = Array.from(waveforms.entries()).map(([id, wf]) => {
+        const obj = wf.toObject();
+        obj.id = id;
+        return obj;
+    });
     storage.setItem('waveforms', JSON.stringify(toSave)).catch(err => {
         console.error('Failed to save waveforms to storage:', err);
     });
 }
 
-function createListItem(audioObject: Audio): HTMLLIElement {
+function createListItem(audioObject: Audio, id: string): HTMLLIElement {
     const li = document.createElement('li');
-    //li.dataset.id = id;
+    li.dataset.id = id;
     li.style.display = 'flex';
     li.classList.add('file-list-item');
     li.innerHTML = `
@@ -1291,27 +1288,41 @@ function createListItem(audioObject: Audio): HTMLLIElement {
             <div style="font-size:12px;color:#666;">Origin: ${audioObject?.metadata?.iXML?.origin ?? 'Imported'}</div>
         </div>
         <div class="file-list-item-controls flex:1;min-width:0;">
-            <div><label style="font-size:13px;"><input type="radio" name="selectedResponse" value=""> Response</label></div>
-            <div><label style="font-size:13px;"><input type="radio" name="selectedReference" value=""> Reference</label></div>
+            <div><label style="font-size:13px;"><input type="radio" name="selectedResponse" value="${id}"> Response</label></div>
+            <div><label style="font-size:13px;"><input type="radio" name="selectedReference" value="${id}"> Reference</label></div>
             <div><button type="button" data-action="remove" style="margin-left:8px;">Remove</button></div>
         </div>
     `;
+
+    // Insert image generated by Audio.getEnvelopeImage()
+    const bas = audioObject.getEnvelopeImage(0, 1000, 100)
+    li.style.backgroundImage = `url(${bas})`;
+    li.style.backgroundRepeat = 'no-repeat';
+    li.style.backgroundPosition = 'center center';
+    li.style.backgroundSize = 'fill';
+
     return li;
 }
 
 function updateAnalyzeState() {
-    const hasResponse = !!document.querySelector('input[name="selectedResponse"]:checked');
-    const analyzeBtn = document.getElementById('analyzeUploadBtn');
+    const responseSelected = !!document.querySelector('input[name="selectedResponse"]:checked');
+    const referenceSelected = !!document.querySelector('input[name="selectedReference"]:checked');
+    const analyzeBtn = document.getElementById('analyzeUploadBtn') as HTMLButtonElement;
+    if (responseSelected) {
+        analyzeBtn.disabled = false;
+    } else {
+        analyzeBtn.disabled = true;
+    }
 }
 
 async function addFilesFromInput(fileList: FileList) {
     await Promise.all(Array.from(fileList).map(async f => {
         const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
         const a = await audio.loadAudioFile(f);
-        fileMap.push(a); 
+        fileMap.set(id, a);
         console.log('Added file:', id, a);
         console.log('Current file map:', fileMap);
-        const li = createListItem(a);
+        const li = createListItem(a, id);
         document.getElementById('fileList')?.appendChild(li);
     })).then(() => {
         console.log('All files added. Current file map:', fileMap);
@@ -1337,12 +1348,16 @@ document.addEventListener('DOMContentLoaded', () => {
             // if removed file was chosen in underlying file inputs, clear radios
             const responseRadio = document.querySelector(`input[name="selectedResponse"][value="${id}"]`);
             const referenceRadio = document.querySelector(`input[name="selectedReference"][value="${id}"]`);
-            if (responseRadio && responseRadio.checked) responseRadio.checked = false;
-            if (referenceRadio && referenceRadio.checked) referenceRadio.checked = false;
-            const index = fileMap.findIndex(a => a.id === id);
-            if (index !== -1) fileMap.splice(index, 1);
+            if (responseRadio && (responseRadio as HTMLInputElement).checked) {
+                (responseRadio as HTMLInputElement).checked = false;
+            }
+            if (referenceRadio && (referenceRadio as HTMLInputElement).checked) {
+                (referenceRadio as HTMLInputElement).checked = false;
+            }
+            fileMap.delete(id!);
             li.remove();
-            fileMap.pop()
+            console.log('Removed file:', id);
+            console.log('Current file map:', fileMap);
             saveWaveformsToStorage(fileMap);
             // ensure analyze button is enabled/disabled
             updateAnalyzeState();
@@ -1359,11 +1374,33 @@ document.addEventListener('DOMContentLoaded', () => {
     loadWaveformsFromStorage().then(waveforms => {
         console.log('Loaded waveforms from storage on startup:', waveforms);
         for (const a of waveforms) {
+            const [id, audioObj] = a;
             console.log('Creating list item for loaded waveform:', a);
-            const li = createListItem(a);
-            fileMap.push(a);
+            const li = createListItem(audioObj, id); // id is not needed here since we don't remove these
+            fileMap.set(id, audioObj);
             document.getElementById('fileList')?.appendChild(li);
         }
+    });
+
+    document.getElementById('analyzeUploadBtn')?.addEventListener('click', () => {
+        const responseRadio = document.querySelector('input[name="selectedResponse"]:checked') as HTMLInputElement;
+        const referenceRadio = document.querySelector('input[name="selectedReference"]:checked') as HTMLInputElement;
+
+        if (!responseRadio) {
+            alert('Please select a response file.');
+            return;
+        }
+        console.log(fileMap.entries());
+        const response = fileMap.get(responseRadio.value);
+
+        const reference = referenceRadio ? fileMap.get(referenceRadio.value) || null : null;
+
+        if (!response) {
+            alert('Selected response file not found.');
+            return;
+        }
+
+        createAnalysisTab(response.applyGain(1 / 16384), reference ? reference.applyGain(1 / 16384) : null, response.metadata?.filename || 'Response', reference?.metadata?.filename || 'Reference');
     });
 });
 

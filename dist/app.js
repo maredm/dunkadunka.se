@@ -795,19 +795,21 @@ var Audio = class _Audio extends AudioBuffer {
       sampleRate
     });
     if (obj.data) {
-      for (let i = 0; i < obj.data.length; i++) {
-        const channel = Math.floor(i / length);
-        const index = i % length;
-        audio2.copyToChannel(new Float32Array([obj.data[i]]), channel, index);
+      for (let i = 0; i < numberOfChannels; i++) {
+        audio2.copyToChannel(
+          Float32Array.from(Object.values(obj.data)).slice(i * length, (i + 1) * length),
+          i,
+          0
+        );
       }
     }
-    console.log("METADATA", obj.metadata);
+    console.log("Created Audio from object:", audio2.getChannelData(0));
+    obj.metadata = obj.metadata || {};
     audio2.metadata = obj.metadata;
     return audio2;
   }
   toObject() {
-    console.log("this.metadata", this.metadata);
-    return {
+    const obj = {
       sampleRate: this.sampleRate,
       numberOfChannels: this.numberOfChannels,
       length: this.length,
@@ -818,6 +820,8 @@ var Audio = class _Audio extends AudioBuffer {
         return this.getChannelData(channel)[index];
       })
     };
+    console.log(obj);
+    return obj;
   }
   applyGain(gain) {
     const numChannels = this.numberOfChannels;
@@ -846,6 +850,48 @@ var Audio = class _Audio extends AudioBuffer {
     }
     const data = this.getChannelData(channel);
     return rms(data);
+  }
+  getEnvelopeImage(channel = 0, width = 300, height = 100) {
+    if (channel < 0 || channel >= this.numberOfChannels) {
+      throw new Error("Invalid channel number");
+    }
+    const data = this.getChannelData(channel);
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Failed to get canvas context");
+    const imgData = ctx.createImageData(width, height);
+    const samplesPerPixel = Math.max(1, Math.floor(data.length / width));
+    for (let x = 0; x < width; x++) {
+      let min = 1;
+      let max2 = -1;
+      for (let i = 0; i < samplesPerPixel; i++) {
+        const sampleIndex = x * samplesPerPixel + i;
+        if (sampleIndex >= data.length) break;
+        const sample = data[sampleIndex];
+        if (sample < min) min = sample;
+        if (sample > max2) max2 = sample;
+      }
+      const yMin = Math.floor((1 - (min + 1) / 2) * height);
+      const yMax = Math.floor((1 - (max2 + 1) / 2) * height);
+      for (let y = 0; y < height; y++) {
+        const index = (y * width + x) * 4;
+        if (y >= yMax && y <= yMin) {
+          imgData.data[index] = 0;
+          imgData.data[index + 1] = 0;
+          imgData.data[index + 2] = 0;
+          imgData.data[index + 3] = 20;
+        } else {
+          imgData.data[index] = 255;
+          imgData.data[index + 1] = 255;
+          imgData.data[index + 2] = 255;
+          imgData.data[index + 3] = 0;
+        }
+      }
+    }
+    ctx.putImageData(imgData, 0, 0);
+    return canvas.toDataURL("image/png");
   }
   static fromFilename(filename) {
     return __async(this, null, function* () {
@@ -1873,27 +1919,20 @@ window.saveDeviceSelections = saveDeviceSelections;
 
 // src/recorder.ts
 var AudioRecorder = class {
-  constructor(audioContext) {
-    this.audioContext = audioContext;
+  constructor(streamSource) {
+    this.isRecording = false;
+    this.streamSource = streamSource;
   }
   record(durationSec) {
     return __async(this, null, function* () {
       const recording = [
-        new Float32Array(durationSec * this.audioContext.sampleRate),
-        new Float32Array(durationSec * this.audioContext.sampleRate)
+        new Float32Array(durationSec * this.streamSource.context.sampleRate),
+        new Float32Array(durationSec * this.streamSource.context.sampleRate)
       ];
       let pointer = 0;
-      yield this.audioContext.audioWorklet.addModule("static/buffering-processor.worklet.js");
-      const stream = yield navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false
-        }
-      });
-      const streamSource = this.audioContext.createMediaStreamSource(stream);
+      yield this.streamSource.context.audioWorklet.addModule("static/buffering-processor.worklet.js");
       const worklet = new AudioWorkletNode(
-        this.audioContext,
+        this.streamSource.context,
         "buffering-processor",
         {
           numberOfInputs: 1,
@@ -1903,27 +1942,31 @@ var AudioRecorder = class {
           }
         }
       );
-      streamSource.connect(worklet);
+      this.streamSource.connect(worklet);
       worklet.port.onmessage = (event) => {
-        if (pointer + event.data.buffer[0].length > recording[0].length) {
-          worklet.disconnect();
-          streamSource.disconnect();
-          return new Promise((resolve) => {
-            resolve(recording);
-          });
+        var _a, _b, _c;
+        if (this.isRecording) {
+          if (pointer + ((_a = event.data.buffer[0]) == null ? void 0 : _a.length) > ((_b = recording[0]) == null ? void 0 : _b.length)) {
+            this.isRecording = false;
+            return new Promise((resolve) => {
+              resolve(recording);
+            });
+          }
+          recording[0].set(event.data.buffer[0], pointer);
+          recording[1].set(event.data.buffer[1], pointer);
+          pointer += (_c = event.data.buffer[0]) == null ? void 0 : _c.length;
         }
-        recording[0].set(event.data.buffer[0], pointer);
-        recording[1].set(event.data.buffer[1], pointer);
-        pointer += event.data.buffer[0].length;
       };
       return new Promise((resolve) => {
         setTimeout(() => {
           worklet.disconnect();
-          streamSource.disconnect();
-          stream.getTracks().forEach((track) => track.stop());
+          this.streamSource.disconnect();
+          this.streamSource.mediaStream.getTracks().forEach((track) => track.stop());
           resolve(recording);
+          this.isRecording = false;
         }, durationSec * 1e3);
       });
+      this.isRecording = true;
     });
   }
 };
@@ -2106,7 +2149,7 @@ function convertToIXML(xmlContent) {
 
 // src/app.ts
 console.debug("App module loaded");
-var fileMap = [];
+var fileMap = /* @__PURE__ */ new Map();
 var root = document.documentElement;
 var uiColor = "#0366d6";
 root.style.setProperty("--color", uiColor);
@@ -2212,18 +2255,17 @@ function startRecordingAndPlayback() {
       const postRecordTime = 1;
       const totalRecordTime = preRecordTime + duration + postRecordTime;
       const [sweepSignal, ,] = audio.chirp(startFreq, endFreq, duration);
-      download(sweepSignal, 48e3, "sweep_signal.wav");
       const audioBuffer = audioContext.createBuffer(1, sweepSignal.length, audioContext.sampleRate);
       const channelData = audioBuffer.getChannelData(0);
       channelData.set(sweepSignal);
       const sourceGain = audioContext.createGain();
       sourceGain.gain.value = 0.5;
       recordingStatusEl.textContent = `Recording for ${totalRecordTime.toFixed(1)}s...`;
-      const recorder = new AudioRecorder(audioContext);
-      recorder.record(totalRecordTime).then((recordingData) => {
-        recorded = recordingData;
-        stopRecording();
+      const stream = yield navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
       });
+      const recorder = new AudioRecorder(audioContext.createMediaStreamSource(stream));
+      const recorded2 = recorder.record(totalRecordTime);
       startBtn.disabled = true;
       stopBtn.disabled = false;
       playBtn.disabled = true;
@@ -2237,9 +2279,18 @@ function startRecordingAndPlayback() {
         sourceGain.connect(audioContext.destination);
         acquisitionState.playbackSource.start();
       }, preRecordTime * 1e3);
-      setTimeout(() => {
+      yield recorded2.then((data) => {
+        var _a;
+        const audio2 = Audio.fromSamples(data[0], 48e3, { filename: `Recording ${(/* @__PURE__ */ new Date()).toISOString()}` });
+        const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+        const li = createListItem(audio2, id);
+        (_a = document.getElementById("fileList")) == null ? void 0 : _a.appendChild(li);
+        console.log("Recorded audio saved with id:", id);
+        saveWaveformsToStorage(fileMap);
+        switchTab("upload");
+      }).then(() => {
         stopRecording();
-      }, totalRecordTime * 1e3);
+      });
     } catch (error) {
       console.error("Error starting recording:", error);
       recordingStatusEl.textContent = `Error: ${error.message}`;
@@ -2425,29 +2476,6 @@ function switchTab(tabId) {
   (_a = document.querySelector(`[data-tab="${tabId}"]`)) == null ? void 0 : _a.classList.add("active");
   (_b = document.querySelector(`[data-content="${tabId}"]`)) == null ? void 0 : _b.classList.add("active");
 }
-analyzeUploadBtn.addEventListener("click", () => __async(null, null, function* () {
-  var _a, _b;
-  const responseFile = (_a = responseFileUploadInput.files) == null ? void 0 : _a[0];
-  const referenceFile = (_b = referenceFileUploadInput.files) == null ? void 0 : _b[0];
-  if (!responseFile) return;
-  analyzeUploadBtn.disabled = true;
-  analyzeUploadBtn.textContent = "Analyzing...";
-  try {
-    const responseData = yield audio.loadAudioFile(responseFile);
-    const referenceData = referenceFile ? yield audio.loadAudioFile(referenceFile) : null;
-    createAnalysisTab(
-      responseData.applyGain(1 / 16384),
-      referenceData ? referenceData.applyGain(1 / 16384) : null,
-      responseFile.name,
-      (referenceFile == null ? void 0 : referenceFile.name) || null
-    );
-  } catch (error) {
-    alert("Error analyzing files: " + error.message);
-  } finally {
-    analyzeUploadBtn.disabled = false;
-    analyzeUploadBtn.textContent = "Analyze Frequency Response";
-  }
-}));
 function createAnalysisTab(responseData, referenceData, filename, referenceFilename) {
   setStatusMessage("Creating analysis tab...");
   tabCounter++;
@@ -2516,8 +2544,8 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
                 </div>
             </div>
         </div>
-       
-        
+
+
     `;
       tabContents.appendChild(content);
       const propertiesElement = document.getElementById(`properties-${tabId}`);
@@ -2852,37 +2880,49 @@ function loadState() {
 }
 function loadWaveformsFromStorage() {
   return __async(this, null, function* () {
-    const waveforms = storage.getItem("waveforms");
-    console.log("Attempting:", waveforms);
-    const items = [];
-    yield waveforms.then((raw) => {
-      var _a;
+    try {
+      const raw = yield storage.getItem("waveforms");
+      console.log("Attempting:", raw);
+      const items = /* @__PURE__ */ new Map();
       const decoded = JSON.parse(raw || "[]");
-      console.log("f ", decoded[0], decoded[0].length, (_a = decoded[0].data) == null ? void 0 : _a.length, decoded[0].metadata);
       console.log("Decoded waveforms from storage:", decoded);
       const startLoadTime = performance.now();
       for (const item of decoded) {
-        items.push(Audio.fromObject(item));
+        if (item.data && Array.isArray(item.data)) {
+          item.data = Float32Array.from(item.data);
+        }
+        if (item.channelData && Array.isArray(item.channelData)) {
+          item.channelData = item.channelData.map((ch) => Array.isArray(ch) ? Float32Array.from(ch) : ch);
+        }
+        if (item.samples && Array.isArray(item.samples)) {
+          item.samples = Float32Array.from(item.samples);
+        }
+        items.set(item.id, Audio.fromObject(item));
       }
-      console.log(`Loaded ${items.length} waveforms from storage in ${performance.now() - startLoadTime} milliseconds`);
+      console.log(`Loaded ${items.size} waveforms from storage in ${performance.now() - startLoadTime} milliseconds`);
       console.log("Loaded waveforms from storage:", items);
-    }).catch((err) => {
+      return items;
+    } catch (err) {
       console.warn("Failed to load waveforms from storage:", err);
-    });
-    console.log("Returning loaded waveforms:", items);
-    return items;
+      return /* @__PURE__ */ new Map();
+    }
   });
 }
 function saveWaveformsToStorage(waveforms) {
   console.warn("Saving waveforms to storage:", waveforms);
-  const toSave = waveforms.map((wf) => wf.toObject());
+  const toSave = Array.from(waveforms.entries()).map(([id, wf]) => {
+    const obj = wf.toObject();
+    obj.id = id;
+    return obj;
+  });
   storage.setItem("waveforms", JSON.stringify(toSave)).catch((err) => {
     console.error("Failed to save waveforms to storage:", err);
   });
 }
-function createListItem(audioObject) {
+function createListItem(audioObject, id) {
   var _a, _b, _c, _d, _e, _f, _g, _h;
   const li = document.createElement("li");
+  li.dataset.id = id;
   li.style.display = "flex";
   li.classList.add("file-list-item");
   li.innerHTML = `
@@ -2894,16 +2934,27 @@ function createListItem(audioObject) {
             <div style="font-size:12px;color:#666;">Origin: ${(_h = (_g = (_f = audioObject == null ? void 0 : audioObject.metadata) == null ? void 0 : _f.iXML) == null ? void 0 : _g.origin) != null ? _h : "Imported"}</div>
         </div>
         <div class="file-list-item-controls flex:1;min-width:0;">
-            <div><label style="font-size:13px;"><input type="radio" name="selectedResponse" value=""> Response</label></div>
-            <div><label style="font-size:13px;"><input type="radio" name="selectedReference" value=""> Reference</label></div>
+            <div><label style="font-size:13px;"><input type="radio" name="selectedResponse" value="${id}"> Response</label></div>
+            <div><label style="font-size:13px;"><input type="radio" name="selectedReference" value="${id}"> Reference</label></div>
             <div><button type="button" data-action="remove" style="margin-left:8px;">Remove</button></div>
         </div>
     `;
+  const bas = audioObject.getEnvelopeImage(0, 1e3, 100);
+  li.style.backgroundImage = `url(${bas})`;
+  li.style.backgroundRepeat = "no-repeat";
+  li.style.backgroundPosition = "center center";
+  li.style.backgroundSize = "fill";
   return li;
 }
 function updateAnalyzeState() {
-  const hasResponse = !!document.querySelector('input[name="selectedResponse"]:checked');
+  const responseSelected = !!document.querySelector('input[name="selectedResponse"]:checked');
+  const referenceSelected = !!document.querySelector('input[name="selectedReference"]:checked');
   const analyzeBtn = document.getElementById("analyzeUploadBtn");
+  if (responseSelected) {
+    analyzeBtn.disabled = false;
+  } else {
+    analyzeBtn.disabled = true;
+  }
 }
 function addFilesFromInput(fileList) {
   return __async(this, null, function* () {
@@ -2911,10 +2962,10 @@ function addFilesFromInput(fileList) {
       var _a;
       const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
       const a = yield audio.loadAudioFile(f);
-      fileMap.push(a);
+      fileMap.set(id, a);
       console.log("Added file:", id, a);
       console.log("Current file map:", fileMap);
-      const li = createListItem(a);
+      const li = createListItem(a, id);
       (_a = document.getElementById("fileList")) == null ? void 0 : _a.appendChild(li);
     }))).then(() => {
       console.log("All files added. Current file map:", fileMap);
@@ -2924,11 +2975,12 @@ function addFilesFromInput(fileList) {
   });
 }
 document.addEventListener("DOMContentLoaded", () => {
+  var _a;
   const respInput = document.getElementById("responseFileUpload");
   const refInput = document.getElementById("referenceFileUpload");
   if (respInput) respInput.addEventListener("change", (e) => {
-    var _a, _b;
-    if ((_b = (_a = e == null ? void 0 : e.target) == null ? void 0 : _a.files) == null ? void 0 : _b.length) addFilesFromInput(e.target.files);
+    var _a2, _b;
+    if ((_b = (_a2 = e == null ? void 0 : e.target) == null ? void 0 : _a2.files) == null ? void 0 : _b.length) addFilesFromInput(e.target.files);
     e.target.value = "";
   });
   document.getElementById("fileList").addEventListener("click", (e) => {
@@ -2938,12 +2990,16 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.target.matches('button[data-action="remove"]')) {
       const responseRadio = document.querySelector(`input[name="selectedResponse"][value="${id}"]`);
       const referenceRadio = document.querySelector(`input[name="selectedReference"][value="${id}"]`);
-      if (responseRadio && responseRadio.checked) responseRadio.checked = false;
-      if (referenceRadio && referenceRadio.checked) referenceRadio.checked = false;
-      const index = fileMap.findIndex((a) => a.id === id);
-      if (index !== -1) fileMap.splice(index, 1);
+      if (responseRadio && responseRadio.checked) {
+        responseRadio.checked = false;
+      }
+      if (referenceRadio && referenceRadio.checked) {
+        referenceRadio.checked = false;
+      }
+      fileMap.delete(id);
       li.remove();
-      fileMap.pop();
+      console.log("Removed file:", id);
+      console.log("Current file map:", fileMap);
       saveWaveformsToStorage(fileMap);
       updateAnalyzeState();
     }
@@ -2954,14 +3010,32 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
   loadWaveformsFromStorage().then((waveforms) => {
-    var _a;
+    var _a2;
     console.log("Loaded waveforms from storage on startup:", waveforms);
     for (const a of waveforms) {
+      const [id, audioObj] = a;
       console.log("Creating list item for loaded waveform:", a);
-      const li = createListItem(a);
-      fileMap.push(a);
-      (_a = document.getElementById("fileList")) == null ? void 0 : _a.appendChild(li);
+      const li = createListItem(audioObj, id);
+      fileMap.set(id, audioObj);
+      (_a2 = document.getElementById("fileList")) == null ? void 0 : _a2.appendChild(li);
     }
+  });
+  (_a = document.getElementById("analyzeUploadBtn")) == null ? void 0 : _a.addEventListener("click", () => {
+    var _a2, _b;
+    const responseRadio = document.querySelector('input[name="selectedResponse"]:checked');
+    const referenceRadio = document.querySelector('input[name="selectedReference"]:checked');
+    if (!responseRadio) {
+      alert("Please select a response file.");
+      return;
+    }
+    console.log(fileMap.entries());
+    const response = fileMap.get(responseRadio.value);
+    const reference = referenceRadio ? fileMap.get(referenceRadio.value) || null : null;
+    if (!response) {
+      alert("Selected response file not found.");
+      return;
+    }
+    createAnalysisTab(response.applyGain(1 / 16384), reference ? reference.applyGain(1 / 16384) : null, ((_a2 = response.metadata) == null ? void 0 : _a2.filename) || "Response", ((_b = reference == null ? void 0 : reference.metadata) == null ? void 0 : _b.filename) || "Reference");
   });
 });
 loadState();

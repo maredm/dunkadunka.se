@@ -134,48 +134,48 @@ async function loadAudioFile(file: File): Promise<Audio> {
         try {
             const dvh = new DataView(headerBuffer);
             const readStr = (off: number, len: number) => {
-            let s = '';
-            for (let i = 0; i < len; i++) s += String.fromCharCode(dvh.getUint8(off + i));
-            return s;
+                let s = '';
+                for (let i = 0; i < len; i++) s += String.fromCharCode(dvh.getUint8(off + i));
+                return s;
             };
 
             let offset = 12; // Skip RIFF/WAVE header region where chunks start
             while (offset + 8 <= dvh.byteLength) {
-            const id = readStr(offset, 4);
-            const size = dvh.getUint32(offset + 4, true);
-            if (id === 'iXML') {
-                const start = offset + 8;
-                const end = Math.min(start + size, dvh.byteLength);
-                const xmlBytes = new Uint8Array(headerBuffer.slice(start, end));
-                const xmlString = new TextDecoder().decode(xmlBytes);
+                const id = readStr(offset, 4);
+                const size = dvh.getUint32(offset + 4, true);
+                if (id === 'iXML') {
+                    const start = offset + 8;
+                    const end = Math.min(start + size, dvh.byteLength);
+                    const xmlBytes = new Uint8Array(headerBuffer.slice(start, end));
+                    const xmlString = new TextDecoder().decode(xmlBytes);
 
-                // Attach raw iXML to the File object for later use
-                (file as any).__iXMLraw = xmlString;
+                    // Attach raw iXML to the File object for later use
+                    (file as any).__iXMLraw = xmlString;
 
-                // Try to convert iXML to an object using available converter:
-                // prefer convertiXMLtoObject exported by ./wave (if available on imported read)
-                // or a global window.wave.convertiXMLtoObject if provided by user's environment.
-                try {
-                    const parser = new DOMParser();
-                    (file as any).__iXML = parser.parseFromString((file as any).__iXMLraw, "application/xml");
-                    const userNode = (file as any).__iXML.querySelector("USER");
-                    if (userNode) {
-                        const meta: { [key: string]: string | number | null } = {};
-                        Array.from(userNode.children).forEach((el: any) => {
-                            const key = el.tagName.toLowerCase();
-                            const txt = (el.textContent || '').trim();
-                            const num = Number(txt);
-                            meta[key] = txt === '' ? null : (Number.isFinite(num) ? num : txt);
-                        });
-                        (file as any).metadata = Object.assign((file as any).metadata || {}, meta);
+                    // Try to convert iXML to an object using available converter:
+                    // prefer convertiXMLtoObject exported by ./wave (if available on imported read)
+                    // or a global window.wave.convertiXMLtoObject if provided by user's environment.
+                    try {
+                        const parser = new DOMParser();
+                        (file as any).__iXML = parser.parseFromString((file as any).__iXMLraw, "application/xml");
+                        const userNode = (file as any).__iXML.querySelector("USER");
+                        if (userNode) {
+                            const meta: { [key: string]: string | number | null } = {};
+                            Array.from(userNode.children).forEach((el: any) => {
+                                const key = el.tagName.toLowerCase();
+                                const txt = (el.textContent || '').trim();
+                                const num = Number(txt);
+                                meta[key] = txt === '' ? null : (Number.isFinite(num) ? num : txt);
+                            });
+                            (file as any).metadata = Object.assign((file as any).metadata || {}, meta);
+                        }
+                    } catch (e) {
+                        console.warn('iXML conversion attempt failed:', e);
                     }
-                } catch (e) {
-                console.warn('iXML conversion attempt failed:', e);
-                }
 
-                break; // stop after first iXML chunk found
-            }
-            offset += 8 + size + (size % 2);
+                    break; // stop after first iXML chunk found
+                }
+                offset += 8 + size + (size % 2);
             }
         } catch (e) {
             console.warn('Failed to scan header for iXML chunk:', e);
@@ -234,13 +234,13 @@ async function loadAudioFile(file: File): Promise<Audio> {
         // bitrate tables (kbps)
         const bitrateTable: any = {
             // MPEG1 Layer III
-            '3_1': [0,32,40,48,56,64,80,96,112,128,160,192,224,256,320,0],
+            '3_1': [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0],
             // MPEG2/2.5 Layer III
-            '0_1': [0,8,16,24,32,40,48,56,64,80,96,112,128,144,160,0],
-            '2_1': [0,8,16,24,32,40,48,56,64,80,96,112,128,144,160,0],
+            '0_1': [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0],
+            '2_1': [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0],
             // fallback generic table for other layers/versions (best-effort)
-            '3_2': [0,32,48,56,64,80,96,112,128,160,192,224,256,320,384,0],
-            '3_3': [0,32,64,96,128,160,192,224,256,320,384,448,512,576,640,0]
+            '3_2': [0, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384, 0],
+            '3_3': [0, 32, 64, 96, 128, 160, 192, 224, 256, 320, 384, 448, 512, 576, 640, 0]
         };
 
         const versionStr = versions[versionKey] || 'unknown';
@@ -273,7 +273,7 @@ async function loadAudioFile(file: File): Promise<Audio> {
 
     const ext = getExt(file.name);
     const mime = file.type || 'unknown';
-    let metadata: {[Key: string]: string | number | null} = {...(file as any).__iXML};
+    let metadata: { [Key: string]: string | number | null } = { ...(file as any).__iXML };
 
     // Basic file info
     metadata.filename = file.name;
@@ -330,7 +330,7 @@ export class Audio extends AudioBuffer {
         for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
             audio.copyToChannel(buffer.getChannelData(ch), ch);
         }
-        audio.metadata = metadata
+        audio.metadata = metadata;
         console.log('Created Audio from AudioBuffer with metadata:', audio.metadata);
         return audio;
     }
@@ -358,31 +358,33 @@ export class Audio extends AudioBuffer {
         });
 
         if (obj.data) {
-            for (let i = 0; i < obj.data.length; i++) {
-                const channel = Math.floor(i / length);
-                const index = i % length;
-                audio.copyToChannel(new Float32Array([obj.data[i]]), channel, index);
+            for (let i = 0; i < numberOfChannels; i++) {
+                audio.copyToChannel(
+                    Float32Array.from(Object.values(obj.data)).slice(i * length, (i + 1) * length), i, 0);
             }
         }
-        console.log('METADATA', obj.metadata);
-        audio.metadata = obj.metadata
+        console.log('Created Audio from object:', audio.getChannelData(0));
+
+        obj.metadata = obj.metadata || {};
+        audio.metadata = obj.metadata;
 
         return audio;
     }
 
     toObject(): { [Key: string]: any; } {
-        console.log('this.metadata', this.metadata);
-        return {
+        const obj = {
             sampleRate: this.sampleRate,
             numberOfChannels: this.numberOfChannels,
             length: this.length,
             metadata: this.metadata,
-            data: Float32Array.from({ length: this.length * this.numberOfChannels }, (_, i) => { 
+            data: Float32Array.from({ length: this.length * this.numberOfChannels }, (_, i) => {
                 const channel = Math.floor(i / this.length);
                 const index = i % this.length;
                 return this.getChannelData(channel)[index];
             })
         };
+        console.log(obj);
+        return obj;
     }
 
     applyGain(gain: number): Audio {
@@ -415,6 +417,50 @@ export class Audio extends AudioBuffer {
         }
         const data = this.getChannelData(channel);
         return rms(data);
+    }
+
+    getEnvelopeImage(channel: number = 0, width: number = 300, height: number = 100): string {
+        if (channel < 0 || channel >= this.numberOfChannels) {
+            throw new Error("Invalid channel number");
+        }
+        const data = this.getChannelData(channel);
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error("Failed to get canvas context");
+        const imgData = ctx.createImageData(width, height);
+        const samplesPerPixel = Math.max(1, Math.floor(data.length / width));
+        for (let x = 0; x < width; x++) {
+            let min = 1.0;
+            let max = -1.0;
+            for (let i = 0; i < samplesPerPixel; i++) {
+                const sampleIndex = x * samplesPerPixel + i;
+                if (sampleIndex >= data.length) break;
+                const sample = data[sampleIndex];
+                if (sample < min) min = sample;
+                if (sample > max) max = sample;
+            }
+            const yMin = Math.floor((1 - (min + 1) / 2) * height);
+            const yMax = Math.floor((1 - (max + 1) / 2) * height);
+            for (let y = 0; y < height; y++) {
+                const index = (y * width + x) * 4;
+                if (y >= yMax && y <= yMin) {
+                    imgData.data[index] = 0;
+                    imgData.data[index + 1] = 0;
+                    imgData.data[index + 2] = 0;
+                    imgData.data[index + 3] = 20;
+                } else {
+                    imgData.data[index] = 255;
+                    imgData.data[index + 1] = 255;
+                    imgData.data[index + 2] = 255;
+                    imgData.data[index + 3] = 0;
+                }
+            }
+        }
+        ctx.putImageData(imgData, 0, 0);
+        return canvas.toDataURL("image/png");
+
     }
 
     static async fromFilename(filename: string): Promise<Audio> {
@@ -551,16 +597,16 @@ export function computeFFT(data: Float32Array | Float32Array, fftSize: number | 
         frame[i] = (data[i] || 0) * 1;
     }
     fft.realTransform(out, frame);
-    
+
     const frequency = Float32Array.from({ length: fftSize / 2 }, () => 0);
     const magnitude = Float32Array.from({ length: fftSize / 2 }, () => 0);
     const phase = Float32Array.from({ length: fftSize / 2 }, () => 0);
 
     for (let i = 0; i < fftSize / 2; i++) {
-            const re = out[2 * i];
-            const im = out[2 * i + 1];
-            magnitude[i] = abs(re, im) * Math.SQRT2; // Scale by sqrt(2) for single-sided spectrum.
-            phase[i] = Math.atan2(im, re); // phase in radians, range [-PI, PI].
+        const re = out[2 * i];
+        const im = out[2 * i + 1];
+        magnitude[i] = abs(re, im) * Math.SQRT2; // Scale by sqrt(2) for single-sided spectrum.
+        phase[i] = Math.atan2(im, re); // phase in radians, range [-PI, PI].
     }
     const frequencyResolution = 48000 / fftSize; // Assuming sample rate of 48000 Hz
     for (let i = 0; i < fftSize / 2; i++) {
@@ -702,7 +748,7 @@ export function fftConvolve(x: Float32Array | Float64Array, y: Float32Array | Fl
     // forward real FFTs
     fft.realTransform(A, xP);
     fft.realTransform(B, yP);
-        // complete the spectrum to full complex arrays (negative freqs)
+    // complete the spectrum to full complex arrays (negative freqs)
     if (typeof fft.completeSpectrum === 'function') {
         fft.completeSpectrum(A);
         fft.completeSpectrum(B);
@@ -749,7 +795,7 @@ export interface ImpulseResponseResult {
 export function twoChannelImpulseResponse(y: Float32Array, x: Float32Array): ImpulseResponseResult {
     // Calculate the impulse response by taking the IFFT of the division of the FFTs of output and input signals.
     const fullLen = y.length + x.length - 1;
-    
+
     const N = nextPow2(fullLen);
 
     // zero-pad inputs to length n
@@ -784,7 +830,7 @@ export function twoChannelImpulseResponse(y: Float32Array, x: Float32Array): Imp
     // Real part / N gives impulse response. This is shifted by N/2.
     const ir = Float32Array.from({ length: N }, () => 0);
     for (let i = 0; i < N; i++) {
-        ir[i] = out[2 * (( i + N/2) % N)]; // normalize by input length
+        ir[i] = out[2 * ((i + N / 2) % N)]; // normalize by input length
     }
 
     const peakAt = closest(100000000, ir) + (-N) / 2;
@@ -829,7 +875,7 @@ export function updatedFFT(dataArray: Float32Array | Float32Array, fftSize: numb
     if (typeof fft.completeSpectrum === 'function') {
         fft.completeSpectrum(B);
     }
-    
+
     const half = fftSize >> 1;
     const sigMag = new Float32Array(half);
     const sigPhase = new Float32Array(half);
@@ -851,7 +897,7 @@ export function updatedFFT(dataArray: Float32Array | Float32Array, fftSize: numb
     };
 }
 
-export function twoChannelFFT(dataArray: Float32Array | Float32Array, reference: Float32Array | Float32Array, fftSize: number, offset: number, precomputedReference?: FFTResult ): FFTResult {
+export function twoChannelFFT(dataArray: Float32Array | Float32Array, reference: Float32Array | Float32Array, fftSize: number, offset: number, precomputedReference?: FFTResult): FFTResult {
     const refArr = reference as Float32Array;
     const dataArr = dataArray as Float32Array;
 
@@ -886,7 +932,7 @@ export function twoChannelFFT(dataArray: Float32Array | Float32Array, reference:
     const h = new Float32Array(half);
     const phase = new Float32Array(half);
     for (let i = 0; i < half; i++) {
-        h[i] = sigMag[i] / ( refMag[i] || 1e-20);
+        h[i] = sigMag[i] / (refMag[i] || 1e-20);
         phase[i] = sigPhase[i] - refPhase[i];
     }
 
