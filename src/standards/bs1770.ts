@@ -1,10 +1,10 @@
 /*
     Implementation of BS.1770-4 as defined in Recommendation ITU-R BS.1770-4
 
-    Converted to JavaScript from C reference implementation
+    Converted to TypeScript from C reference implementation
 
     Original Author: erik.norvell@ericsson.com
-    JavaScript port: 28/Jan/2026
+    TypeScript port: 2026-01-28
 */
 
 // Constants
@@ -20,13 +20,13 @@ const ZERO_BLOCKS = 1000.0;                 // Constant to signal that zero bloc
 
 // Filter coefficients for stage 1 of the pre-filter to model a spherical head
 // R-REC-BS.1770-2-201103.pdf, Table 1
-const B1 = [1.53512485958697, -2.69169618940638, 1.19839281085285];
-const A1 = [1.0, -1.69065929318241, 0.73248077421585];
+const B1: number[] = [1.53512485958697, -2.69169618940638, 1.19839281085285];
+const A1: number[] = [1.0, -1.69065929318241, 0.73248077421585];
 
 // Filter coefficients for the RLB weighting curve
 // R-REC-BS.1770-2-201103.pdf, Table 2
-const B2 = [1.0, -2.0, 1.0];
-const A2 = [1.0, -1.99004745483398, 0.99007225036621];
+const B2: number[] = [1.0, -2.0, 1.0];
+const A2: number[] = [1.0, -1.99004745483398, 0.99007225036621];
 
 /**
  * Channel weights for default channel ordering (up to 18 channels)
@@ -39,13 +39,20 @@ const A2 = [1.0, -1.99004745483398, 0.99007225036621];
 const DEFAULT_CONF_18 = "000L1100011000000";
 const DEFAULT_CONF_24 = "000L11000L11000000000000";
 
+interface LoudnessMeasurement {
+    integratedLoudness: number;
+    loudnessRange: number;
+    zeroPassed: boolean;
+    zeroInput: boolean;
+}
+
 /**
  * Scale an array by a factor
  * @param {Float32Array} input - Input signal
  * @param {number} fac - Scaling factor
  * @returns {Float32Array} Scaled output signal
  */
-function scale(input, fac) {
+function scale(input: Float32Array, fac: number): Float32Array {
     const output = new Float32Array(input.length);
     for (let i = 0; i < input.length; i++) {
         output[i] = input[i] * fac;
@@ -58,7 +65,7 @@ function scale(input, fac) {
  * @param {Float32Array} input - Input signal
  * @returns {number} Sum of squared signal
  */
-function sumsq(input) {
+function sumsq(input: Float32Array): number {
     let result = 0;
     for (let i = 0; i < input.length; i++) {
         result += input[i] * input[i];
@@ -78,7 +85,14 @@ function sumsq(input) {
  * @param {number[]} Bmem - B memory (3 samples)
  * @param {number[]} Amem - A memory (3 samples)
  */
-function iir2(input, output, B, A, Bmem, Amem) {
+function iir2(
+    input: Float32Array,
+    output: Float32Array,
+    B: number[],
+    A: number[],
+    Bmem: number[],
+    Amem: number[]
+): void {
     for (let i = 0; i < input.length; i++) {
         Bmem[2] = Bmem[1];
         Bmem[1] = Bmem[0];
@@ -100,7 +114,12 @@ function iir2(input, output, B, A, Bmem, Amem) {
  * @param {boolean} rmsFlag - Flag for RMS (no gating)
  * @returns {number} Gated loudness in LKFS
  */
-function gatedLoudness(gatingBlockEnergy, fac, threshold, rmsFlag) {
+function gatedLoudness(
+    gatingBlockEnergy: Float32Array,
+    fac: number,
+    threshold: number,
+    rmsFlag: boolean
+): number {
     let count = 0;
     let energy = 0.0;
     
@@ -126,7 +145,11 @@ function gatedLoudness(gatingBlockEnergy, fac, threshold, rmsFlag) {
  * @param {boolean} rmsFlag - Flag for RMS (no gating)
  * @returns {number} Gated loudness in LKFS
  */
-function gatedLoudnessAdaptive(gatingBlockEnergy, fac, rmsFlag) {
+function gatedLoudnessAdaptive(
+    gatingBlockEnergy: Float32Array,
+    fac: number,
+    rmsFlag: boolean
+): number {
     // Calculate relative threshold
     let relativeThreshold = gatedLoudness(gatingBlockEnergy, fac, ABSOLUTE_THRESHOLD, rmsFlag) + RELATIVE_THRESHOLD_OFFSET;
     
@@ -142,8 +165,8 @@ function gatedLoudnessAdaptive(gatingBlockEnergy, fac, rmsFlag) {
  * @param {string} conf - Configuration string
  * @returns {number[]} Array of channel weights
  */
-function parseConf(conf) {
-    const G = [];
+function parseConf(conf: string): number[] {
+    const G: number[] = [];
     for (let i = 0; i < conf.length; i++) {
         if (conf[i] === '0') {
             G[i] = 1.0;
@@ -162,13 +185,26 @@ function parseConf(conf) {
  * BS1770Meter class for measuring loudness according to ITU-R BS.1770-4
  */
 export class BS1770Meter {
+    sampleRate: number;
+    numChannels: number;
+    blockSize: number;
+    stepSize: number;
+    G: number[];
+    Bmem1: number[][];
+    Amem1: number[][];
+    Bmem2: number[][];
+    Amem2: number[][];
+    eTmp: number[];
+    subBlockIndex: number;
+    gatingBlockEnergy: Float32Array;
+
     /**
      * Create a new BS.1770 loudness meter
      * @param {number} sampleRate - Sample rate of the audio (should be 48000 Hz for accurate results)
      * @param {number} numChannels - Number of channels
      * @param {string} [conf] - Optional channel configuration string
      */
-    constructor(sampleRate, numChannels, conf) {
+    constructor(sampleRate: number, numChannels: number, conf?: string) {
         this.sampleRate = sampleRate;
         this.numChannels = numChannels;
         
@@ -200,16 +236,16 @@ export class BS1770Meter {
         this.subBlockIndex = 0;
         
         // Storage for gating block energies
-        this.gatingBlockEnergy = [];
+        this.gatingBlockEnergy = new Float32Array(0);
     }
 
     /**
      * Process audio buffer and calculate loudness
      * @param {Float32Array} audioData - Interleaved audio data
      * @param {boolean} [rmsFlag=false] - Disable gating (for background noise measurement)
-     * @returns {Object} Loudness measurements
+     * @returns {LoudnessMeasurement} Loudness measurements
      */
-    measure(audioData, rmsFlag = false) {
+    measure(audioData: Float32Array, rmsFlag: boolean = false): LoudnessMeasurement {
         const totalLength = audioData.length / this.numChannels;
         
         if (totalLength < this.blockSize) {
@@ -294,7 +330,7 @@ export class BS1770Meter {
      * Calculate loudness range (LRA) - simplified implementation
      * @returns {number} Loudness range in LU
      */
-    calculateLoudnessRange() {
+    calculateLoudnessRange(): number {
         // Sort gating block energies
         const sorted = Array.from(this.gatingBlockEnergy)
             .map(e => LKFS_OFFSET + 10 * Math.log10(e + 1e-20))
@@ -317,9 +353,14 @@ export class BS1770Meter {
  * @param {number} sampleRate - Sample rate
  * @param {number} numChannels - Number of channels
  * @param {boolean} [rmsFlag=false] - Disable gating
- * @returns {Object} Loudness measurements
+ * @returns {LoudnessMeasurement} Loudness measurements
  */
-export function measureBS1770(audioData, sampleRate, numChannels, rmsFlag = false) {
+export function measureBS1770(
+    audioData: Float32Array,
+    sampleRate: number,
+    numChannels: number,
+    rmsFlag: boolean = false
+): LoudnessMeasurement {
     const meter = new BS1770Meter(sampleRate, numChannels);
     return meter.measure(audioData, rmsFlag);
 }
