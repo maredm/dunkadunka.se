@@ -40,6 +40,7 @@ export class AudioRecorder {
             }
         };
 
+        this.isRecording = true;
         return new Promise<Float32Array[]>((resolve) => {
             setTimeout(() => {
                 worklet.disconnect();
@@ -50,6 +51,5 @@ export class AudioRecorder {
             }, durationSec * 1000);
         });
 
-        this.isRecording = true;
     }
 }

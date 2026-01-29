@@ -1957,6 +1957,7 @@ var AudioRecorder = class {
           pointer += (_c = event.data.buffer[0]) == null ? void 0 : _c.length;
         }
       };
+      this.isRecording = true;
       return new Promise((resolve) => {
         setTimeout(() => {
           worklet.disconnect();
@@ -1966,7 +1967,6 @@ var AudioRecorder = class {
           this.isRecording = false;
         }, durationSec * 1e3);
       });
-      this.isRecording = true;
     });
   }
 };
