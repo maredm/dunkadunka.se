@@ -200,6 +200,7 @@ async function startRecordingAndPlayback(): Promise<void> {
             const audio = Audio.fromSamples(data[0], 48000, { filename: `Recording ${new Date().toISOString()}` });
             const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
             const li = createListItem(audio, id);
+            fileMap.set(id, audio);
             document.getElementById('fileList')?.appendChild(li);
             console.log('Recorded audio saved with id:', id);
             saveWaveformsToStorage(fileMap);

@@ -2284,6 +2284,7 @@ function startRecordingAndPlayback() {
         const audio2 = Audio.fromSamples(data[0], 48e3, { filename: `Recording ${(/* @__PURE__ */ new Date()).toISOString()}` });
         const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
         const li = createListItem(audio2, id);
+        fileMap.set(id, audio2);
         (_a = document.getElementById("fileList")) == null ? void 0 : _a.appendChild(li);
         console.log("Recorded audio saved with id:", id);
         saveWaveformsToStorage(fileMap);
