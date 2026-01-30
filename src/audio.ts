@@ -446,10 +446,10 @@ export class Audio extends AudioBuffer {
             for (let y = 0; y < height; y++) {
                 const index = (y * width + x) * 4;
                 if (y >= yMax && y <= yMin) {
-                    imgData.data[index] = 0;
-                    imgData.data[index + 1] = 0;
-                    imgData.data[index + 2] = 0;
-                    imgData.data[index + 3] = 20;
+                    imgData.data[index] = 255;
+                    imgData.data[index + 1] = 255;
+                    imgData.data[index + 2] = 255;
+                    imgData.data[index + 3] = 255;
                 } else {
                     imgData.data[index] = 255;
                     imgData.data[index + 1] = 255;
