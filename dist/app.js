@@ -756,6 +756,20 @@ function loadAudioFile(file) {
     return Audio.fromAudioBuffer(audioBuffer, metadata);
   });
 }
+function loadAudioFromBlob(blob, filename) {
+  return __async(this, null, function* () {
+    const file = blob instanceof File ? blob : new File([blob], filename != null ? filename : "blob", { type: blob.type || "" });
+    return yield loadAudioFile(file);
+  });
+}
+function loadAudioFromFilename(filename) {
+  return __async(this, null, function* () {
+    const resp = yield fetch(filename);
+    const blob = yield resp.blob();
+    console.log(`Fetched audio file from ${filename}:`, blob);
+    return yield loadAudioFromBlob(blob, filename);
+  });
+}
 var Audio = class _Audio extends AudioBuffer {
   constructor() {
     super(...arguments);
@@ -2165,6 +2179,11 @@ var polarMeasurementsEl = document.getElementById("polarMeasurements");
 var addPolarMeasurementBtn = document.getElementById("addPolarMeasurementBtn");
 var analyzePolarBtn = document.getElementById("analyzePolarBtn");
 var polarStatusEl = document.getElementById("polarStatus");
+function normalizeAngleDeg(angleDeg) {
+  let a = angleDeg % 360;
+  if (a < 0) a += 360;
+  return a;
+}
 var statusMessage = document.getElementById("statusMessage");
 function setStatusMessage(message, isError = false) {
   statusMessage.textContent = message;
@@ -2848,6 +2867,238 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
     });
   });
 }
+function createDirectivityPlotTab(responseDatas, referenceData, anglesDeg) {
+  console.log("Creating directivity plot tab with", responseDatas.length, "responses and reference data", referenceData);
+  if (responseDatas.length === 0 || referenceData.length === 0) return;
+  tabCounter++;
+  const tabId = `directivity-${tabCounter}`;
+  const shortName = `Directivity (${responseDatas.length})`;
+  const tab = document.createElement("button");
+  tab.className = "tab tab-closable tab-loading";
+  tab.dataset.tab = tabId;
+  tab.innerHTML = `<span class="tab-icon-analysis"></span>${shortName} <span class="tab-close">\u2715</span>`;
+  tabsInnerContainer.appendChild(tab);
+  const content = document.createElement("div");
+  content.className = "tab-content";
+  content.dataset.content = tabId;
+  content.innerHTML = `
+        <button class="sidecar-toggle" id="sidebar-toggle-${tabId}" title="Toggle Sidecar">Open settings pane</button>
+        <div class="flex h-full">
+            <div class="flex-none w-86 border-r border-[#ddd] p-2 relative sidecar" style="transition:50ms linear;">
+                <div class="section">
+                    <div class="title">Settings</div>
+                    <p><i>There are no settings for this analysis.</i></p>
+                </div>
+                <div class="section">
+                    <div class="title">Plots</div>
+                    <ul class="list" id="plot-list-${tabId}">
+                        <!--li><input type="checkbox" id="checkbox-magnitude-${tabId}" alt="show/hide" checked><label for="checkbox-magnitude-${tabId}">Magnitude</label></li>
+                        <li><input type="checkbox" id="checkbox-phase-${tabId}" alt="show/hide" checked><label for="checkbox-phase-${tabId}">Phase</label></li>
+                        <li><input type="checkbox" id="checkbox-ir-${tabId}" alt="show/hide" checked><label for="checkbox-ir-${tabId}">Impulse Response</label></li>
+                        <li><input type="checkbox" id="checkbox-ir-${tabId}" alt="show/hide" disabled><label for="checkbox-ir-${tabId}">Fundamental + Harmonic Distortion</label></li>
+                        <li><input type="checkbox" id="checkbox-distortion-${tabId}" alt="show/hide" disabled><label for="checkbox-distortion-${tabId}">Distortion</label></li>
+                        <li><input type="checkbox" id="checkbox-distortion-${tabId}" alt="show/hide" disabled><label for="checkbox-distortion-${tabId}">Sound Pressure Level</label></li>
+                        <li><input type="checkbox" id="checkbox-deconvoluted-ir-${tabId}" alt="show/hide" disabled><label for="checkbox-deconvoluted-ir-${tabId}">Deconvoluted Impulse Response</label></li>
+                        <li><input type="checkbox" id="checkbox-stimulus-waveform-${tabId}" alt="show/hide" disabled><label for="checkbox-stimulus-waveform-${tabId}">Stimulus Waveform</label></li>
+                        <li><input type="checkbox" id="checkbox-recorded-waveform-${tabId}" alt="show/hide" disabled><label for="checkbox-recorded-waveform-${tabId}">Recorded Waveform</label></li>
+                        <li><input type="checkbox" id="checkbox-recorded-noise-floor-${tabId}" alt="show/hide" disabled><label for="checkbox-recorded-noise-floor-${tabId}">Recorded Noise Floor</label></li>
+                        <li><input type="checkbox" id="checkbox-target-curve-${tabId}" alt="show/hide" disabled><label for="checkbox-target-curve-${tabId}">Target Curve<button class="float-right text-xs cursor-pointer" style="color: #bbb; padding-top: 3px">Set</button></label></li-->
+                    </ul>
+                </div>
+                <div class="section">
+                    <div class="title">Properties</div>
+                    <p id="properties-${tabId}"><i>There are no properties for this analysis.</i></p>
+                </div>
+                <div id="resize-handle" class="resize-handle"></div>
+            </div>
+            <div class="flex-1 main-content">
+                <div class="grid grid-cols-6 gap-[1px] bg-[#ddd] border-b border-[#ddd] plot-outer">
+                </div>
+            </div>
+        </div>
+
+
+    `;
+  tabContents.appendChild(content);
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
+      var _a;
+      const startTime = performance.now();
+      const useCustomAngles = !!anglesDeg && anglesDeg.length === responseDatas.length;
+      const angles = useCustomAngles ? anglesDeg.map(normalizeAngleDeg) : responseDatas.map((_, i) => 360 * i / responseDatas.length);
+      const referenceSamples = Float32Array.from(referenceData.getChannelData(0));
+      const len = Math.min(7.5 * 48e3, referenceSamples.length);
+      const referenceFFT = updatedFFT(referenceSamples.subarray(0, len), len);
+      const calcStartTime = performance.now();
+      const transfers = [];
+      const smoothTransfers = [];
+      for (let i = 0; i < responseDatas.length; i++) {
+        const resp = responseDatas[i];
+        const loopStartTime = performance.now();
+        const fftr = twoChannelFFT(
+          resp.getChannelData(0).subarray(0, len),
+          referenceSamples.subarray(0, len),
+          nextPow2(len),
+          0,
+          referenceFFT
+        );
+        fftr.magnitude = fftr.magnitude.map((v, i2) => Math.abs(v));
+        const ffto = smoothFFT(fftr, 1 / 3, 1 / 48);
+        smoothTransfers.push(ffto);
+        transfers.push(fftr);
+      }
+      const calcEndTime = performance.now();
+      console.warn(`CALC TOOK ${calcEndTime - calcStartTime} milliseconds`);
+      const baseFreq = (_a = transfers[0]) == null ? void 0 : _a.frequency;
+      if (!baseFreq || baseFreq.length === 0) return;
+      const normHz = 1e3;
+      let normIdx = 0;
+      let best = Number.POSITIVE_INFINITY;
+      for (let i = 0; i < baseFreq.length; i++) {
+        const d = Math.abs(baseFreq[i] - normHz);
+        if (d < best) {
+          best = d;
+          normIdx = i;
+        }
+      }
+      transfers.push(transfers[0]);
+      angles.push(360);
+      const cycleBy = 18;
+      const cycleTransfers = smoothTransfers.slice(cycleBy).concat(smoothTransfers.slice(0, cycleBy));
+      const asngles = angles.map((a) => a - 180);
+      const z = cycleTransfers.map((tf) => {
+        const magDb = db(tf.magnitude);
+        return magDb.map((v, i) => v - db(smoothTransfers[0].magnitude)[i]);
+      });
+      const endTime = performance.now();
+      console.warn(`TOOK ${endTime - startTime} milliseconds`);
+      plot(
+        [
+          {
+            type: "heatmap",
+            x: smoothTransfers[0].frequency,
+            y: asngles,
+            z,
+            colorscale: "Portland",
+            zmin: -24,
+            contours: { coloring: "#fff", showlines: true, start: -36, end: 0, size: 6 },
+            zmax: 6,
+            zsmooth: "best",
+            colorbar: { title: "dB (norm @ 1 kHz)" }
+          }
+        ],
+        tabId,
+        "Directivity Map",
+        "Frequency (Hz)",
+        "Angle (deg)",
+        { type: "log", range: [Math.log10(20), Math.log10(2e4)] },
+        { range: [-180, 180] },
+        { margin: { l: 60, r: 20, t: 40, b: 50 } },
+        false
+      );
+      const avgMagnitude = new Float32Array(baseFreq.length);
+      for (let i = 0; i < baseFreq.length; i++) {
+        let sum2 = 0;
+        for (let j = 0; j < transfers.length - 1; j++) {
+          sum2 += transfers[j].magnitude[i];
+        }
+        avgMagnitude[i] = sum2 / (transfers.length - 1);
+      }
+      const smoothAvgMagnitude = smoothFFT({ frequency: baseFreq, magnitude: avgMagnitude, phase: new Float32Array(baseFreq.length), fftSize: nextPow2(baseFreq.length) }, 1 / 6, 1 / 48);
+      const on = smoothFFT(transfers[0], 1 / 6, 1 / 48);
+      const anglesToPlot = [0, 30, 60, 90, 180];
+      plot(
+        [
+          ...anglesToPlot.map((angle, i) => {
+            const idx = angles.findIndex((a) => Math.abs(a - angle) < 0.1);
+            if (idx === -1) {
+              return null;
+            }
+            return { x: smoothFFT(transfers[idx], 1 / 6, 1 / 48).frequency, y: db(smoothFFT(transfers[idx], 1 / 6, 1 / 48).magnitude), name: `${angle} deg response`, line: { width: 1.5, color: COLORS[i] } };
+          }),
+          { x: smoothAvgMagnitude.frequency, y: db(smoothAvgMagnitude.magnitude), name: "Average Response", line: { width: 2, color: "#000000" } }
+        ],
+        tabId,
+        "Transfer Function",
+        "Frequency (Hz)",
+        "Amplitude (dB)",
+        { type: "log", range: [Math.log10(20), Math.log10(2e4)] },
+        { range: [-85, 5] },
+        {},
+        false
+      );
+      plot(
+        [
+          { x: on.frequency, y: db(smoothAvgMagnitude.magnitude).map((v, i) => db(on.magnitude)[i] - v), name: "Average Response", line: { width: 2, color: "#000000" } }
+        ],
+        tabId,
+        "Directivity Index",
+        "Frequency (Hz)",
+        "DI (dB)",
+        { type: "log", range: [Math.log10(20), Math.log10(2e4)] },
+        { range: [-10, 50] },
+        {},
+        false
+      );
+      (() => {
+        const freqsToPlot = [62.5, 125, 250, 500, 1e3, 2e3, 4e3, 8e3, 16e3];
+        const uniqueTransfers = smoothTransfers;
+        const uniqueAngles = angles;
+        const traces = [];
+        const aseFreq = uniqueTransfers[0].frequency;
+        for (let fi = 0; fi < freqsToPlot.length; fi++) {
+          const hz = freqsToPlot[fi];
+          let idx = 0;
+          let best2 = Number.POSITIVE_INFINITY;
+          for (let i = 0; i < aseFreq.length; i++) {
+            const d = Math.abs(aseFreq[i] - hz);
+            if (d < best2) {
+              best2 = d;
+              idx = i;
+            }
+          }
+          const magDb = uniqueTransfers.map((tf) => {
+            var _a2;
+            return (_a2 = db(tf.magnitude)[idx]) != null ? _a2 : -999;
+          });
+          const maxVal = Math.max(...magDb);
+          const r = magDb.map((v) => v - maxVal);
+          const theta = [...uniqueAngles, 360];
+          const rClosed = [...r];
+          traces.push({
+            type: "scatterpolar",
+            r: rClosed,
+            theta,
+            mode: "lines+markers",
+            name: `${hz} Hz`,
+            line: { color: COLORS[fi % COLORS.length], width: 2 },
+            marker: { size: 4 }
+          });
+        }
+        plot(
+          traces,
+          tabId,
+          "Polar Directivity",
+          "Frequency (Hz)",
+          "Angle (deg)",
+          {},
+          // x-axis options unused for polar
+          {},
+          // y-axis options unused for polar
+          {
+            polar: {
+              radialaxis: { title: { text: "Relative dB (max = 0 dB)" }, angle: 90, dtick: 10, range: [-50, 0] },
+              angularaxis: { direction: "clockwise", rotation: 90, tickmode: "array" }
+            },
+            margin: { l: 60, r: 20, t: 40, b: 50 }
+          },
+          false
+        );
+      })();
+      tab.classList.remove("tab-loading");
+    });
+  });
+}
 function saveState() {
   const tabs = Array.from(document.querySelectorAll(".tab[data-tab]")).map((tab) => {
     var _a;
@@ -2877,6 +3128,54 @@ function loadState() {
     } catch (e) {
       console.error("Failed to load saved state:", e);
     }
+  });
+}
+function loadTestPolarData() {
+  return __async(this, null, function* () {
+    const angles = [
+      0,
+      10,
+      20,
+      30,
+      40,
+      50,
+      60,
+      70,
+      80,
+      90,
+      100,
+      110,
+      120,
+      130,
+      140,
+      150,
+      160,
+      170,
+      180,
+      190,
+      200,
+      210,
+      220,
+      230,
+      240,
+      250,
+      260,
+      270,
+      280,
+      290,
+      300,
+      310,
+      320,
+      330,
+      340,
+      350
+    ];
+    const files = angles.map((a) => `testdata/${a}.wav`);
+    createDirectivityPlotTab(
+      yield Promise.all(files.map((f) => loadAudioFromFilename(f))),
+      yield loadAudioFromFilename("testdata/sweep_signal.wav.wav"),
+      angles
+    );
   });
 }
 function loadWaveformsFromStorage() {
@@ -3039,5 +3338,6 @@ document.addEventListener("DOMContentLoaded", () => {
     createAnalysisTab(response.applyGain(1 / 16384), reference ? reference.applyGain(1 / 16384) : null, ((_a2 = response.metadata) == null ? void 0 : _a2.filename) || "Response", ((_b = reference == null ? void 0 : reference.metadata) == null ? void 0 : _b.filename) || "Reference");
   });
 });
+loadTestPolarData();
 loadState();
 //# sourceMappingURL=app.js.map

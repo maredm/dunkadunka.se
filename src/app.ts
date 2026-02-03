@@ -1405,6 +1405,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-// loadTestPolarData();
+loadTestPolarData();
 // Load state on page load
 loadState();

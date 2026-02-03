@@ -1,0 +1,1095 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Flipdot Control Panel</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f5f5f5;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1600px;
+      margin: 0 auto;
+      background-color: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      overflow: hidden;
+    }
+    h1 {
+      color: #333;
+      text-align: center;
+      padding: 20px;
+      background-color: #f9f9f9;
+      border-bottom: 2px solid #ddd;
+    }
+    .tabs {
+      display: flex;
+      background-color: #f0f0f0;
+      border-bottom: 1px solid #ddd;
+      padding: 0;
+    }
+    .tab-button {
+      flex: 1;
+      padding: 15px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: 500;
+      color: #666;
+      transition: all 0.3s;
+      border-bottom: 3px solid transparent;
+    }
+    .tab-button:hover {
+      background-color: #e0e0e0;
+    }
+    .tab-button.active {
+      color: #2196F3;
+      border-bottom-color: #2196F3;
+      background-color: white;
+    }
+    .tab-content {
+      display: none;
+      padding: 20px;
+      animation: fadeIn 0.3s;
+    }
+    .tab-content.active {
+      display: block;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    .console {
+      background-color: #1e1e1e;
+      color: #00ff00;
+      padding: 15px;
+      border-radius: 5px;
+      font-family: 'Courier New', monospace;
+      height: 300px;
+      overflow-y: auto;
+      margin-bottom: 15px;
+      border: 1px solid #333;
+    }
+    .input-group {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+    input[type="text"] {
+      flex: 1;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    input[type="number"] {
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    select {
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    button {
+      padding: 10px 20px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: bold;
+      transition: background-color 0.2s;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    button.danger {
+      background-color: #f44336;
+    }
+    button.danger:hover {
+      background-color: #da190b;
+    }
+    button.info-btn {
+      background-color: #2196F3;
+    }
+    button.info-btn:hover {
+      background-color: #0b7dda;
+    }
+    .info {
+      background-color: #e7f3fe;
+      padding: 10px;
+      border-left: 4px solid #2196F3;
+      margin-top: 15px;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    .status {
+      text-align: center;
+      padding: 10px;
+      margin-bottom: 15px;
+      border-radius: 4px;
+      font-weight: bold;
+      background-color: #d4edda;
+      color: #155724;
+    }
+    .advanced-options {
+      background-color: #f9f9f9;
+      padding: 15px;
+      border-radius: 5px;
+      margin-bottom: 15px;
+      border: 1px solid #ddd;
+    }
+    .advanced-options h3 {
+      margin-bottom: 15px;
+      color: #333;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+    .grid-item label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+      color: #555;
+    }
+    .pixel-grid {
+      display: inline-block;
+      border: 2px solid #333;
+      background-color: #000;
+      padding: 10px;
+      border-radius: 5px;
+      margin-bottom: 15px;
+    }
+    .pixel-row {
+      display: flex;
+      margin-bottom: 2px;
+    }
+    .pixel {
+      width: 11px;
+      height: 11px;
+      margin-right: 1px;
+      border: 1px solid #555;
+      cursor: pointer;
+      border-radius: 100%;
+      background-color: #1a1a1a;
+      transition: background-color 0.1s;
+    }
+    .pixel.active {
+      background-color: #ffff00;
+      box-shadow: 0 0 5px #ffff00;
+    }
+    .editor-layout {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 20px;
+    }
+    .controls {
+      background-color: #f9f9f9;
+      padding: 15px;
+      border-radius: 5px;
+      border: 1px solid #ddd;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      align-items: start;
+    }
+    .controls button {
+      width: 100%;
+    }
+    .controls .control-group {
+      grid-column: span 2;
+    }
+    .controls select {
+      width: 100%;
+      padding: 8px;
+    }
+    .controls h3 {
+      margin-top: 0;
+      color: #333;
+    }
+    .control-group {
+      margin-bottom: 15px;
+    }
+    .control-group label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+      color: #555;
+    }
+    .control-group input {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    .pixel-count {
+      text-align: center;
+      padding: 10px;
+      background-color: #e8f5e9;
+      border-radius: 4px;
+      margin-bottom: 15px;
+      font-weight: bold;
+    }
+    .status-message {
+      padding: 10px;
+      margin-bottom: 10px;
+      border-radius: 4px;
+      display: none;
+    }
+    .status-message.success {
+      background-color: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+      display: block;
+    }
+    .status-message.error {
+      background-color: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Flipdot Control Panel</h1>
+    
+    <div class="tabs">
+      <button class="tab-button active" onclick="switchTab('console-tab');">Console & Text</button>
+      <button class="tab-button" onclick="switchTab('bitmap-tab');">Bitmap Editor</button>
+    </div>
+
+    <!-- CONSOLE TAB -->
+    <div id="console-tab" class="tab-content active">
+      <div class="status" id="status">Connected to ESP32</div>
+      
+      <div class="console" id="console"></div>
+      
+      <div class="input-group">
+        <input type="text" id="input" placeholder="Enter text to send to UART2..." />
+        <button onclick="sendCommand();">Send</button>
+        <button onclick="clearConsole();">Clear Log</button>
+      </div>
+      
+      <div class="advanced-options">
+        <h3>Advanced Options</h3>
+        <div class="grid-2">
+          <div class="grid-item">
+            <label>Horizontal (0-27):</label>
+            <input type="number" id="horizontal" min="0" max="27" value="0">
+          </div>
+          <div class="grid-item">
+            <label>Vertical (0-19):</label>
+            <input type="number" id="vertical" min="0" max="19" value="0">
+          </div>
+          <div class="grid-item">
+            <label>Font:</label>
+            <select id="font">
+              <option value="0x72">Text 5px (0x72)</option>
+              <option value="0x66">Text 6px (0x66)</option>
+              <option value="0x65">Text 7px (0x65)</option>
+              <option value="0x64">Text 7px Bold (0x64)</option>
+              <option value="0x75">Text 9px (0x75)</option>
+              <option value="0x70">Text 9px Bold (0x70)</option>
+              <option value="0x62">Text 9px Bolder (0x62)</option>
+              <option value="0x73">Text 13px (0x73)</option>
+              <option value="0x69">Text 13px Bold (0x69)</option>
+              <option value="0x61">Text 13px Bolder (0x61)</option>
+              <option value="0x79">Text 13px Boldest (0x79)</option>
+              <option value="0x00">Numbers 14px (0x00)</option>
+              <option value="0x71">Text 15px (0x71)</option>
+              <option value="0x68">Text 16px (0x68)</option>
+              <option value="0x78">Text 16px Bold (0x78)</option>
+              <option value="0x74">Text 16px Bolder (0x74)</option>
+              <option value="0x67">Symbols (0x67)</option>
+              <option value="0x77">Bitmap (0x77)</option>
+            </select>
+          </div>
+        </div>
+        <button onclick="sendAdvanced();" style="width: 100%; background-color: #2196F3;">Send with Options</button>
+        <button onclick="clearDisplay();" style="width: 100%; margin-top: 10px; background-color: #f44336;">Clear Display</button>
+      </div>
+      
+      <div class="info">
+        <strong>Info:</strong> Text will be sent directly to UART2 (GPIO17 TX, GPIO16 RX) at 4800 baud.
+      </div>
+    </div>
+
+    <!-- BITMAP EDITOR TAB -->
+    <div id="bitmap-tab" class="tab-content">
+      <div id="statusMessage" class="status-message"></div>
+      
+      <div class="editor-layout">
+        <div>
+          <div class="pixel-grid" id="pixelGrid"></div>
+          <div class="info">
+            <strong>Click pixels</strong> to toggle them on/off. Yellow = on, Dark = off. Grid is 112×16 pixels.
+          </div>
+        </div>
+        
+        <div class="controls">
+          <div class="pixel-count">
+            <div id="pixelCount">0 pixels on</div>
+          </div>
+          
+          <div class="control-group">
+            <label>Vertical Offset (0-15):</label>
+            <input type="number" id="verticalOffset" min="0" max="15" value="0">
+          </div>
+          
+          <button onclick="sendBitmap();" style="background-color: #4CAF50;">Send to Display</button>
+          <button onclick="sendDelta();" style="background-color: #2196F3;">Send Changes Only</button>
+          <button onclick="saveBitmap();" style="background-color: #ff9800;">Save State</button>
+          <button onclick="previewBitmap();" style="background-color: #9c27b0;">Preview</button>
+          <button onclick="clearGrid();" class="danger">Clear All</button>
+          <button onclick="fillGrid();" style="background-color: #607d8b;">Fill All</button>
+          <button onclick="invertGrid();" style="background-color: #795548;">Invert</button>
+          
+          <div class="control-group">
+            <label for="loadPreset">Load Pattern:</label>
+            <select id="loadPreset" onchange="loadPreset(this.value);">
+              <option value="">-- Select Pattern --</option>
+              <option value="checkerboard">Checkerboard</option>
+              <option value="border">Border</option>
+              <option value="cross">Cross</option>
+              <option value="diagonal">Diagonal</option>
+            </select>
+          </div>
+          
+          <div class="control-group">
+            <label>Upload Image:</label>
+            <input type="file" id="imageFile" accept="image/*">
+          </div>
+          
+          <div class="control-group">
+            <label>Threshold (0-255):</label>
+            <input type="number" id="imageThreshold" min="0" max="255" value="128">
+          </div>
+          
+          <button onclick="loadImageFromFile();" style="background-color: #ff5722; width: 100%;">Load Image</button>
+          
+          <button id="cameraBtn" onclick="toggleCamera();" style="background-color: #673ab7;">Start Camera</button>
+          
+          <div class="control-group">
+            <label>Camera Threshold:</label>
+            <input type="number" id="cameraThreshold" min="0" max="255" value="128">
+          </div>
+          
+          <div class="control-group">
+            <label>Update Rate:</label>
+            <select id="cameraRate">
+              <option value="500">Fast (500ms)</option>
+              <option value="1000">Normal (1s)</option>
+              <option value="2000">Slow (2s)</option>
+            </select>
+          </div>
+          
+          <video id="cameraVideo" style="display: none;" width="320" height="240" autoplay></video>
+          
+          <button id="clockBtn" onclick="toggleClock();" style="background-color: #00bcd4;">Start Clock</button>
+          
+          <div class="control-group">
+            <label>Clock Horizontal (0-27):</label>
+            <input type="number" id="clockHorizontal" min="0" max="27" value="0">
+          </div>
+
+          <div class="control-group">
+            <label>Clock Vertical (0-15):</label>
+            <input type="number" id="clockVertical" min="0" max="15" value="0">
+          </div>
+
+          <div class="control-group">
+            <label>Clock Font:</label>
+            <select id="clockFont">
+              <option value="0x75">Text 9px (0x75)</option>
+              <option value="0x70">Text 9px Bold (0x70)</option>
+              <option value="0x73">Text 13px (0x73)</option>
+              <option value="0x69">Text 13px Bold (0x69)</option>
+              <option value="0x71">Text 15px (0x71)</option>
+              <option value="0x68">Text 16px (0x68)</option>
+              <option value="0x78">Text 16px Bold (0x78)</option>
+            </select>
+          </div>
+
+          <div class="control-group">
+            <label>Time Format:</label>
+            <select id="clockFormat">
+              <option value="24">24-hour</option>
+              <option value="12">12-hour</option>
+            </select>
+          </div>
+
+          <div class="control-group">
+            <label>Show Seconds:</label>
+            <select id="clockSeconds">
+              <option value="1">Yes</option>
+              <option value="0">No</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const wsUrl = `ws://10.0.0.19/ws`;
+    let ws = null;
+    let wsReady = false;
+
+    function initWebSocket() {
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        wsReady = true;
+        document.getElementById('status').textContent = 'Connected to ESP32 (WebSocket)';
+      };
+
+      ws.onclose = () => {
+        wsReady = false;
+        document.getElementById('status').textContent = 'Disconnected - retrying...';
+        setTimeout(initWebSocket, 1500);
+      };
+
+      ws.onerror = () => {
+        wsReady = false;
+      };
+
+      ws.onmessage = (event) => {
+        const msg = event.data;
+        if (msg && msg.startsWith('ERR')) {
+          addLog('Error: ' + msg, 'received');
+        }
+      };
+    }
+
+    function sendWS(command, params, onOk) {
+      if (!ws || !wsReady) {
+        addLog('WebSocket not connected', 'received');
+        return;
+      }
+
+      const payload = new URLSearchParams({ cmd: command, ...params }).toString();
+      ws.send(payload);
+
+      if (typeof onOk === 'function') {
+        onOk();
+      }
+    }
+    // Tab switching function
+    function switchTab(tabId) {
+      // Hide all tabs
+      const tabs = document.querySelectorAll('.tab-content');
+      tabs.forEach(tab => tab.classList.remove('active'));
+      
+      // Remove active from all buttons
+      const buttons = document.querySelectorAll('.tab-button');
+      buttons.forEach(btn => btn.classList.remove('active'));
+      
+      // Show selected tab
+      document.getElementById(tabId).classList.add('active');
+      
+      // Add active to clicked button
+      event.target.classList.add('active');
+      
+      // Initialize bitmap grid if switching to bitmap tab
+      if (tabId === 'bitmap-tab' && document.getElementById('pixelGrid').children.length === 0) {
+        createGrid();
+      }
+    }
+
+    // CONSOLE & TEXT TAB FUNCTIONS
+    const consoleDiv = document.getElementById('console');
+    const inputField = document.getElementById('input');
+
+    function addLog(message, type = 'normal') {
+      const timestamp = new Date().toLocaleTimeString();
+      const line = document.createElement('div');
+      let prefix = '';
+      
+      if (type === 'sent') {
+        prefix = '[SENT] ';
+      } else if (type === 'received') {
+        prefix = '[RCV] ';
+      }
+      
+      line.textContent = `${timestamp} ${prefix}${message}`;
+      consoleDiv.appendChild(line);
+      consoleDiv.scrollTop = consoleDiv.scrollHeight;
+    }
+
+    function sendCommand() {
+      const text = inputField.value.trim();
+      if (text === '') return;
+      
+      addLog(text, 'sent');
+      
+      sendWS('send', { text });
+
+      inputField.focus();
+    }
+
+    function sendAdvanced() {
+      const text = inputField.value.trim();
+      if (text === '') {
+        addLog('Please enter text', 'received');
+        return;
+      }
+      
+      const horizontal = document.getElementById('horizontal').value;
+      const vertical = document.getElementById('vertical').value;
+      const font = document.getElementById('font').value;
+      
+      addLog(`${text} (H:${horizontal} V:${vertical} Font:${font})`, 'sent');
+      
+      sendWS('send_advanced', { text, horizontal, vertical, font });
+      
+      inputField.value = '';
+      inputField.focus();
+    }
+
+    function clearDisplay() {
+      addLog('Clearing display...', 'sent');
+      
+      sendWS('clear_display', {}, () => {
+        addLog('Display cleared!', 'received');
+      });
+    }
+
+    function clearConsole() {
+      consoleDiv.innerHTML = '';
+    }
+
+    // BITMAP EDITOR TAB FUNCTIONS
+    const GRID_WIDTH = 112;
+    const GRID_HEIGHT = 16;
+    let pixelGrid = new Uint8Array(GRID_WIDTH * GRID_HEIGHT);
+    let savedPixelGrid = new Uint8Array(GRID_WIDTH * GRID_HEIGHT);  // Saved state for delta comparison
+    
+    function createGrid() {
+      const gridDiv = document.getElementById('pixelGrid');
+      gridDiv.innerHTML = '';
+      
+      for (let y = 0; y < GRID_HEIGHT; y++) {
+        const row = document.createElement('div');
+        row.className = 'pixel-row';
+        
+        for (let x = 0; x < GRID_WIDTH; x++) {
+          const pixel = document.createElement('div');
+          pixel.className = 'pixel';
+          pixel.dataset.x = x;
+          pixel.dataset.y = y;
+          pixel.onclick = () => togglePixel(x, y, pixel);
+          row.appendChild(pixel);
+        }
+        
+        gridDiv.appendChild(row);
+      }
+    }
+    
+    function togglePixel(x, y, pixelElement) {
+      const idx = y * GRID_WIDTH + x;
+      pixelGrid[idx] = pixelGrid[idx] ? 0 : 1;
+      
+      if (pixelGrid[idx]) {
+        pixelElement.classList.add('active');
+      } else {
+        pixelElement.classList.remove('active');
+      }
+      
+      updatePixelCount();
+    }
+    
+    function updatePixelCount() {
+      const count = pixelGrid.reduce((a, b) => a + b, 0);
+      document.getElementById('pixelCount').textContent = count + ' pixels on';
+    }
+    
+    function clearGrid() {
+      pixelGrid.fill(0);
+      document.querySelectorAll('.pixel').forEach(p => p.classList.remove('active'));
+      updatePixelCount();
+      showStatus('Grid cleared', 'success');
+    }
+    
+    function fillGrid() {
+      pixelGrid.fill(1);
+      document.querySelectorAll('.pixel').forEach(p => p.classList.add('active'));
+      updatePixelCount();
+      showStatus('Grid filled', 'success');
+    }
+    
+    function invertGrid() {
+      for (let i = 0; i < pixelGrid.length; i++) {
+        pixelGrid[i] = pixelGrid[i] ? 0 : 1;
+      }
+      
+      document.querySelectorAll('.pixel').forEach((p, idx) => {
+        if (pixelGrid[idx]) {
+          p.classList.add('active');
+        } else {
+          p.classList.remove('active');
+        }
+      });
+      updatePixelCount();
+      showStatus('Grid inverted', 'success');
+    }
+    
+    function loadPreset(preset) {
+      clearGrid();
+      
+      if (preset === 'checkerboard') {
+        for (let y = 0; y < GRID_HEIGHT; y++) {
+          for (let x = 0; x < GRID_WIDTH; x++) {
+            if ((x + y) % 2 === 0) {
+              pixelGrid[y * GRID_WIDTH + x] = 1;
+            }
+          }
+        }
+      } else if (preset === 'border') {
+        for (let x = 0; x < GRID_WIDTH; x++) {
+          pixelGrid[0 * GRID_WIDTH + x] = 1;
+          pixelGrid[(GRID_HEIGHT - 1) * GRID_WIDTH + x] = 1;
+        }
+        for (let y = 0; y < GRID_HEIGHT; y++) {
+          pixelGrid[y * GRID_WIDTH + 0] = 1;
+          pixelGrid[y * GRID_WIDTH + (GRID_WIDTH - 1)] = 1;
+        }
+      } else if (preset === 'cross') {
+        const midX = Math.floor(GRID_WIDTH / 2);
+        const midY = Math.floor(GRID_HEIGHT / 2);
+        for (let x = 0; x < GRID_WIDTH; x++) {
+          pixelGrid[midY * GRID_WIDTH + x] = 1;
+        }
+        for (let y = 0; y < GRID_HEIGHT; y++) {
+          pixelGrid[y * GRID_WIDTH + midX] = 1;
+        }
+      } else if (preset === 'diagonal') {
+        for (let y = 0; y < GRID_HEIGHT; y++) {
+          for (let x = 0; x < GRID_WIDTH; x++) {
+            if (x === y || x === GRID_WIDTH - 1 - y) {
+              pixelGrid[y * GRID_WIDTH + x] = 1;
+            }
+          }
+        }
+      }
+      
+      refreshDisplay();
+      updatePixelCount();
+      document.getElementById('loadPreset').value = '';
+    }
+    
+    function loadImageFromFile() {
+      const fileInput = document.getElementById('imageFile');
+      const file = fileInput.files[0];
+      
+      if (!file) {
+        showStatus('Please select an image file', 'error');
+        return;
+      }
+
+      const threshold = parseInt(document.getElementById('imageThreshold').value);
+      const reader = new FileReader();
+      
+      reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+          // Create canvas and context
+          const canvas = document.createElement('canvas');
+          canvas.width = GRID_WIDTH;
+          canvas.height = GRID_HEIGHT;
+          const ctx = canvas.getContext('2d');
+          
+          // Fill canvas with white background
+          ctx.fillStyle = 'white';
+          ctx.fillRect(0, 0, GRID_WIDTH, GRID_HEIGHT);
+          
+          // Calculate aspect ratios
+          const imgAspect = img.width / img.height;
+          const canvasAspect = GRID_WIDTH / GRID_HEIGHT;
+          
+          let drawWidth, drawHeight, drawX, drawY;
+          
+          if (imgAspect > canvasAspect) {
+            // Image is wider: fit to width
+            drawWidth = GRID_WIDTH;
+            drawHeight = GRID_WIDTH / imgAspect;
+            drawX = 0;
+            drawY = (GRID_HEIGHT - drawHeight) / 2;
+          } else {
+            // Image is taller: fit to height
+            drawHeight = GRID_HEIGHT;
+            drawWidth = GRID_HEIGHT * imgAspect;
+            drawX = (GRID_WIDTH - drawWidth) / 2;
+            drawY = 0;
+          }
+          
+          // Draw image preserving aspect ratio
+          ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+          
+          // Get image data
+          const imageData = ctx.getImageData(0, 0, GRID_WIDTH, GRID_HEIGHT);
+          const data = imageData.data;
+          
+          // Convert to binary pixels using threshold
+          pixelGrid.fill(0);
+          for (let i = 0; i < data.length; i += 4) {
+            // Calculate brightness (grayscale)
+            const r = data[i];
+            const g = data[i + 1];
+            const b = data[i + 2];
+            const brightness = (r + g + b) / 3;
+            
+            // Apply threshold
+            const pixelIndex = i / 4;
+            pixelGrid[pixelIndex] = brightness > threshold ? 1 : 0;
+          }
+          
+          refreshDisplay();
+          updatePixelCount();
+          showStatus('Image loaded and converted!', 'success');
+        };
+        img.src = e.target.result;
+      };
+      
+      reader.onerror = function() {
+        showStatus('Failed to read image file.', 'error');
+      };
+      
+      reader.readAsDataURL(file);
+    }
+    
+    function refreshDisplay() {
+      document.querySelectorAll('.pixel').forEach((p, idx) => {
+        if (pixelGrid[idx]) {
+          p.classList.add('active');
+        } else {
+          p.classList.remove('active');
+        }
+      });
+    }
+    
+    function sendBitmap() {
+      const verticalOffset = parseInt(document.getElementById('verticalOffset').value);
+      
+      // Convert pixel array to string for transmission
+      let pixelData = '';
+      for (let i = 0; i < pixelGrid.length; i++) {
+        pixelData += pixelGrid[i];
+      }
+      
+      sendWS('send_bitmap', { bitmap: pixelData, vertical: verticalOffset }, () => {
+        savedPixelGrid = new Uint8Array(pixelGrid);
+        showStatus('Full bitmap sent successfully!', 'success');
+      });
+    }
+    
+    function saveBitmap() {
+      savedPixelGrid = new Uint8Array(pixelGrid);
+      showStatus('Bitmap state saved!', 'success');
+    }
+    
+    function sendDelta() {
+      const verticalOffset = parseInt(document.getElementById('verticalOffset').value);
+      
+      // Find changed pixels
+      let changedCount = 0;
+      for (let i = 0; i < pixelGrid.length; i++) {
+        if (pixelGrid[i] !== savedPixelGrid[i]) {
+          changedCount++;
+        }
+      }
+      
+      if (changedCount === 0) {
+        showStatus('No changes to send', 'success');
+        return;
+      }
+      
+      // Convert current and previous pixel arrays to strings
+      let pixelData = '';
+      let prevPixelData = '';
+      for (let i = 0; i < pixelGrid.length; i++) {
+        pixelData += pixelGrid[i];
+        prevPixelData += savedPixelGrid[i];
+      }
+      
+      sendWS('send_bitmap', { bitmap: pixelData, vertical: verticalOffset }, () => {
+        savedPixelGrid = new Uint8Array(pixelGrid);
+        showStatus(`Sent changes only (${changedCount} pixels changed)`, 'success');
+      });
+    }
+    
+    function previewBitmap() {
+      showStatus('Preview sent to console', 'success');
+      console.log('Pixel data:', pixelGrid);
+    }
+    
+    function showStatus(message, type) {
+      const statusDiv = document.getElementById('statusMessage');
+      statusDiv.textContent = message;
+      statusDiv.className = 'status-message ' + type;
+      setTimeout(() => {
+        statusDiv.className = 'status-message';
+      }, 3000);
+    }
+
+    // CLOCK ANIMATION
+    let clockInterval = null;
+    let clockRunning = false;
+
+    function setPixelSafe(x, y) {
+      if (x < 0) x = GRID_WIDTH - 1;
+      if (x >= GRID_WIDTH) x = 0;
+      if (y < 0) y = GRID_HEIGHT - 1;
+      if (y >= GRID_HEIGHT) y = 0;
+      const idx = y * GRID_WIDTH + x;
+      if (idx >= 0 && idx < pixelGrid.length) {
+        pixelGrid[idx] = 1;
+      }
+    }
+
+    function drawClockBitmap(now) {
+      pixelGrid.fill(0);
+
+      // Border top/bottom
+      for (let x = 0; x < GRID_WIDTH; x++) {
+        setPixelSafe(x, 0);
+        setPixelSafe(x, GRID_HEIGHT - 1);
+      }
+      // Border sides
+      for (let y = 0; y < GRID_HEIGHT; y++) {
+        setPixelSafe(0, y);
+        setPixelSafe(GRID_WIDTH - 1, y);
+      }
+
+      // Seconds progress bar (row 14)
+      const sec = now.getSeconds();
+      const filled = Math.floor((sec / 59) * (GRID_WIDTH - 2));
+      for (let x = 1; x <= filled; x++) {
+        setPixelSafe(x, GRID_HEIGHT - 2);
+      }
+
+      refreshDisplay();
+      updatePixelCount();
+    }
+
+    function formatClockTime(now) {
+      const format = document.getElementById('clockFormat').value;
+      const showSeconds = document.getElementById('clockSeconds').value === '1';
+      let hours = now.getHours();
+      if (format === '12') {
+        hours = hours % 12;
+        if (hours === 0) hours = 12;
+      }
+      const minutes = now.getMinutes();
+      const seconds = now.getSeconds();
+      const hh = hours.toString().padStart(2, '0');
+      const mm = minutes.toString().padStart(2, '0');
+      const ss = seconds.toString().padStart(2, '0');
+      return showSeconds ? `${hh}:${mm}:${ss}` : `${hh}:${mm}`;
+    }
+
+    function sendClockToServer(now) {
+      const text = formatClockTime(now);
+      const horizontal = document.getElementById('clockHorizontal').value;
+      const vertical = document.getElementById('clockVertical').value;
+      const font = document.getElementById('clockFont').value;
+      const bitmapVertical = parseInt(document.getElementById('verticalOffset').value);
+
+      let pixelData = '';
+      for (let i = 0; i < pixelGrid.length; i++) {
+        pixelData += pixelGrid[i];
+      }
+
+      sendWS('sent_text_with_bitmap', {
+        text,
+        horizontal,
+        vertical,
+        font,
+        bitmap: pixelData,
+        bitmapVertical
+      }, () => {
+        savedPixelGrid = new Uint8Array(pixelGrid);
+      });
+    }
+
+    function updateClockFrame() {
+      const now = new Date();
+      drawClockBitmap(now);
+      sendClockToServer(now);
+    }
+
+    function toggleClock() {
+      const btn = document.getElementById('clockBtn');
+      if (clockRunning) {
+        clearInterval(clockInterval);
+        clockInterval = null;
+        clockRunning = false;
+        btn.textContent = 'Start Clock';
+        btn.style.backgroundColor = '#00bcd4';
+        showStatus('Clock stopped', 'success');
+      } else {
+        updateClockFrame();
+        clockInterval = setInterval(updateClockFrame, 1000);
+        clockRunning = true;
+        btn.textContent = 'Stop Clock';
+        btn.style.backgroundColor = '#f44336';
+        showStatus('Clock started', 'success');
+      }
+    }
+
+    // Enter key to send
+    inputField.addEventListener('keypress', function(event) {
+      if (event.key === 'Enter') {
+        sendCommand();
+      }
+    });
+
+    // CAMERA FEED
+    let cameraStream = null;
+    let cameraInterval = null;
+    let cameraRunning = false;
+    let cameraVideo = null;
+    let cameraCanvas = null;
+    let cameraContext = null;
+
+    function toggleCamera() {
+      if (cameraRunning) {
+        stopCamera();
+      } else {
+        startCamera();
+      }
+    }
+
+    async function startCamera() {
+      try {
+        // Stop other animations
+        if (clockRunning) toggleClock();
+
+        cameraVideo = document.getElementById('cameraVideo');
+        cameraCanvas = document.createElement('canvas');
+        cameraContext = cameraCanvas.getContext('2d');
+
+        // Request camera access
+        cameraStream = await navigator.mediaDevices.getUserMedia({ 
+          video: { width: 640, height: 480 } 
+        });
+        cameraVideo.srcObject = cameraStream;
+
+        // Wait for video to be ready
+        await new Promise((resolve) => {
+          cameraVideo.onloadedmetadata = () => {
+            cameraVideo.play();
+            resolve();
+          };
+        });
+
+        cameraRunning = true;
+        document.getElementById('cameraBtn').textContent = 'Stop Camera';
+        document.getElementById('cameraBtn').style.backgroundColor = '#f44336';
+
+        const rate = parseInt(document.getElementById('cameraRate').value);
+        cameraInterval = setInterval(captureCameraFrame, rate);
+        
+        showStatus('Camera started', 'success');
+      } catch (error) {
+        showStatus('Camera access denied: ' + error.message, 'error');
+      }
+    }
+
+    function stopCamera() {
+      if (cameraInterval) {
+        clearInterval(cameraInterval);
+        cameraInterval = null;
+      }
+
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+        cameraStream = null;
+      }
+
+      if (cameraVideo) {
+        cameraVideo.srcObject = null;
+      }
+
+      cameraRunning = false;
+      document.getElementById('cameraBtn').textContent = 'Start Camera';
+      document.getElementById('cameraBtn').style.backgroundColor = '#673ab7';
+      
+      showStatus('Camera stopped', 'success');
+    }
+
+    function captureCameraFrame() {
+      if (!cameraVideo || !cameraRunning) return;
+
+      const threshold = parseInt(document.getElementById('cameraThreshold').value);
+      const videoWidth = cameraVideo.videoWidth;
+      const videoHeight = cameraVideo.videoHeight;
+
+      if (videoWidth === 0 || videoHeight === 0) return;
+
+      // Scale video width to exactly GRID_WIDTH (112 pixels)
+      // Extract central GRID_HEIGHT (16) pixels from the scaled height
+      const scaledHeight = Math.floor(videoHeight * (GRID_WIDTH / videoWidth));
+      const sourceHeight = videoHeight * GRID_HEIGHT / scaledHeight;
+      const sourceY = (videoHeight - sourceHeight) / 2;
+
+      // Set canvas to grid size
+      cameraCanvas.width = GRID_WIDTH;
+      cameraCanvas.height = GRID_HEIGHT;
+
+      // Draw: full video width scaled to 112px, central 16 rows of height
+      cameraContext.drawImage(
+        cameraVideo,
+        0, sourceY, videoWidth, sourceHeight,  // Source: full width, center height slice
+        0, 0, GRID_WIDTH, GRID_HEIGHT          // Dest: exactly 112x16
+      );
+
+      // Get image data
+      const imageData = cameraContext.getImageData(0, 0, GRID_WIDTH, GRID_HEIGHT);
+      const data = imageData.data;
+
+      // Convert to binary pixels using threshold
+      pixelGrid.fill(0);
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        const brightness = (r + g + b) / 3;
+        
+        const pixelIndex = i / 4;
+        pixelGrid[pixelIndex] = brightness > threshold ? 1 : 0;
+      }
+
+      refreshDisplay();
+      updatePixelCount();
+      
+      // Auto-send to display
+      sendBitmap();
+    }
+
+    // Initial message
+    window.addEventListener('load', function() {
+      initWebSocket();
+      addLog('Flipdot Console Ready');
+      addLog('Connected to UART2 at 4800 baud');
+    });
+
+    // Focus on input field
+    inputField.focus();
+  </script>
+</body>
+</html>
