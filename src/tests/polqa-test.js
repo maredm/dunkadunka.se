@@ -73,8 +73,12 @@ function decodeWAV(buffer) {
             const byte1 = buffer[byteOffset];
             const byte2 = buffer[byteOffset + 1];
             const byte3 = buffer[byteOffset + 2];
-            sample = ((byte3 << 24) | (byte2 << 16) | (byte1 << 8)) >> 8;
-            sample = sample / 8388608.0;
+            // Construct 24-bit value and handle sign extension
+            let sample24 = (byte3 << 16) | (byte2 << 8) | byte1;
+            if (sample24 & 0x800000) {
+                sample24 |= ~0xFFFFFF;  // Sign extend to 32-bit
+            }
+            sample = sample24 / 8388608.0;
         } else if (bitsPerSample === 32) {
             // Check if it's float or int
             if (audioFormat === 3) { // IEEE float
