@@ -4,13 +4,21 @@ This directory contains tests for the ITU-T P.863 (POLQA) implementation.
 
 ## Running Tests
 
-### polqa-test.js
+### Quick Start
 
-Tests the POLQA analysis using reference and degraded audio files.
+```bash
+./src/tests/run-test.sh
+```
+
+Or run directly:
 
 ```bash
 node src/tests/polqa-test.js
 ```
+
+### polqa-test.js
+
+Tests the POLQA analysis using reference and degraded audio files.
 
 This test verifies that the POLQA analysis of `testdata/rec2.wav` (degraded) and `testdata/ref2.wav` (reference) produces a MOS-LQO score of 4.2 (±0.05 tolerance).
 
@@ -26,6 +34,7 @@ MOS-LQO Score: 4.17
 ## Test Files
 
 - **polqa-test.js** - Main POLQA test with WAV decoder and analysis
+- **run-test.sh** - Convenience script to run the test
 - **../../testdata/rec2.wav** - Degraded audio sample (48kHz, mono, 32-bit)
 - **../../testdata/ref2.wav** - Reference audio sample (48kHz, mono, 32-bit)
 
