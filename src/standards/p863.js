@@ -57,29 +57,83 @@ initBarkLUT();
 
 // Optimized: Use FFT instead of DFT
 function computeSpectrum(frame) {
-    // Use Cooley-Tukey FFT algorithm (simplified radix-2)
     const N = frame.length;
-    const spectrum = new Float32Array(N / 2);
+    // Ensure N is power of 2 for radix-2 FFT
+    const fftSize = 1 << Math.ceil(Math.log2(N));
+    const padded = new Float32Array(fftSize);
+    padded.set(frame);
 
-    // For production, integrate a library like fft.js
-    // This is a fallback using precomputed sine/cosine tables
-    const cosTable = new Float32Array(N);
-    const sinTable = new Float32Array(N);
+    const fft = radix2FFT(padded);
+    const spectrum = new Float32Array(fftSize / 2);
 
-    for (let k = 0; k < N / 2; k++) {
-        let real = 0, imag = 0;
-        const angle = -2 * Math.PI * k / N;
-
-        for (let n = 0; n < N; n++) {
-            const sample = frame[n];
-            const cos = Math.cos(angle * n);
-            const sin = Math.sin(angle * n);
-            real += sample * cos;
-            imag += sample * sin;
-        }
-        spectrum[k] = Math.sqrt(real * real + imag * imag) / N;
+    for (let k = 0; k < fftSize / 2; k++) {
+        const real = fft[2 * k];
+        const imag = fft[2 * k + 1];
+        spectrum[k] = Math.sqrt(real * real + imag * imag) / fftSize;
     }
     return spectrum;
+}
+
+function radix2FFT(x) {
+    const N = x.length;
+    if (N <= 1) return x;
+
+    // Output: interleaved real/imaginary pairs
+    const X = new Float32Array(N * 2);
+
+    if (N === 1) {
+        X[0] = x[0];
+        X[1] = 0;
+        return X;
+    }
+
+    // Bit-reversal permutation
+    const indices = new Uint32Array(N);
+    for (let i = 0; i < N; i++) {
+        indices[i] = bitReverse(i, Math.log2(N));
+    }
+
+    const temp = new Float32Array(N * 2);
+    for (let i = 0; i < N; i++) {
+        temp[2 * i] = x[indices[i]];
+        temp[2 * i + 1] = 0;
+    }
+
+    // Cooley-Tukey FFT
+    for (let s = 1; s <= Math.log2(N); s++) {
+        const m = 1 << s;
+        const mh = m >> 1;
+        const angle = -2 * Math.PI / m;
+
+        for (let k = 0; k < mh; k++) {
+            const w_real = Math.cos(angle * k);
+            const w_imag = Math.sin(angle * k);
+
+            for (let j = 0; j < N; j += m) {
+                const t_idx = 2 * (j + k + mh);
+                const u_idx = 2 * (j + k);
+
+                const t_real = temp[t_idx] * w_real - temp[t_idx + 1] * w_imag;
+                const t_imag = temp[t_idx] * w_imag + temp[t_idx + 1] * w_real;
+
+                temp[t_idx] = temp[u_idx] - t_real;
+                temp[t_idx + 1] = temp[u_idx + 1] - t_imag;
+                temp[u_idx] += t_real;
+                temp[u_idx + 1] += t_imag;
+            }
+        }
+    }
+
+    return temp;
+}
+
+function bitReverse(x, bits) {
+    let result = 0;
+    for (let i = 0; i < bits; i++) {
+        result = (result << 1) | (x & 1);
+        x >>= 1;
+    }
+    return result;
 }
 
 function calculateLoudness(spectrum, sampleRate, frameSizeSamples) {
