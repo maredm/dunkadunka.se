@@ -146,6 +146,11 @@ function calculateLoudness(spectrum, sampleRate, frameSizeSamples) {
         const binLow = Math.floor(BARK_BANDS[b] * binScale);
         const binHigh = Math.floor(BARK_BANDS[b + 1] * binScale);
 
+        if (binHigh <= binLow) {
+            loudness[b] = 0;
+            continue;
+        }
+
         let energy = 0;
         for (let i = binLow; i < binHigh && i < spectrum.length; i++) {
             energy += spectrum[i] * spectrum[i];
@@ -231,11 +236,16 @@ function calculateTemporalDistortion(reference, degraded, frameSize) {
 // Optimized delay estimation with step search
 function estimateDelay(reference, degraded, maxDelay) {
     const len = Math.min(reference.length, degraded.length);
+    const clampedMaxDelay = Math.min(maxDelay, Math.max(0, len - 1));
+    if (clampedMaxDelay === 0) {
+        return 0;
+    }
+
     let maxCorr = -Infinity;
     let bestDelay = 0;
-    const step = Math.max(1, Math.floor(maxDelay / 50)); // Coarse search first
+    const step = Math.max(1, Math.floor(clampedMaxDelay / 50)); // Coarse search first
 
-    for (let delay = -maxDelay; delay <= maxDelay; delay += step) {
+    const scoreDelay = (delay) => {
         let correlation = 0;
         let count = 0;
 
@@ -247,8 +257,23 @@ function estimateDelay(reference, degraded, maxDelay) {
             }
         }
 
-        if (count > 0 && correlation / count > maxCorr) {
-            maxCorr = correlation / count;
+        return count > 0 ? correlation / count : -Infinity;
+    };
+
+    for (let delay = -clampedMaxDelay; delay <= clampedMaxDelay; delay += step) {
+        const correlation = scoreDelay(delay);
+        if (correlation > maxCorr) {
+            maxCorr = correlation;
+            bestDelay = delay;
+        }
+    }
+
+    const fineStart = Math.max(-clampedMaxDelay, bestDelay - step);
+    const fineEnd = Math.min(clampedMaxDelay, bestDelay + step);
+    for (let delay = fineStart; delay <= fineEnd; delay++) {
+        const correlation = scoreDelay(delay);
+        if (correlation > maxCorr) {
+            maxCorr = correlation;
             bestDelay = delay;
         }
     }
