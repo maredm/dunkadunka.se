@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -239,7 +240,9 @@
         }
 
         @keyframes spin {
-            to { transform: rotate(360deg); }
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         .waveform-container {
@@ -298,10 +301,12 @@
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <h1>🎵 Audio Level Analyzer</h1>
-        <p class="subtitle">ITU-T P.56 Speech Voltmeter - Analyze audio files and measure active speech level</p>
+        <p class="subtitle">ITU-T P.56 Speech Voltmeter & P.863 POLQA - Analyze audio files and measure speech quality
+        </p>
 
         <div class="upload-section">
             <div class="upload-area" id="uploadArea">
@@ -316,11 +321,43 @@
             </div>
         </div>
 
+        <div class="upload-section">
+            <h3 style="color: #333; margin-bottom: 10px; font-size: 18px;">📊 ITU-T P.863 POLQA Analysis (Optional)</h3>
+            <p style="color: #666; font-size: 13px; margin-bottom: 15px;">Upload a reference (original) and degraded
+                audio file to calculate MOS-LQO quality score</p>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div>
+                    <div class="upload-area" id="uploadAreaRef" style="padding: 25px;">
+                        <div class="upload-icon" style="font-size: 32px;">🎤</div>
+                        <div class="upload-text" style="font-size: 13px;">Reference (Clean)</div>
+                        <div class="upload-subtext" style="font-size: 11px;">Original audio</div>
+                    </div>
+                    <input type="file" id="fileInputRef" accept="audio/*" style="display: none;">
+                    <div class="file-info" id="fileInfoRef" style="margin-top: 10px;">
+                        <div class="file-info-name" id="fileNameRef"></div>
+                    </div>
+                </div>
+                <div>
+                    <div class="upload-area" id="uploadAreaDeg" style="padding: 25px;">
+                        <div class="upload-icon" style="font-size: 32px;">🔊</div>
+                        <div class="upload-text" style="font-size: 13px;">Degraded (Test)</div>
+                        <div class="upload-subtext" style="font-size: 11px;">Processed audio</div>
+                    </div>
+                    <input type="file" id="fileInputDeg" accept="audio/*" style="display: none;">
+                    <div class="file-info" id="fileInfoDeg" style="margin-top: 10px;">
+                        <div class="file-info-name" id="fileNameDeg"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="status" id="status"></div>
 
         <div class="analysis-section" id="analysisSection">
             <div class="button-group">
-                <button class="btn-primary" id="analyzeBtn">Analyze Audio</button>
+                <button class="btn-primary" id="analyzeBtn">Analyze with P.56</button>
+                <button class="btn-primary" id="analyzePOLQABtn" style="display: none;">Analyze with P.863
+                    POLQA</button>
                 <button class="btn-secondary" id="clearBtn">Clear</button>
             </div>
 
@@ -357,18 +394,57 @@
                 </div>
             </div>
 
+            <div class="results-grid" id="polqaResultsGrid" style="display: none; margin-top: 20px;">
+                <div class="result-card" style="border-left-color: #28a745;">
+                    <div class="result-label">MOS-LQO Score</div>
+                    <div class="result-value" id="mosLQOValue">-</div>
+                    <div class="result-unit">1.0-4.5 scale</div>
+                </div>
+                <div class="result-card" style="border-left-color: #28a745;">
+                    <div class="result-label">SNR</div>
+                    <div class="result-value" id="snrValue">-</div>
+                    <div class="result-unit">dB</div>
+                </div>
+                <div class="result-card" style="border-left-color: #28a745;">
+                    <div class="result-label">Delay Detected</div>
+                    <div class="result-value" id="delayValue">-</div>
+                    <div class="result-unit">milliseconds</div>
+                </div>
+                <div class="result-card" style="border-left-color: #28a745;">
+                    <div class="result-label">Total Distortion</div>
+                    <div class="result-value" id="totalDistValue">-</div>
+                    <div class="result-unit">metric</div>
+                </div>
+                <div class="result-card" style="border-left-color: #28a745;">
+                    <div class="result-label">Spectral Distortion</div>
+                    <div class="result-value" id="spectralDistValue">-</div>
+                    <div class="result-unit">metric</div>
+                </div>
+                <div class="result-card" style="border-left-color: #28a745;">
+                    <div class="result-label">Temporal Distortion</div>
+                    <div class="result-value" id="temporalDistValue">-</div>
+                    <div class="result-unit">metric</div>
+                </div>
+            </div>
+
             <div class="waveform-container">
                 <canvas id="waveformCanvas" width="800" height="150"></canvas>
             </div>
         </div>
 
         <div class="footer">
-            <p>Based on ITU-T Recommendation P.56 for speech level measurement.</p>
-            <p>This tool analyzes audio in real-time using WebAudio API and P.56 algorithm.</p>
+            <p>Based on ITU-T Recommendations P.56 (speech level) and P.863 (POLQA quality assessment).</p>
+            <p>This tool analyzes audio in real-time using WebAudio API with P.56 and P.863 algorithms.</p>
         </div>
     </div>
 
     <script src="../src/sv-p56.js"></script>
+    <script type="module">
+        import { polqaAnalysis, polqaSingleEnded, getRecommendedConfig } from '../src/standards/p863.js';
+        window.polqaAnalysis = polqaAnalysis;
+        window.polqaSingleEnded = polqaSingleEnded;
+        window.getRecommendedConfig = getRecommendedConfig;
+    </script>
     <script>
         const uploadArea = document.getElementById('uploadArea');
         const fileInput = document.getElementById('fileInput');
@@ -381,10 +457,27 @@
         const analysisSection = document.getElementById('analysisSection');
         const resultsGrid = document.getElementById('resultsGrid');
         const waveformCanvas = document.getElementById('waveformCanvas');
+        const analyzePOLQABtn = document.getElementById('analyzePOLQABtn');
+        const polqaResultsGrid = document.getElementById('polqaResultsGrid');
+
+        // POLQA file inputs
+        const uploadAreaRef = document.getElementById('uploadAreaRef');
+        const fileInputRef = document.getElementById('fileInputRef');
+        const fileInfoRef = document.getElementById('fileInfoRef');
+        const fileNameRef = document.getElementById('fileNameRef');
+
+        const uploadAreaDeg = document.getElementById('uploadAreaDeg');
+        const fileInputDeg = document.getElementById('fileInputDeg');
+        const fileInfoDeg = document.getElementById('fileInfoDeg');
+        const fileNameDeg = document.getElementById('fileNameDeg');
 
         let selectedFile = null;
+        let selectedFileRef = null;
+        let selectedFileDeg = null;
         let audioContext = null;
         let audioBuffer = null;
+        let audioBufferRef = null;
+        let audioBufferDeg = null;
 
         // Upload area click handler
         uploadArea.addEventListener('click', () => fileInput.click());
@@ -433,7 +526,24 @@
             showStatus(`File loaded: ${file.name}`, 'info');
         }
 
+        // POLQA file handlers
+        uploadAreaRef.addEventListener('click', () => fileInputRef.click());
+        uploadAreaDeg.addEventListener('click', () => fileInputDeg.click());
+
+        fileInputRef.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handlePOLQAFile(e.target.files[0], 'ref');
+            }
+        });
+
+        fileInputDeg.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handlePOLQAFile(e.target.files[0], 'deg');
+            }
+        });
+
         analyzeBtn.addEventListener('click', analyzeAudio);
+        analyzePOLQABtn.addEventListener('click', analyzePOLQA);
         clearBtn.addEventListener('click', clearAnalysis);
 
         function showStatus(message, type = 'info') {
@@ -441,12 +551,51 @@
             status.className = `status show status-${type}`;
         }
 
+        function handlePOLQAFile(file, type) {
+            if (!file.type.startsWith('audio/')) {
+                showStatus('Please select a valid audio file', 'error');
+                return;
+            }
+
+            if (file.size > 50 * 1024 * 1024) {
+                showStatus('File is too large. Maximum size is 50MB', 'error');
+                return;
+            }
+
+            if (type === 'ref') {
+                selectedFileRef = file;
+                fileNameRef.textContent = file.name;
+                fileInfoRef.classList.add('show');
+            } else {
+                selectedFileDeg = file;
+                fileNameDeg.textContent = file.name;
+                fileInfoDeg.classList.add('show');
+            }
+
+            // Show POLQA analyze button if both files are loaded
+            if (selectedFileRef && selectedFileDeg) {
+                analyzePOLQABtn.style.display = 'block';
+                analysisSection.classList.add('show');
+                showStatus('Both files loaded. Ready for P.863 POLQA analysis.', 'info');
+            }
+        }
+
         function clearAnalysis() {
             selectedFile = null;
+            selectedFileRef = null;
+            selectedFileDeg = null;
             audioBuffer = null;
+            audioBufferRef = null;
+            audioBufferDeg = null;
             fileInput.value = '';
+            fileInputRef.value = '';
+            fileInputDeg.value = '';
             fileInfo.classList.remove('show');
+            fileInfoRef.classList.remove('show');
+            fileInfoDeg.classList.remove('show');
             analysisSection.classList.remove('show');
+            analyzePOLQABtn.style.display = 'none';
+            polqaResultsGrid.style.display = 'none';
             status.className = 'status';
             uploadArea.classList.remove('dragover');
         }
@@ -547,6 +696,98 @@
             }
             ctx.stroke();
         }
+
+        async function analyzePOLQA() {
+            if (!selectedFileRef || !selectedFileDeg) {
+                showStatus('Please select both reference and degraded audio files', 'error');
+                return;
+            }
+
+            const originalText = analyzePOLQABtn.textContent;
+            analyzePOLQABtn.disabled = true;
+            analyzePOLQABtn.innerHTML = '<span class="spinner"></span>Processing POLQA...';
+
+            try {
+                // Initialize audio context
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+
+                // Read and decode both audio files
+                const arrayBufferRef = await selectedFileRef.arrayBuffer();
+                const arrayBufferDeg = await selectedFileDeg.arrayBuffer();
+
+                audioBufferRef = await audioContext.decodeAudioData(arrayBufferRef);
+                audioBufferDeg = await audioContext.decodeAudioData(arrayBufferDeg);
+
+                // Convert to mono
+                const refData = extractMono(audioBufferRef);
+                const degData = extractMono(audioBufferDeg);
+
+                // Get sample rate (use higher of the two)
+                const sampleRate = Math.max(audioBufferRef.sampleRate, audioBufferDeg.sampleRate);
+
+                // Get recommended config
+                const config = window.getRecommendedConfig(sampleRate);
+
+                // Perform POLQA analysis
+                const result = window.polqaAnalysis(refData, degData, config);
+
+                // Update POLQA results
+                updatePOLQAResults(result, sampleRate);
+                polqaResultsGrid.style.display = 'grid';
+                showStatus('P.863 POLQA analysis complete!', 'success');
+
+            } catch (error) {
+                showStatus(`Error in POLQA analysis: ${error.message}`, 'error');
+                console.error('POLQA analysis error:', error);
+            } finally {
+                analyzePOLQABtn.disabled = false;
+                analyzePOLQABtn.textContent = originalText;
+            }
+        }
+
+        function extractMono(audioBuffer) {
+            const channels = audioBuffer.numberOfChannels;
+            const length = audioBuffer.length;
+            const monoData = new Float32Array(length);
+
+            for (let i = 0; i < length; i++) {
+                let sum = 0;
+                for (let c = 0; c < channels; c++) {
+                    sum += audioBuffer.getChannelData(c)[i];
+                }
+                monoData[i] = sum / channels;
+            }
+
+            return monoData;
+        }
+
+        function updatePOLQAResults(result, sampleRate) {
+            // MOS-LQO score with quality interpretation
+            const mosScore = result.mosLQO.toFixed(2);
+            let mosQuality = '';
+            if (result.mosLQO >= 4.0) mosQuality = '(Excellent)';
+            else if (result.mosLQO >= 3.5) mosQuality = '(Good)';
+            else if (result.mosLQO >= 3.0) mosQuality = '(Fair)';
+            else if (result.mosLQO >= 2.0) mosQuality = '(Poor)';
+            else mosQuality = '(Bad)';
+
+            document.getElementById('mosLQOValue').textContent = `${mosScore} ${mosQuality}`;
+            document.getElementById('snrValue').textContent = result.snr.toFixed(2);
+
+            // Convert delay from samples to milliseconds
+            const delayMs = (result.delay / sampleRate * 1000).toFixed(1);
+            document.getElementById('delayValue').textContent = delayMs;
+
+            document.getElementById('totalDistValue').textContent =
+                result.distortionMetrics.totalDistortion.toFixed(3);
+            document.getElementById('spectralDistValue').textContent =
+                result.distortionMetrics.linearDistortion.toFixed(3);
+            document.getElementById('temporalDistValue').textContent =
+                result.distortionMetrics.temporalDistortion.toFixed(3);
+        }
     </script>
 </body>
+
 </html>
