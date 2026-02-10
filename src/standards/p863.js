@@ -341,6 +341,8 @@ export function polqaAnalysis(reference, degraded, config) {
     const hannWindow = getHannWindow(frameSizeSamples);
     const frameScores = [];
     let totalSpectralDistortion = 0;
+    let activeSpectralFrames = 0;
+    const spectralEnergyThreshold = 1e-6;
 
     for (let f = 0; f < numFrames; f++) {
         const start = f * frameSizeSamples;
@@ -352,9 +354,18 @@ export function polqaAnalysis(reference, degraded, config) {
         // Apply windowing directly
         const refWindowed = new Float32Array(frameSizeSamples);
         const degWindowed = new Float32Array(frameSizeSamples);
+        let refEnergy = 0;
+        let degEnergy = 0;
         for (let i = 0; i < frameSizeSamples; i++) {
             refWindowed[i] = (refFrame[i] || 0) * hannWindow[i];
             degWindowed[i] = (degFrame[i] || 0) * hannWindow[i];
+            refEnergy += refWindowed[i] * refWindowed[i];
+            degEnergy += degWindowed[i] * degWindowed[i];
+        }
+
+        if (refEnergy < spectralEnergyThreshold && degEnergy < spectralEnergyThreshold) {
+            frameScores.push(MAX_MOS);
+            continue;
         }
 
         const refSpectrum = computeSpectrum(refWindowed);
@@ -365,10 +376,13 @@ export function polqaAnalysis(reference, degraded, config) {
 
         const frameDistortion = calculateFrameDistortion(refLoudness, degLoudness);
         totalSpectralDistortion += frameDistortion;
+        activeSpectralFrames++;
         frameScores.push(Math.max(0, 4.5 - frameDistortion * 3));
     }
 
-    const avgSpectralDistortion = totalSpectralDistortion / numFrames;
+    const avgSpectralDistortion = activeSpectralFrames > 0
+        ? totalSpectralDistortion / activeSpectralFrames
+        : 0;
     const temporalDistortion = calculateTemporalDistortion(refAligned, degAligned, frameSizeSamples);
     const snr = calculateSNR(refAligned, degAligned);
     const mosLQO = cognitiveModel(avgSpectralDistortion, temporalDistortion, snr);
