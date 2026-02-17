@@ -510,7 +510,7 @@
               for (let ch = 0; ch < input.length; ch++) {
                 block.push(new Float32Array(input[ch]));
               }
-              this.port.postMessage({ type: 'data', block });
+              this.port.postMessage({ type: 'data', block, frame: currentFrame });
             }
             return true;
           }
@@ -520,9 +520,49 @@
 
       const blob = new Blob([workletCode], { type: 'application/javascript' });
       const workletUrl = URL.createObjectURL(blob);
+      let droppedFrames = 0;
+      let expectedFrame = null;
+      let processor = null;
+      let started = false;
+      let startError = null;
+
+      const startPromise = context.audioWorklet.addModule(workletUrl).then(() => {
+        processor = new AudioWorkletNode(context, 'audio-recorder');
+        processor.port.onmessage = (event) => {
+          if (event.data.type !== 'data') {
+            return;
+          }
+          const block = event.data.block;
+          const frame = event.data.frame;
+          if (typeof frame === 'number' && block[0]) {
+            if (expectedFrame !== null && frame > expectedFrame) {
+              droppedFrames += frame - expectedFrame;
+            }
+            expectedFrame = frame + block[0].length;
+          }
+          chunks.push(block);
+          totalFrames += block[0].length;
+        };
+        source.connect(processor);
+        processor.connect(silent);
+        silent.connect(context.destination);
+        started = true;
+      }).catch((err) => {
+        startError = err;
+      });
 
       async function stop() {
+        await startPromise;
+        if (!started) {
+          URL.revokeObjectURL(workletUrl);
+          throw startError || new Error('Failed to initialize recorder worklet');
+        }
+
         source.disconnect();
+        if (processor) {
+          processor.disconnect();
+          processor.port.onmessage = null;
+        }
         silent.disconnect();
         await context.close();
 
@@ -545,21 +585,9 @@
         link.click();
         URL.revokeObjectURL(url);
         URL.revokeObjectURL(workletUrl);
-      }
 
-      context.audioWorklet.addModule(workletUrl).then(() => {
-        const processor = new AudioWorkletNode(context, 'audio-recorder');
-        processor.port.onmessage = (event) => {
-          if (event.data.type === 'data') {
-            const block = event.data.block;
-            chunks.push(block);
-            totalFrames += block[0].length;
-          }
-        };
-        source.connect(processor);
-        processor.connect(silent);
-        silent.connect(context.destination);
-      });
+        return { totalFrames, droppedFrames };
+      }
 
       return { stop };
     }
@@ -583,18 +611,26 @@
       }
     });
 
-    stopRecord.addEventListener("click", () => {
-      if (recorderA) {
-        recorderA.stop();
-        recorderA = null;
+    stopRecord.addEventListener("click", async () => {
+      let totalDroppedFrames = 0;
+      try {
+        if (recorderA) {
+          const resultA = await recorderA.stop();
+          totalDroppedFrames += resultA?.droppedFrames || 0;
+          recorderA = null;
+        }
+        if (recorderB) {
+          const resultB = await recorderB.stop();
+          totalDroppedFrames += resultB?.droppedFrames || 0;
+          recorderB = null;
+        }
+        recordStatus.textContent = `Recording stopped. Dropped frames: ${totalDroppedFrames}.`;
+      } catch (err) {
+        recordStatus.textContent = "Recording stopped with an error while finalizing WAV files.";
       }
-      if (recorderB) {
-        recorderB.stop();
-        recorderB = null;
-      }
+
       startRecord.disabled = false;
       stopRecord.disabled = true;
-      recordStatus.textContent = "Recording stopped.";
     });
 
     systemVolumeRefresh.addEventListener("click", refreshSystemVolume);
