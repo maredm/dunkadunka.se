@@ -469,10 +469,10 @@
     startRecord.addEventListener("click", async () => {
       try {
         const streamA = await navigator.mediaDevices.getUserMedia({
-          audio: { deviceId: inputA.value ? { exact: inputA.value } : undefined }
+          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, deviceId: inputA.value ? { exact: inputA.value } : undefined }
         });
         const streamB = await navigator.mediaDevices.getUserMedia({
-          audio: { deviceId: inputB.value ? { exact: inputB.value } : undefined }
+          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, deviceId: inputB.value ? { exact: inputB.value } : undefined }
         });
 
         recorderA = createWavRecorder(streamA, "inputA");
