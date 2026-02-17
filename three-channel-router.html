@@ -66,6 +66,7 @@
 
     select,
     input[type="file"],
+    input[type="range"],
     button {
       width: 100%;
       margin-bottom: 12px;
@@ -160,6 +161,21 @@
     </section>
 
     <section>
+      <label for="systemVolume">OS output volume</label>
+      <input id="systemVolume" type="range" min="0" max="100" value="50" />
+      <div class="row">
+        <button id="systemVolumeDown" class="secondary">-10%</button>
+        <button id="systemVolumeUp">+10%</button>
+      </div>
+      <div class="row">
+        <button id="systemVolumeRefresh" class="secondary">Get Current Volume</button>
+        <button id="systemVolumeApply">Set Volume</button>
+      </div>
+      <div class="status" id="systemVolumeStatus">Native volume control inactive.</div>
+      <div class="note">Requires the Native Volume Messaging Demo extension and host registration.</div>
+    </section>
+
+    <section>
       <label for="inputA">Record device 1</label>
       <select id="inputA"></select>
       <label for="inputB">Record device 2</label>
@@ -184,6 +200,12 @@
     const startPlayback = document.getElementById("startPlayback");
     const stopPlayback = document.getElementById("stopPlayback");
     const playbackStatus = document.getElementById("playbackStatus");
+    const systemVolume = document.getElementById("systemVolume");
+    const systemVolumeRefresh = document.getElementById("systemVolumeRefresh");
+    const systemVolumeDown = document.getElementById("systemVolumeDown");
+    const systemVolumeUp = document.getElementById("systemVolumeUp");
+    const systemVolumeApply = document.getElementById("systemVolumeApply");
+    const systemVolumeStatus = document.getElementById("systemVolumeStatus");
     const startRecord = document.getElementById("startRecord");
     const stopRecord = document.getElementById("stopRecord");
     const recordStatus = document.getElementById("recordStatus");
@@ -198,6 +220,82 @@
 
     const supportsSinkId = typeof AudioContext !== "undefined" &&
       typeof AudioContext.prototype.setSinkId === "function";
+
+    let nativeRequestCounter = 0;
+
+    function setSystemVolumeStatus(text, isError = false) {
+      systemVolumeStatus.textContent = text;
+      systemVolumeStatus.style.color = isError ? "#b00020" : "var(--muted)";
+    }
+
+    function sendNativeVolumeCommand(payload) {
+      return new Promise((resolve, reject) => {
+        const id = `native-vol-${Date.now()}-${nativeRequestCounter++}`;
+        const timeout = setTimeout(() => {
+          window.removeEventListener("message", onMessage);
+          reject(new Error("No response from extension bridge"));
+        }, 2000);
+
+        function onMessage(event) {
+          if (event.source !== window) {
+            return;
+          }
+          const data = event.data;
+          if (!data || data.type !== "native-volume-response" || data.id !== id) {
+            return;
+          }
+          clearTimeout(timeout);
+          window.removeEventListener("message", onMessage);
+          resolve(data.response);
+        }
+
+        window.addEventListener("message", onMessage);
+        window.postMessage({ type: "native-volume-command", id, payload }, "*");
+      });
+    }
+
+    async function refreshSystemVolume() {
+      try {
+        const response = await sendNativeVolumeCommand({ action: "get_volume" });
+        if (!response?.ok) {
+          setSystemVolumeStatus(response?.error || "Failed to get volume", true);
+          return;
+        }
+        systemVolume.value = String(response.volume);
+        setSystemVolumeStatus(`Volume: ${response.volume}%`);
+      } catch (err) {
+        setSystemVolumeStatus(err?.message || "Native volume bridge unavailable", true);
+      }
+    }
+
+    async function changeSystemVolume(delta) {
+      try {
+        const response = await sendNativeVolumeCommand({ action: "change_volume", delta });
+        if (!response?.ok) {
+          setSystemVolumeStatus(response?.error || "Failed to change volume", true);
+          return;
+        }
+        systemVolume.value = String(response.volume);
+        setSystemVolumeStatus(`Volume: ${response.volume}%`);
+      } catch (err) {
+        setSystemVolumeStatus(err?.message || "Native volume bridge unavailable", true);
+      }
+    }
+
+    async function applySystemVolume() {
+      try {
+        const value = Number(systemVolume.value);
+        const response = await sendNativeVolumeCommand({ action: "set_volume", value });
+        if (!response?.ok) {
+          setSystemVolumeStatus(response?.error || "Failed to set volume", true);
+          return;
+        }
+        systemVolume.value = String(response.volume);
+        setSystemVolumeStatus(`Volume set to ${response.volume}%`);
+      } catch (err) {
+        setSystemVolumeStatus(err?.message || "Native volume bridge unavailable", true);
+      }
+    }
 
     async function ensureAudioContexts() {
       if (!ctxA) {
@@ -498,6 +596,12 @@
       stopRecord.disabled = true;
       recordStatus.textContent = "Recording stopped.";
     });
+
+    systemVolumeRefresh.addEventListener("click", refreshSystemVolume);
+    systemVolumeDown.addEventListener("click", () => changeSystemVolume(-10));
+    systemVolumeUp.addEventListener("click", () => changeSystemVolume(10));
+    systemVolumeApply.addEventListener("click", applySystemVolume);
+    refreshSystemVolume();
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
       playbackStatus.textContent = "MediaDevices API not available in this browser.";
