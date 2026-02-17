@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>3-Channel WAV Router + Dual Recorder</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f8f4ef;
+      --panel: #ffffff;
+      --text: #1f1f1f;
+      --muted: #6a6a6a;
+      --accent: #c96a2c;
+      --accent-2: #2f6f7e;
+      --border: #e2d7cc;
+    }
+
+    * {
+      box-sizing: border-box;
+      font-family: "IBM Plex Sans", "Segoe UI", Arial, sans-serif;
+    }
+
+    body {
+      margin: 0;
+      background: linear-gradient(135deg, #f6efe8 0%, #eef6f7 100%);
+      color: var(--text);
+    }
+
+    header {
+      padding: 28px 24px 12px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 26px;
+      letter-spacing: 0.3px;
+    }
+
+    p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    main {
+      display: grid;
+      gap: 16px;
+      padding: 16px 24px 32px;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    }
+
+    section {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 12px 24px rgba(46, 46, 46, 0.06);
+    }
+
+    label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    select,
+    input[type="file"],
+    button {
+      width: 100%;
+      margin-bottom: 12px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    button {
+      cursor: pointer;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      font-weight: 600;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    button.secondary {
+      background: var(--accent-2);
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    button:not(:disabled):hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(46, 46, 46, 0.14);
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 10px;
+    }
+
+    .status {
+      font-size: 13px;
+      color: var(--muted);
+      min-height: 18px;
+    }
+
+    .note {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: #f1e1d4;
+      color: #8c4a1b;
+      font-size: 12px;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>3-Channel WAV Router + Dual Recorder</h1>
+    <p>Channel 1 outputs to device A. Channels 2 + 3 output to device B. Record from two input devices at the same time.
+    </p>
+  </header>
+  <main>
+    <section>
+      <label for="wavFile">3-channel WAV file</label>
+      <input id="wavFile" type="file" accept="audio/wav" />
+      <div class="status" id="fileStatus">No file loaded.</div>
+      <div class="note">The WAV file must have exactly 3 channels.</div>
+      <div class="pill" id="audioContextStatus">AudioContext: idle</div>
+    </section>
+
+    <section>
+      <label for="outputA">Output device for channel 1</label>
+      <select id="outputA"></select>
+      <label for="outputB">Output device for channels 2 + 3</label>
+      <select id="outputB"></select>
+      <div class="row">
+        <button id="startPlayback" disabled>Start Playback</button>
+        <button id="stopPlayback" class="secondary" disabled>Stop Playback</button>
+      </div>
+      <div class="status" id="playbackStatus">Playback stopped.</div>
+      <div class="note">Requires HTTPS and a browser that supports `setSinkId` on `AudioContext` destinations.</div>
+    </section>
+
+    <section>
+      <label for="inputA">Record device 1</label>
+      <select id="inputA"></select>
+      <label for="inputB">Record device 2</label>
+      <select id="inputB"></select>
+      <div class="row">
+        <button id="startRecord">Start Recording</button>
+        <button id="stopRecord" class="secondary" disabled>Stop Recording</button>
+      </div>
+      <div class="status" id="recordStatus">Recording stopped.</div>
+      <div class="note">Each input is recorded into its own WAV file.</div>
+    </section>
+  </main>
+
+  <script>
+    const wavInput = document.getElementById("wavFile");
+    const fileStatus = document.getElementById("fileStatus");
+    const audioContextStatus = document.getElementById("audioContextStatus");
+    const outputA = document.getElementById("outputA");
+    const outputB = document.getElementById("outputB");
+    const inputA = document.getElementById("inputA");
+    const inputB = document.getElementById("inputB");
+    const startPlayback = document.getElementById("startPlayback");
+    const stopPlayback = document.getElementById("stopPlayback");
+    const playbackStatus = document.getElementById("playbackStatus");
+    const startRecord = document.getElementById("startRecord");
+    const stopRecord = document.getElementById("stopRecord");
+    const recordStatus = document.getElementById("recordStatus");
+
+    let audioBuffer = null;
+    let ctxA = null;
+    let ctxB = null;
+    let sourceA = null;
+    let sourceB = null;
+    let recorderA = null;
+    let recorderB = null;
+
+    const supportsSinkId = typeof AudioContext !== "undefined" &&
+      typeof AudioContext.prototype.setSinkId === "function";
+
+    async function ensureAudioContexts() {
+      if (!ctxA) {
+        ctxA = new AudioContext();
+      }
+      if (!ctxB) {
+        ctxB = new AudioContext();
+      }
+      audioContextStatus.textContent = `AudioContext: ${ctxA.state} / ${ctxB.state}`;
+      if (ctxA.state === "suspended") {
+        await ctxA.resume();
+      }
+      if (ctxB.state === "suspended") {
+        await ctxB.resume();
+      }
+    }
+
+    function updateDeviceList(devices) {
+      const outputs = devices.filter((d) => d.kind === "audiooutput");
+      const inputs = devices.filter((d) => d.kind === "audioinput");
+
+      const fillSelect = (select, list, fallbackLabel) => {
+        select.innerHTML = "";
+        if (list.length === 0) {
+          const option = document.createElement("option");
+          option.value = "";
+          option.textContent = fallbackLabel;
+          select.appendChild(option);
+          return;
+        }
+        list.forEach((device) => {
+          const option = document.createElement("option");
+          option.value = device.deviceId;
+          option.textContent = device.label || `${device.kind} (${device.deviceId.slice(0, 6)}...)`;
+          select.appendChild(option);
+        });
+      };
+
+      fillSelect(outputA, outputs, "No output devices found");
+      fillSelect(outputB, outputs, "No output devices found");
+      fillSelect(inputA, inputs, "No input devices found");
+      fillSelect(inputB, inputs, "No input devices found");
+    }
+
+    async function refreshDevices() {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      updateDeviceList(devices);
+    }
+
+    async function requestPermissions() {
+      try {
+        await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (err) {
+        console.warn("Permission denied", err);
+      }
+    }
+
+    wavInput.addEventListener("change", async (event) => {
+      const file = event.target.files[0];
+      if (!file) {
+        audioBuffer = null;
+        fileStatus.textContent = "No file loaded.";
+        startPlayback.disabled = true;
+        return;
+      }
+
+      await ensureAudioContexts();
+
+      const data = await file.arrayBuffer();
+      try {
+        audioBuffer = await ctxA.decodeAudioData(data.slice(0));
+        if (audioBuffer.numberOfChannels !== 3) {
+          audioBuffer = null;
+          fileStatus.textContent = "File must have exactly 3 channels.";
+          startPlayback.disabled = true;
+          return;
+        }
+        fileStatus.textContent = `Loaded: ${file.name} (${audioBuffer.duration.toFixed(2)}s)`;
+        startPlayback.disabled = false;
+      } catch (err) {
+        audioBuffer = null;
+        fileStatus.textContent = "Failed to decode WAV file.";
+        startPlayback.disabled = true;
+      }
+    });
+
+    startPlayback.addEventListener("click", async () => {
+      if (!audioBuffer) {
+        return;
+      }
+      await ensureAudioContexts();
+
+      if (!supportsSinkId) {
+        playbackStatus.textContent = "This browser does not support routing to multiple output devices.";
+        return;
+      }
+
+      try {
+        await ctxA.setSinkId(outputA.value || "");
+        await ctxB.setSinkId(outputB.value || "");
+      } catch (err) {
+        playbackStatus.textContent = "Failed to set output devices.";
+        return;
+      }
+
+      const splitA = ctxA.createChannelSplitter(3);
+      const splitB = ctxB.createChannelSplitter(3);
+
+      sourceA = ctxA.createBufferSource();
+      sourceA.buffer = audioBuffer;
+      sourceB = ctxB.createBufferSource();
+      sourceB.buffer = audioBuffer;
+
+      sourceA.connect(splitA);
+      sourceB.connect(splitB);
+
+      splitA.connect(ctxA.destination, 0, 0);
+
+      const merger = ctxB.createChannelMerger(2);
+      splitB.connect(merger, 1, 0);
+      splitB.connect(merger, 2, 1);
+      merger.connect(ctxB.destination);
+
+      sourceA.start();
+      sourceB.start();
+
+      startPlayback.disabled = true;
+      stopPlayback.disabled = false;
+      playbackStatus.textContent = "Playback started.";
+
+      const onEnded = () => {
+        stopPlayback.disabled = true;
+        startPlayback.disabled = false;
+        playbackStatus.textContent = "Playback finished.";
+      };
+
+      sourceA.onended = onEnded;
+      sourceB.onended = onEnded;
+    });
+
+    stopPlayback.addEventListener("click", () => {
+      if (sourceA) {
+        sourceA.stop();
+        sourceA.disconnect();
+        sourceA = null;
+      }
+      if (sourceB) {
+        sourceB.stop();
+        sourceB.disconnect();
+        sourceB = null;
+      }
+      stopPlayback.disabled = true;
+      startPlayback.disabled = !audioBuffer;
+      playbackStatus.textContent = "Playback stopped.";
+    });
+
+    function writeString(view, offset, text) {
+      for (let i = 0; i < text.length; i += 1) {
+        view.setUint8(offset + i, text.charCodeAt(i));
+      }
+    }
+
+    function encodeWav(samples, sampleRate, numChannels, totalFrames) {
+      const bytesPerSample = 2;
+      const blockAlign = numChannels * bytesPerSample;
+      const buffer = new ArrayBuffer(44 + totalFrames * blockAlign);
+      const view = new DataView(buffer);
+
+      writeString(view, 0, "RIFF");
+      view.setUint32(4, 36 + totalFrames * blockAlign, true);
+      writeString(view, 8, "WAVE");
+      writeString(view, 12, "fmt ");
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, numChannels, true);
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate * blockAlign, true);
+      view.setUint16(32, blockAlign, true);
+      view.setUint16(34, bytesPerSample * 8, true);
+      writeString(view, 36, "data");
+      view.setUint32(40, totalFrames * blockAlign, true);
+
+      let offset = 44;
+      for (let i = 0; i < totalFrames; i += 1) {
+        for (let ch = 0; ch < numChannels; ch += 1) {
+          const sample = Math.max(-1, Math.min(1, samples[ch][i] || 0));
+          const intSample = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+          view.setInt16(offset, intSample, true);
+          offset += 2;
+        }
+      }
+
+      return buffer;
+    }
+
+    function createWavRecorder(stream, label) {
+      const context = new AudioContext();
+      const source = context.createMediaStreamSource(stream);
+      const numChannels = Math.max(1, source.channelCount || 1);
+      const silent = context.createGain();
+      silent.gain.value = 0;
+
+      const chunks = [];
+      let totalFrames = 0;
+
+      const workletCode = `
+        class AudioRecorderProcessor extends AudioWorkletProcessor {
+          process(inputs, outputs) {
+            const input = inputs[0];
+            if (input.length > 0) {
+              const block = [];
+              for (let ch = 0; ch < input.length; ch++) {
+                block.push(new Float32Array(input[ch]));
+              }
+              this.port.postMessage({ type: 'data', block });
+            }
+            return true;
+          }
+        }
+        registerProcessor('audio-recorder', AudioRecorderProcessor);
+      `;
+
+      const blob = new Blob([workletCode], { type: 'application/javascript' });
+      const workletUrl = URL.createObjectURL(blob);
+
+      async function stop() {
+        source.disconnect();
+        silent.disconnect();
+        await context.close();
+
+        const channels = Array.from({ length: numChannels }, () => new Float32Array(totalFrames));
+        let offset = 0;
+        for (const block of chunks) {
+          const frames = block[0].length;
+          for (let ch = 0; ch < numChannels; ch += 1) {
+            channels[ch].set(block[ch] || new Float32Array(frames), offset);
+          }
+          offset += frames;
+        }
+
+        const wavBuffer = encodeWav(channels, context.sampleRate, numChannels, totalFrames);
+        const blob = new Blob([wavBuffer], { type: "audio/wav" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${label}-${new Date().toISOString().replace(/[:.]/g, "-")}.wav`;
+        link.click();
+        URL.revokeObjectURL(url);
+        URL.revokeObjectURL(workletUrl);
+      }
+
+      context.audioWorklet.addModule(workletUrl).then(() => {
+        const processor = new AudioWorkletNode(context, 'audio-recorder');
+        processor.port.onmessage = (event) => {
+          if (event.data.type === 'data') {
+            const block = event.data.block;
+            chunks.push(block);
+            totalFrames += block[0].length;
+          }
+        };
+        source.connect(processor);
+        processor.connect(silent);
+        silent.connect(context.destination);
+      });
+
+      return { stop };
+    }
+
+    startRecord.addEventListener("click", async () => {
+      try {
+        const streamA = await navigator.mediaDevices.getUserMedia({
+          audio: { deviceId: inputA.value ? { exact: inputA.value } : undefined }
+        });
+        const streamB = await navigator.mediaDevices.getUserMedia({
+          audio: { deviceId: inputB.value ? { exact: inputB.value } : undefined }
+        });
+
+        recorderA = createWavRecorder(streamA, "inputA");
+        recorderB = createWavRecorder(streamB, "inputB");
+        startRecord.disabled = true;
+        stopRecord.disabled = false;
+        recordStatus.textContent = "Recording...";
+      } catch (err) {
+        recordStatus.textContent = "Recording permission denied or device unavailable.";
+      }
+    });
+
+    stopRecord.addEventListener("click", () => {
+      if (recorderA) {
+        recorderA.stop();
+        recorderA = null;
+      }
+      if (recorderB) {
+        recorderB.stop();
+        recorderB = null;
+      }
+      startRecord.disabled = false;
+      stopRecord.disabled = true;
+      recordStatus.textContent = "Recording stopped.";
+    });
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+      playbackStatus.textContent = "MediaDevices API not available in this browser.";
+    } else {
+      requestPermissions().then(refreshDevices);
+      navigator.mediaDevices.addEventListener("devicechange", refreshDevices);
+    }
+  </script>
+</body>
+
+</html>
