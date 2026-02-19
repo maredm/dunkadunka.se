@@ -227,7 +227,7 @@ async function playbackOnly(): Promise<void> {
         const endFreq = parseFloat(sweepEndFreqInput.value);
         const duration = parseFloat(sweepDurationInput.value);
 
-        const [sweepSignal] = audio.chirp(startFreq, endFreq, duration);
+        const [sweepSignal, ,] = audio.chirp(startFreq, endFreq, duration);
 
         // Create audio buffer from sweep signal
         const audioBuffer = audioContext.createBuffer(1, sweepSignal.length, audioContext.sampleRate);
@@ -253,6 +253,7 @@ async function playbackOnly(): Promise<void> {
 
         setTimeout(() => {
             stopPlayback();
+            download(sweepSignal, 48000, 'reference_audio.wav')
         }, (duration + 0.5) * 1000);
 
     } catch (error) {
@@ -321,7 +322,8 @@ const downloadSweepBtn = document.getElementById('downloadSweepBtn') as HTMLButt
 
 downloadSweepBtn?.addEventListener('click', () => {
     try {
-        download(recorded[0], 48000, 'reference_audio.wav',
+        const [sweepSignal, ,] = audio.chirp(parseFloat(sweepStartFreqInput.value), parseFloat(sweepEndFreqInput.value), parseFloat(sweepDurationInput.value));
+        download(sweepSignal, 48000, 'reference_audio.wav',
             {},
             convertToIXML(`
         <STIMULUS>
@@ -356,6 +358,7 @@ analyzeRecordingBtn.addEventListener('click', async () => {
         const duration = parseFloat(sweepDurationInput.value);
 
         const [sweepSignal] = audio.chirp(startFreq, endFreq, duration);
+        console.log(startFreq, endFreq, duration, sweepSignal.length);
         const referenceAudio = Audio.fromSamples(sweepSignal, 48000);
 
         // Add timestamp to recording name

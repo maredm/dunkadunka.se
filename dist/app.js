@@ -2430,7 +2430,7 @@ function playbackOnly() {
       const startFreq = parseFloat(sweepStartFreqInput.value);
       const endFreq = parseFloat(sweepEndFreqInput.value);
       const duration = parseFloat(sweepDurationInput.value);
-      const [sweepSignal] = audio.chirp(startFreq, endFreq, duration);
+      const [sweepSignal, ,] = audio.chirp(startFreq, endFreq, duration);
       const audioBuffer = audioContext.createBuffer(1, sweepSignal.length, audioContext.sampleRate);
       const channelData = audioBuffer.getChannelData(0);
       channelData.set(sweepSignal);
@@ -2447,6 +2447,7 @@ function playbackOnly() {
       stopPlayBtn.disabled = false;
       setTimeout(() => {
         stopPlayback();
+        download(sweepSignal, 48e3, "reference_audio.wav");
       }, (duration + 0.5) * 1e3);
     } catch (error) {
       console.error("Error during playback:", error);
@@ -2508,8 +2509,9 @@ downloadRecordingBtn == null ? void 0 : downloadRecordingBtn.addEventListener("c
 var downloadSweepBtn = document.getElementById("downloadSweepBtn");
 downloadSweepBtn == null ? void 0 : downloadSweepBtn.addEventListener("click", () => {
   try {
+    const [sweepSignal, ,] = audio.chirp(parseFloat(sweepStartFreqInput.value), parseFloat(sweepEndFreqInput.value), parseFloat(sweepDurationInput.value));
     download(
-      recorded[0],
+      sweepSignal,
       48e3,
       "reference_audio.wav",
       {},
@@ -2541,6 +2543,7 @@ analyzeRecordingBtn.addEventListener("click", () => __async(null, null, function
     const endFreq = parseFloat(sweepEndFreqInput.value);
     const duration = parseFloat(sweepDurationInput.value);
     const [sweepSignal] = audio.chirp(startFreq, endFreq, duration);
+    console.log(startFreq, endFreq, duration, sweepSignal.length);
     const referenceAudio = Audio.fromSamples(sweepSignal, 48e3);
     const now = /* @__PURE__ */ new Date();
     const dateTime = now.toLocaleString("sv-SE", {
