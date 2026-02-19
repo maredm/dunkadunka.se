@@ -19,7 +19,7 @@ function clampFreq(freq: number, sr: number): number {
     return Math.max(0, Math.min(freq, nyq - 1e-6));
 }
 
-interface BiquadCoefficients {
+export interface BiquadCoefficients {
     type: string;
     sampleRate: number;
     freq: number;
@@ -59,6 +59,53 @@ type BiquadType =
     | 'gain';
 
 type WindowType = 'hann' | 'rect';
+
+
+export function generateTargetCurve(type: string, frequencies: Float32Array, freqStart: number, freqEnd: number): Float32Array {
+    const target = new Float32Array(frequencies.length);
+    
+    for (let k = 0; k < frequencies.length; k++) {
+        const freq = frequencies[k];
+        
+        if (type === 'flat') {
+            target[k] = 1.0; // 0 dB
+        } else if (type === 'tilt') {
+            // -1 dB/octave tilt: gain(f) = 10^((-1/20) * log10(f/1000))
+            // At 1kHz: 0 dB, at 10kHz: -1 dB, at 100Hz: +1 dB
+            const refFreq = 1000;
+            const tiltDb = -1 * Math.log2(freq / refFreq); // -1 dB per octave
+            target[k] = Math.pow(10, tiltDb / 20);
+        } else if (type === 'harman') {
+            // Harman target curve (simplified version)
+            // Based on Harman in-room speaker target
+            // Gentle downward slope from 20Hz to 20kHz
+            let targetDb = 0;
+            
+            if (freq < 20) {
+                targetDb = 0;
+            } else if (freq <= 105) {
+                // Boost in bass region
+                targetDb = 4.0 * (1 - (freq - 20) / 85);
+            } else if (freq <= 1000) {
+                // Transition to flat
+                const t = (freq - 105) / 895;
+                targetDb = 0;
+            } else if (freq <= 20000) {
+                // High frequency rolloff (-10 dB at 20kHz)
+                const decades = Math.log10(freq / 1000);
+                targetDb = -7.5 * decades; // ~-10 dB at 20kHz
+            } else {
+                targetDb = -10;
+            }
+            
+            target[k] = Math.pow(10, targetDb / 20);
+        } else {
+            target[k] = 1.0;
+        }
+    }
+    
+    return target;
+}
 
 export class IIRFilter {
     z1: number = 0;
@@ -137,6 +184,45 @@ export class IIRFilter {
     }
 }
 
+export function getFrequencyResponse(coefficients: BiquadCoefficients, fftSize: number = 8192): [Float32Array, Float32Array] {
+    const coeffs = coefficients;
+    const nyq = coefficients.sampleRate / 2;
+    const sr = coefficients.sampleRate;
+    const maxFreq = nyq;
+    const minFreq = 0.1;
+
+    // helpers
+    const logMin = Math.log10(minFreq);
+    const logMax = Math.log10(maxFreq);
+    const frequencies = linspace(0, 48000 / 2, fftSize);
+
+    // compute magnitude response (dB);
+    const mags = new Float32Array(fftSize);
+    for (let i = 0; i < fftSize; i++) {
+        const f = frequencies[i];
+        const w = 2 * Math.PI * f / sr;
+        const cosw = Math.cos(w);
+        const sinw = Math.sin(w);
+        const cos2w = Math.cos(2 * w);
+        const sin2w = Math.sin(2 * w);
+
+        // B(e^-jw) = b0 + b1 e^-jw + b2 e^-j2w
+        const Br = coeffs.b[0] + coeffs.b[1] * cosw + coeffs.b[2] * cos2w;
+        const Bi = -(coeffs.b[1] * sinw + coeffs.b[2] * sin2w);
+        // A(e^-jw) = 1 + a1 e^-jw + a2 e^-j2w
+        const Ar = coeffs.a[0] + coeffs.a[1] * cosw + coeffs.a[2] * cos2w;
+        const Ai = -(coeffs.a[1] * sinw + coeffs.a[2] * sin2w);
+
+        const numMag = Math.hypot(Br, Bi);
+        const denMag = Math.hypot(Ar, Ai) || 1e-20;
+        const mag = numMag / denMag;
+        let db = 20 * Math.log10(Math.max(1e-20, mag));
+
+        frequencies[i] = f;
+        mags[i] = db;
+    }
+    return [mags, frequencies];
+}
 /**
  * Create biquad filter coefficients using the RBJ cookbook formulas.
  * Reference: https://www.w3.org/TR/audio-eq-cookbook/
@@ -160,7 +246,7 @@ export class IIRFilter {
  * @returns {Object} Coefficients and parameters
  */
 
-function createBiquadCoefficients(
+export function createBiquadCoefficients(
     type: BiquadType = 'peaking',
     freq: number = 1000,
     Q: number = 1,
@@ -346,98 +432,49 @@ function createWebAudioBiquad(
  *
  * Returns: Float32Array length = taps containing the real impulse response.
  */
-export function createFIRFromFFT({
-    target,
-    reference = null,
-    fftSize = null,
-    taps = 513,
-    kirkebyEps = 1e-6,
-    window = 'hann'
-}: {
-    target: ComplexSpectrum;
-    reference?: ComplexSpectrum | null;
-    fftSize?: number | null;
-    taps?: number;
-    kirkebyEps?: number;
-    window?: WindowType;
-} = {}): Float32Array {
-    if (!target || !target.re || (!Array.isArray(target.re) && !(target.re instanceof Float32Array))) {
-        throw new Error('target must be an object { re, im } with array-like re');
-    }
-    const N = fftSize || target.re.length;
-    const tRe = target.re;
-    const tIm = target.im || new Float32Array(N).fill(0);
-
-    // normalize arrays to length N (if shorter, pad with zeros)
-    const pad = (arr: Float32Array | number[]): Float32Array => {
-        if (arr.length === N) return arr instanceof Float32Array ? arr : new Float32Array(arr);
-        const out = new Float32Array(N);
-        const slice = arr instanceof Float32Array ? arr.subarray(0, Math.min(arr.length, N)) : arr.slice(0, Math.min(arr.length, N));
-        out.set(slice);
-        return out;
-    };
-    const Tre = pad(tRe);
-    const Tim = pad(tIm);
-
-    let Gre: Float32Array | null = null;
-    let Gim: Float32Array | null = null;
-    if (reference && reference.re) {
-        Gre = pad(reference.re);
-        Gim = pad(reference.im || new Float32Array(N));
-    }
-
-    // Compute frequency-domain H according to Kirkeby regularization if reference provided:
-    // H = (T * conj(G)) / (|G|^2 + eps)
-    const Hre = new Float32Array(N);
-    const Him = new Float32Array(N);
-
-    if (Gre) {
-        for (let k = 0; k < N; k++) {
-            const tr = Tre[k],
-                ti = Tim[k];
-            const gr = Gre[k],
-                gi = Gim![k];
-            const denom = gr * gr + gi * gi + kirkebyEps;
-            // numerator = T * conj(G) = (tr + j ti) * (gr - j gi)
-            const nr = tr * gr + ti * gi;
-            const ni = ti * gr - tr * gi;
-            Hre[k] = nr / denom;
-            Him[k] = ni / denom;
-        }
-    } else {
-        // Copy target into H
-        Hre.set(Tre);
-        Him.set(Tim);
-    }
+export function createFIRFromFFT(
+    magnitude: ComplexSpectrum,
+    fftSize: number | null = null,
+    taps: number = 513,
+    window: WindowType = 'hann'
+   ): Float32Array {
+    const N = fftSize || magnitude.re.length;
+    const tRe = magnitude.re;
+    const tIm = magnitude.im || new Float32Array(N).fill(0);
 
     // Enforce Hermitian symmetry so inverse DFT yields real impulse:
     // H[N-k] = conj(H[k]), for k = 1..N-1
     // Keep H[0] and H[N/2] (if exists) real-valued by zeroing small imag.
     const epsImag = 1e-20;
     for (let k = 1; k < Math.floor((N + 1) / 2); k++) {
-        const rk = Hre[k],
-            ik = Him[k];
+        const rk = tRe[k],
+            ik = tIm[k];
         const mirror = N - k;
-        Hre[mirror] = rk;
-        Him[mirror] = -ik;
+        tRe[mirror] = rk;
+        tIm[mirror] = -ik;
     }
     // Make H[0] purely real
-    Him[0] = 0;
-    if (N % 2 === 0) Him[N / 2] = 0;
+    tIm[0] = 0;
+    if (N % 2 === 0) tIm[N / 2] = 0;
 
-    // Inverse DFT (direct O(N^2) implementation).
-    // h[n] = (1/N) * sum_{k=0..N-1} (Re(Hk) * cos(2π k n / N) - Im(Hk) * sin(2π k n / N))
+    // Inverse FFT using FFT class
+    const fft = new FFT(N);
+    
+    // Convert to interleaved format [Re0, Im0, Re1, Im1, ...]
+    const Hinterleaved = new Float32Array(2 * N);
+    for (let k = 0; k < N; k++) {
+        Hinterleaved[2 * k] = tRe[k];
+        Hinterleaved[2 * k + 1] = tIm[k];
+    }
+    
+    // Perform inverse transform
+    const hTimeCplx = new Float32Array(2 * N);
+    fft.inverseTransform(hTimeCplx, Hinterleaved);
+    
+    // Extract real part (inverseTransform divides by N internally)
     const hTime = new Float32Array(N);
-    const TWO_PI = 2 * Math.PI;
     for (let n = 0; n < N; n++) {
-        let sum = 0;
-        for (let k = 0; k < N; k++) {
-            const angle = (TWO_PI * k * n) / N;
-            const c = Math.cos(angle);
-            const s = Math.sin(angle);
-            sum += Hre[k] * c - Him[k] * s;
-        }
-        hTime[n] = sum / N;
+        hTime[n] = hTimeCplx[2 * n];
     }
 
     // Circularly shift by N/2 to center impulse (linear-phase alignment)
@@ -466,7 +503,8 @@ export function createFIRFromFFT({
 
 export function firToMinPhase(
     input: Float32Array | number[],
-    { fftSize = null, eps = 1e-12 }: { fftSize?: number | null; eps?: number } = {}
+    fftSize: number | null = null, 
+    eps: number = 1e-12
 ): Float32Array {
     // Ensure input is Float32Array
     const hIn = input instanceof Float32Array ? input : new Float32Array(input);
@@ -551,31 +589,25 @@ export function firToMinPhase(
  * Usage:
  * const invFIR = createInverseFIRFromFFT({ reference: {re, im}, fftSize: N, taps: L, kirkebyEps });
  */
-export function createInverseFIRFromFFT({
-    reference,
-    fftSize = null,
-    taps = 513,
-    kirkebyEps = 1e-6,
-    window = 'hann'
-}: {
-    reference: ComplexSpectrum;
-    fftSize?: number | null;
-    taps?: number;
-    kirkebyEps?: number;
-    window?: WindowType;
-} = {}): Float32Array {
+export function createInverseFIRFromFFT(
+        reference: ComplexSpectrum,
+        fftSize: number | null = null,
+        taps: number = 513,
+        kirkebyEps: number = 1e-6,
+        window: WindowType = 'hann'): Float32Array 
+    {
     const N = fftSize || (reference && reference.re && reference.re.length);
     if (!reference || !reference.re) throw new Error('reference required for inverse FIR');
     // target = 1.0 (real) across all bins
     const Tre = new Float32Array(N);
     const Tim = new Float32Array(N); // zeros
     for (let k = 0; k < N; k++) Tre[k] = 1.0;
-    return createFIRFromFFT({
-        target: { re: Tre, im: Tim },
+    return createFIRFromFFT(
+        { re: Tre, im: Tim },
         reference,
-        fftSize: N,
+        N,
         taps,
         kirkebyEps,
         window
-    });
+    );
 }

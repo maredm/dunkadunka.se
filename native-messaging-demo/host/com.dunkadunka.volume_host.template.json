@@ -1,0 +1,9 @@
+{
+    "name": "com.dunkadunka.volume_host",
+    "description": "Native host for OS volume demo",
+    "path": "__HOST_PATH__",
+    "type": "stdio",
+    "allowed_origins": [
+        "chrome-extension://__EXTENSION_ID__/"
+    ]
+}

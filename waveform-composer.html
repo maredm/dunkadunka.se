@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light">
+    <title>2-Channel Waveform Composer</title>
+    <link rel="stylesheet" href="static/styles.css">
+    <style>
+        .composer-container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 2rem;
+        }
+        
+        .config-section {
+            background: #f8f9fa;
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin-bottom: 2rem;
+        }
+        
+        .config-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        
+        .config-item {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .config-item label {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: #333;
+        }
+        
+        .config-item input,
+        .config-item select {
+            padding: 0.5rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 1rem;
+        }
+        
+        .clips-container {
+            margin-bottom: 2rem;
+        }
+        
+        .clip-card {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            position: relative;
+        }
+        
+        .clip-card.channel-left {
+            border-left: 4px solid #2196F3;
+        }
+        
+        .clip-card.channel-right {
+            border-left: 4px solid #FF9800;
+        }
+        
+        .clip-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        
+        .clip-title {
+            font-weight: 600;
+            font-size: 1.1rem;
+            color: #333;
+        }
+        
+        .clip-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+        }
+        
+        .control-group {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .control-group label {
+            font-size: 0.9rem;
+            font-weight: 500;
+            margin-bottom: 0.25rem;
+            color: #666;
+        }
+        
+        .control-group input,
+        .control-group select {
+            padding: 0.4rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .btn {
+            padding: 0.6rem 1.2rem;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary {
+            background: #2196F3;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #1976D2;
+        }
+        
+        .btn-secondary {
+            background: #757575;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background: #616161;
+        }
+        
+        .btn-success {
+            background: #4CAF50;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #45a049;
+        }
+        
+        .btn-danger {
+            background: #f44336;
+            color: white;
+            padding: 0.4rem 0.8rem;
+            font-size: 0.9rem;
+        }
+        
+        .btn-danger:hover {
+            background: #da190b;
+        }
+        
+        .btn-small {
+            padding: 0.4rem 0.8rem;
+            font-size: 0.9rem;
+        }
+        
+        .actions {
+            display: flex;
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+        
+        .add-clip-section {
+            background: #e3f2fd;
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin-bottom: 2rem;
+        }
+        
+        .add-clip-controls {
+            display: flex;
+            gap: 1rem;
+            align-items: end;
+            flex-wrap: wrap;
+        }
+        
+        .status-message {
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+            display: none;
+        }
+        
+        .status-message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status-message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .status-message.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        
+        .waveform-preview {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin-bottom: 2rem;
+            border: 1px solid #e0e0e0;
+        }
+        
+        .channel-preview {
+            margin-bottom: 1.5rem;
+        }
+        
+        .channel-label {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .channel-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+        
+        .channel-indicator.left {
+            background: #2196F3;
+        }
+        
+        .channel-indicator.right {
+            background: #FF9800;
+        }
+        
+        canvas {
+            width: 100%;
+            height: 80px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: #999;
+        }
+        
+        .empty-state-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-container flex items-center justify-left bg-white">
+            <img src="https://norrmalms.se/favicon.ico" alt="Norrmalms logo" class="h-8 w-8">
+            <a href="https://norrmalms.se">
+                <span class="pl-1">dunkadunka.se</span>
+            </a>
+        </div>
+        <div>2-Channel Waveform Composer</div>
+    </nav>
+
+    <div class="composer-container">
+        <div id="statusMessage" class="status-message"></div>
+        
+        <div class="config-section">
+            <h2>Composition Settings</h2>
+            <div class="config-grid">
+                <div class="config-item">
+                    <label for="sampleRate">Sample Rate (Hz)</label>
+                    <select id="sampleRate">
+                        <option value="8000">8000</option>
+                        <option value="16000">16000</option>
+                        <option value="32000">32000</option>
+                        <option value="48000" selected>48000</option>
+                    </select>
+                </div>
+                <div class="config-item">
+                    <label for="duration">Duration (seconds)</label>
+                    <input type="number" id="duration" value="30" min="1" step="0.1">
+                </div>
+            </div>
+        </div>
+
+        <div class="add-clip-section">
+            <h3>Add Clip</h3>
+            <div class="add-clip-controls">
+                <div class="config-item">
+                    <label for="clipSelect">Source File</label>
+                    <select id="clipSelect" style="min-width: 250px;">
+                        <option value="">Select a file...</option>
+                    </select>
+                </div>
+                <div class="config-item">
+                    <label for="clipChannel">Channel</label>
+                    <select id="clipChannel">
+                        <option value="0">Left (0)</option>
+                        <option value="1">Right (1)</option>
+                    </select>
+                </div>
+                <div class="config-item">
+                    <label for="clipStartTime">Start Time (s)</label>
+                    <input type="number" id="clipStartTime" value="0" min="0" step="0.1" style="width: 100px;">
+                </div>
+                <div class="config-item">
+                    <label for="clipTargetLevel">Target Level (dB)</label>
+                    <input type="number" id="clipTargetLevel" value="-26" step="0.1" style="width: 100px;">
+                </div>
+                <div class="config-item" style="justify-content: end;">
+                    <button id="addClipBtn" class="btn btn-primary">Add Clip</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="clips-container">
+            <h2>Clips Timeline</h2>
+            <div id="clipsList">
+                <div class="empty-state">
+                    <div class="empty-state-icon">🎵</div>
+                    <p>No clips added yet. Add clips using the form above.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="waveform-preview" style="display: none;" id="previewSection">
+            <h2>Preview</h2>
+            <div class="channel-preview">
+                <div class="channel-label">
+                    <span class="channel-indicator left"></span>
+                    <span>Left Channel</span>
+                </div>
+                <canvas id="leftChannelCanvas"></canvas>
+            </div>
+            <div class="channel-preview">
+                <div class="channel-label">
+                    <span class="channel-indicator right"></span>
+                    <span>Right Channel</span>
+                </div>
+                <canvas id="rightChannelCanvas"></canvas>
+            </div>
+        </div>
+
+        <div class="actions">
+            <button id="composeBtn" class="btn btn-success" disabled>Compose Waveform</button>
+            <button id="previewBtn" class="btn btn-secondary" disabled>Preview</button>
+            <button id="downloadBtn" class="btn btn-primary" disabled>Download WAV</button>
+        </div>
+    </div>
+
+    <script type="module">
+        import { 
+            composeWaveform, 
+            loadClip, 
+            getAvailableClips,
+            downloadComposedWaveform
+        } from './static/waveform-composer.js';
+
+        // State
+        let clips = [];
+        let composedAudio = null;
+        let availableFiles = [];
+        let clipIdCounter = 0;
+
+        // Initialize
+        async function init() {
+            try {
+                availableFiles = await getAvailableClips();
+                populateClipSelect();
+            } catch (error) {
+                showStatus('Error loading available clips: ' + error.message, 'error');
+            }
+        }
+
+        function populateClipSelect() {
+            const select = document.getElementById('clipSelect');
+            availableFiles.forEach(filename => {
+                const option = document.createElement('option');
+                option.value = filename;
+                option.textContent = filename;
+                select.appendChild(option);
+            });
+        }
+
+        function showStatus(message, type = 'info') {
+            const statusEl = document.getElementById('statusMessage');
+            statusEl.textContent = message;
+            statusEl.className = `status-message ${type}`;
+            statusEl.style.display = 'block';
+            setTimeout(() => {
+                statusEl.style.display = 'none';
+            }, 5000);
+        }
+
+        function addClip() {
+            const filename = document.getElementById('clipSelect').value;
+            const channel = parseInt(document.getElementById('clipChannel').value);
+            const startTime = parseFloat(document.getElementById('clipStartTime').value);
+            const targetLevel = parseFloat(document.getElementById('clipTargetLevel').value);
+
+            if (!filename) {
+                showStatus('Please select a source file', 'error');
+                return;
+            }
+
+            const clip = {
+                id: `clip-${clipIdCounter++}`,
+                filename,
+                channel,
+                startTime,
+                targetLevel,
+                audio: null
+            };
+
+            clips.push(clip);
+            renderClips();
+            updateButtons();
+            showStatus(`Added ${filename} to ${channel === 0 ? 'left' : 'right'} channel at ${startTime}s`, 'success');
+        }
+
+        function removeClip(id) {
+            clips = clips.filter(c => c.id !== id);
+            renderClips();
+            updateButtons();
+            showStatus('Clip removed', 'info');
+        }
+
+        function updateClip(id, field, value) {
+            const clip = clips.find(c => c.id === id);
+            if (clip) {
+                clip[field] = field === 'channel' ? parseInt(value) : 
+                              (field === 'startTime' || field === 'targetLevel') ? parseFloat(value) : 
+                              value;
+                renderClips();
+            }
+        }
+
+        function renderClips() {
+            const container = document.getElementById('clipsList');
+            
+            if (clips.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🎵</div>
+                        <p>No clips added yet. Add clips using the form above.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Sort clips by start time for display
+            const sortedClips = [...clips].sort((a, b) => a.startTime - b.startTime);
+
+            container.innerHTML = sortedClips.map(clip => `
+                <div class="clip-card channel-${clip.channel === 0 ? 'left' : 'right'}" data-id="${clip.id}">
+                    <div class="clip-header">
+                        <div class="clip-title">${clip.filename}</div>
+                        <button class="btn btn-danger btn-small" onclick="window.removeClip('${clip.id}')">Remove</button>
+                    </div>
+                    <div class="clip-controls">
+                        <div class="control-group">
+                            <label>Channel</label>
+                            <select onchange="window.updateClip('${clip.id}', 'channel', this.value)">
+                                <option value="0" ${clip.channel === 0 ? 'selected' : ''}>Left (0)</option>
+                                <option value="1" ${clip.channel === 1 ? 'selected' : ''}>Right (1)</option>
+                            </select>
+                        </div>
+                        <div class="control-group">
+                            <label>Start Time (s)</label>
+                            <input type="number" value="${clip.startTime}" step="0.1" min="0"
+                                onchange="window.updateClip('${clip.id}', 'startTime', this.value)">
+                        </div>
+                        <div class="control-group">
+                            <label>Target Level (dB)</label>
+                            <input type="number" value="${clip.targetLevel}" step="0.1"
+                                onchange="window.updateClip('${clip.id}', 'targetLevel', this.value)">
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function updateButtons() {
+            const hasClips = clips.length > 0;
+            document.getElementById('composeBtn').disabled = !hasClips;
+            document.getElementById('previewBtn').disabled = !hasClips;
+            document.getElementById('downloadBtn').disabled = !composedAudio;
+        }
+
+        async function composeWaveformAction() {
+            try {
+                document.getElementById('composeBtn').textContent = 'Composing...';
+                document.getElementById('composeBtn').disabled = true;
+                showStatus('Loading audio clips...', 'info');
+
+                // Load all clips
+                for (const clip of clips) {
+                    if (!clip.audio) {
+                        const filepath = `static/p501/${clip.filename}`;
+                        clip.audio = await loadClip(filepath);
+                        showStatus(`Loaded ${clip.filename}`, 'info');
+                    }
+                }
+
+                showStatus('Composing waveform...', 'info');
+
+                const config = {
+                    sampleRate: parseInt(document.getElementById('sampleRate').value),
+                    duration: parseFloat(document.getElementById('duration').value),
+                    clips: clips
+                };
+
+                composedAudio = await composeWaveform(config);
+                showStatus('Waveform composed successfully!', 'success');
+                updateButtons();
+                previewWaveform();
+
+            } catch (error) {
+                showStatus('Error composing waveform: ' + error.message, 'error');
+                console.error(error);
+            } finally {
+                document.getElementById('composeBtn').textContent = 'Compose Waveform';
+                document.getElementById('composeBtn').disabled = false;
+            }
+        }
+
+        function previewWaveform() {
+            if (!composedAudio) {
+                showStatus('Please compose the waveform first', 'error');
+                return;
+            }
+
+            const previewSection = document.getElementById('previewSection');
+            previewSection.style.display = 'block';
+
+            drawChannelWaveform(composedAudio.getChannelData(0), 'leftChannelCanvas');
+            drawChannelWaveform(composedAudio.getChannelData(1), 'rightChannelCanvas');
+        }
+
+        function drawChannelWaveform(samples, canvasId) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            const width = canvas.width = canvas.offsetWidth * 2;
+            const height = canvas.height = 160;
+
+            ctx.fillStyle = '#f5f5f5';
+            ctx.fillRect(0, 0, width, height);
+
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+
+            const step = Math.max(1, Math.floor(samples.length / width));
+            const mid = height / 2;
+
+            for (let x = 0; x < width; x++) {
+                let min = 1;
+                let max = -1;
+                
+                for (let i = 0; i < step; i++) {
+                    const idx = x * step + i;
+                    if (idx < samples.length) {
+                        const val = samples[idx];
+                        if (val < min) min = val;
+                        if (val > max) max = val;
+                    }
+                }
+
+                const yMin = mid - min * mid;
+                const yMax = mid - max * mid;
+
+                if (x === 0) {
+                    ctx.moveTo(x, yMax);
+                } else {
+                    ctx.lineTo(x, yMax);
+                }
+            }
+
+            ctx.stroke();
+        }
+
+        function downloadWaveform() {
+            if (!composedAudio) {
+                showStatus('Please compose the waveform first', 'error');
+                return;
+            }
+
+            try {
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+                downloadComposedWaveform(composedAudio, `composed-${timestamp}.wav`);
+                showStatus('Waveform downloaded!', 'success');
+            } catch (error) {
+                showStatus('Error downloading: ' + error.message, 'error');
+                console.error(error);
+            }
+        }
+
+        // Expose functions to window for onclick handlers
+        window.removeClip = removeClip;
+        window.updateClip = updateClip;
+
+        // Event listeners
+        document.getElementById('addClipBtn').addEventListener('click', addClip);
+        document.getElementById('composeBtn').addEventListener('click', composeWaveformAction);
+        document.getElementById('previewBtn').addEventListener('click', previewWaveform);
+        document.getElementById('downloadBtn').addEventListener('click', downloadWaveform);
+
+        // Initialize on load
+        init();
+    </script>
+</body>
+</html>

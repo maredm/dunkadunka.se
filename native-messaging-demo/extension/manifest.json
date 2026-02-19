@@ -1,0 +1,29 @@
+{
+    "manifest_version": 3,
+    "name": "Native Volume Messaging Demo",
+    "description": "Demo extension that controls OS volume via Native Messaging.",
+    "version": "0.1.0",
+    "permissions": [
+        "nativeMessaging"
+    ],
+    "action": {
+        "default_title": "Volume Demo",
+        "default_popup": "popup.html"
+    },
+    "background": {
+        "service_worker": "background.js"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "file://*/*",
+                "http://*/*",
+                "https://*/*"
+            ],
+            "js": [
+                "content-bridge.js"
+            ],
+            "run_at": "document_idle"
+        }
+    ]
+}

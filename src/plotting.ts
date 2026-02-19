@@ -9,6 +9,12 @@ function addPlotToList(tabId: string, plotId: string, plotName: string, hidden: 
 
 function addPlotElement(tabId: string, plotId: string, hidden: boolean = false): HTMLElement {
     const tabContent = document.querySelector(`[data-content="${tabId}"]`) as HTMLElement;
+    
+    if (!tabContent) {
+        console.error('Tab content not found for tabId:', tabId);
+        throw new Error(`Tab content not found for tabId: ${tabId}`);
+    }
+    
     const plotBox = document.createElement('div');
     plotBox.className = 'plot-box';
     plotBox.innerHTML = `
@@ -19,11 +25,27 @@ function addPlotElement(tabId: string, plotId: string, hidden: boolean = false):
             <label for="checkbox-${plotId}">Hide</label>
         </div>
     `;
-    tabContent.querySelector('.plot-outer')?.appendChild(plotBox);
+    
+    const plotOuter = tabContent.querySelector('.plot-outer');
+    if (!plotOuter) {
+        console.error('Plot outer container not found in tab:', tabId);
+        throw new Error(`Plot outer container not found in tab: ${tabId}`);
+    }
+    
+    plotOuter.appendChild(plotBox);
+    
     if (hidden) {
         plotBox.style.display = 'none';
     }
-    return plotBox.querySelector(`#${plotId}`) as HTMLElement;
+    
+    const element = plotBox.querySelector(`#${plotId}`) as HTMLElement;
+    
+    if (!element) {
+        console.error('Plot element not found after creation. plotId:', plotId);
+        throw new Error(`Plot element not found after creation: ${plotId}`);
+    }
+    
+    return element;
 }
 
 export function plot(

@@ -335,14 +335,14 @@ export class Audio extends AudioBuffer {
         return audio;
     }
 
-    static fromSamples(samples: Float32Array, sampleRate: number = 48000, metadata: { [Key: string]: string | number | null; }): Audio {
+    static fromSamples(samples: Float32Array, sampleRate: number = 48000, metadata: { [Key: string]: string | number | null; } = {}): Audio {
         if (!samples || samples.length == 0) return new Audio({ length: 0, numberOfChannels: 1, sampleRate: sampleRate });
         const audio = new Audio({
             length: samples.length,
             numberOfChannels: 1,
             sampleRate: sampleRate
         });
-        audio.copyToChannel(samples, 0);
+        audio.copyToChannel(new Float32Array(samples), 0);
         audio.metadata = metadata;
         return audio;
     }
@@ -566,12 +566,14 @@ export function chirp(f_start: number, f_stop: number, duration: number | null =
     return [sweepWindowed, t, envelope];
 }
 
-export function smoothFFT(fftData: FFTResult, fraction: number, resolution: number): FFTResult {
+export function smoothFFT(fftData: FFTResult, fraction: number, resolution: number | null = null): FFTResult {
     const { frequency, magnitude, phase, fftSize } = fftData;
     const smoothedMagnitude = Float32Array.from({ length: magnitude.length }, () => 0);
 
     // Get fractional octave frequencies
-    const fractionalFrequencies = getFractionalOctaveFrequencies(resolution, 20, 24000, fftSize);
+    let fractionalFrequencies: Float32Array | null = null;
+    if (resolution != null) { fractionalFrequencies = getFractionalOctaveFrequencies(resolution, 20, 24000, fftSize); }
+    else { fractionalFrequencies = frequency; }
 
     // Apply fractional octave smoothing
     const smoothed = dbToLinear(fractionalOctaveSmoothing(db(magnitude), fraction, fractionalFrequencies));
@@ -791,6 +793,32 @@ export interface ImpulseResponseResult {
     fftSize: number;
 }
 
+export function computeIFFT(fftResult: FFTResult): Float32Array {
+    const { magnitude, phase, fftSize } = fftResult;
+    const fft = new FFT(fftSize * 2); // IFFT expects full complex array size
+    const complexInput = fft.createComplexArray();
+
+    // Convert magnitude and phase back to complex representation
+    for (let i = 0; i < fftSize; i++) {
+        const mag = magnitude[i] * Math.SQRT1_2; // Scale by fftSize to compensate for normalization in FFT
+        const phi = phase[i] * (Math.PI / 180); // Convert degrees to radians if needed
+        complexInput[2 * i] = mag * Math.cos(phi);
+        complexInput[2 * i + 1] = mag * Math.sin(phi);
+    }
+
+    // Mirror for negative frequencies (Hermitian symmetry)
+    for (let i = 1; i < fftSize; i++) {
+        complexInput[2 * (2 * fftSize - i)] = complexInput[2 * i];
+        complexInput[2 * (2 * fftSize - i) + 1] = -complexInput[2 * i + 1];
+    }
+
+    const output = fft.createComplexArray();
+    fft.inverseTransform(output, complexInput);
+
+    // Extract real part and normalize
+    const result = Float32Array.from({ length: fftSize}, (_, i) => output[2 * i]);
+    return result;
+}
 
 export function twoChannelImpulseResponse(y: Float32Array, x: Float32Array): ImpulseResponseResult {
     // Calculate the impulse response by taking the IFFT of the division of the FFTs of output and input signals.

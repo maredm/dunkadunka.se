@@ -1,0 +1,1151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FIR Filter Application Tool</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 2rem;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+        
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+        }
+        
+        h1 {
+            font-size: 2rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+        
+        .subtitle {
+            opacity: 0.9;
+            font-size: 0.95rem;
+        }
+        
+        .content {
+            padding: 2rem;
+        }
+        
+        .upload-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .upload-box {
+            background: #f8f9fa;
+            border: 2px dashed #cbd5e0;
+            border-radius: 12px;
+            padding: 2rem 1rem;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            position: relative;
+        }
+        
+        .upload-box:hover {
+            border-color: #667eea;
+            background: #f0f4ff;
+        }
+        
+        .upload-box.dragover {
+            border-color: #667eea;
+            background: #e6edff;
+            transform: scale(1.02);
+        }
+        
+        .upload-box.uploaded {
+            border-color: #48bb78;
+            background: #f0fff4;
+        }
+        
+        .upload-box input[type="file"] {
+            display: none;
+        }
+        
+        .upload-icon {
+            font-size: 2rem;
+            margin-bottom: 1rem;
+            color: #667eea;
+        }
+        
+        .upload-text {
+            font-size: 1rem;
+            color: #4a5568;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+        
+        .upload-hint {
+            font-size: 0.85rem;
+            color: #718096;
+        }
+        
+        .file-info {
+            background: #e6edff;
+            border-left: 4px solid #667eea;
+            padding: 1rem;
+            border-radius: 8px;
+            margin: 1rem 0;
+            display: none;
+        }
+        
+        .file-info.visible {
+            display: block;
+        }
+        
+        .file-info-title {
+            font-weight: 600;
+            color: #667eea;
+            margin-bottom: 0.5rem;
+        }
+        
+        .file-info-detail {
+            font-size: 0.9rem;
+            color: #4a5568;
+            margin: 0.25rem 0;
+        }
+        
+        .controls {
+            margin: 2rem 0;
+            text-align: center;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 0.75rem 2rem;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+            margin: 0 0.5rem;
+        }
+        
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(102, 126, 234, 0.5);
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        button.success {
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+            box-shadow: 0 4px 12px rgba(72, 187, 120, 0.4);
+        }
+        
+        button.success:hover:not(:disabled) {
+            box-shadow: 0 6px 16px rgba(72, 187, 120, 0.5);
+        }
+        
+        .status {
+            margin: 1rem 0;
+            padding: 1rem;
+            border-radius: 8px;
+            display: none;
+        }
+        
+        .status.visible {
+            display: block;
+        }
+        
+        .status.processing {
+            background: #fef5e7;
+            border-left: 4px solid #f6ad55;
+            color: #c05621;
+        }
+        
+        .status.success {
+            background: #f0fff4;
+            border-left: 4px solid #48bb78;
+            color: #2f855a;
+        }
+        
+        .status.error {
+            background: #fed7d7;
+            border-left: 4px solid #f56565;
+            color: #c53030;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 4px;
+            background: #e2e8f0;
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 0.5rem;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: #667eea;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.5s ease;
+        }
+        
+        @media (max-width: 768px) {
+            .upload-section {
+                grid-template-columns: 1fr;
+            }
+            
+            .container {
+                margin: 1rem;
+            }
+            
+            body {
+                padding: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>FIR Filter Application Tool</h1>
+            <p class="subtitle">Apply FIR filters from .fir files (WAV format with FFT data) to audio files</p>
+        </header>
+        
+        <div class="content">
+            <div class="upload-section">
+                <div class="upload-box" id="firUploadBox">
+                    <input type="file" id="firFileInput" accept=".fir,.wav" />
+                    <div class="upload-icon">🎛️</div>
+                    <div class="upload-text">Select FIR Filter File</div>
+                    <div class="upload-hint">Choose a .fir file (WAV format with FFT data)<br/>Max size: ~2.1 seconds at 48kHz</div>
+                    
+                    <div class="file-info" id="firFileInfo">
+                        <div class="file-info-title">FIR Filter File:</div>
+                        <div class="file-info-detail" id="firFileName"></div>
+                        <div class="file-info-detail" id="firFileDetails"></div>
+                    </div>
+                </div>
+                
+                <div class="upload-box" id="audioUploadBox">
+                    <input type="file" id="audioFileInput" accept="audio/*,.wav,.mp3,.flac,.ogg,.m4a" />
+                    <div class="upload-icon">🎵</div>
+                    <div class="upload-text">Select Audio File</div>
+                    <div class="upload-hint">Choose an audio file to process</div>
+                    
+                    <div class="file-info" id="audioFileInfo">
+                        <div class="file-info-title">Audio File:</div>
+                        <div class="file-info-detail" id="audioFileName"></div>
+                        <div class="file-info-detail" id="audioFileDetails"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="controls">
+                <button id="processBtn" disabled>Apply FIR Filter</button>
+                <button id="downloadBtn" class="success" style="display: none;">Download Processed Audio</button>
+            </div>
+            
+            <div class="status" id="statusMessage">
+                <div id="statusText"></div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // === INLINE JAVASCRIPT CODE ===
+        
+        /**
+         * @typedef {Object} WaveReadResult
+         * @property {Float32Array} samples - Interleaved audio samples
+         * @property {number} sampleRate - Audio sample rate in Hz
+         * @property {number} channels - Number of audio channels
+         * @property {number} bitsPerSample - Bits per sample
+         * @property {number} format - Audio format (1 = PCM, 3 = IEEE float)
+         * @property {number} frames - Number of frames
+         * @property {Object|null} bext - BWF broadcast extension chunk
+         * @property {string|null} ixml - iXML chunk data
+         */
+        
+        /**
+         * @typedef {Object} BextChunk
+         * @property {string} [description] - Description
+         * @property {string} [originator] - Originator
+         * @property {string} [originatorReference] - Originator reference
+         * @property {string} [originationDate] - Origination date
+         * @property {string} [originationTime] - Origination time
+         * @property {string} [timeReference] - Time reference
+         * @property {number} [version] - Version
+         * @property {Uint8Array|null} [umid] - UMID
+         * @property {string} [codingHistory] - Coding history
+         */
+        
+        // Math utility functions
+        const nextPow2 = (v) => {
+            let p = 1;
+            while (p < v) p <<= 1;
+            return p;
+        };
+
+        // Chunked convolution for large signals
+        function fftConvolveChunked(x, y, mode = 'same') {
+            const MAX_FFT_SIZE = 65536; // 2^16 - safe maximum
+            const lenX = x.length;
+            const lenY = y.length;
+            
+            // For small enough sizes, use direct convolution
+            const fullLen = lenX + lenY - 1;
+            const fftSize = nextPow2(fullLen);
+            
+            if (fftSize <= MAX_FFT_SIZE) {
+                return fftConvolve(x, y, mode);
+            }
+            
+            // Use overlap-add method for large signals
+            const chunkSize = Math.floor(MAX_FFT_SIZE / 4); // Conservative chunk size
+            const overlapSize = lenY - 1;
+            const hopSize = chunkSize - overlapSize;
+            
+            let result = new Float32Array(mode === 'same' ? lenX : fullLen);
+            let resultPos = 0;
+            
+            for (let pos = 0; pos < lenX; pos += hopSize) {
+                const endPos = Math.min(pos + chunkSize, lenX);
+                const chunk = x.slice(pos, endPos);
+                
+                // Convolve chunk with filter
+                const filtered = fftConvolve(chunk, y, 'full');
+                
+                // Add to result (overlap-add)
+                const startIdx = mode === 'same' ? 
+                    Math.max(0, pos - Math.floor(overlapSize / 2)) : pos;
+                
+                for (let i = 0; i < filtered.length && startIdx + i < result.length; i++) {
+                    if (startIdx + i >= 0) {
+                        result[startIdx + i] += filtered[i];
+                    }
+                }
+            }
+            
+            return fftConvolve(x, y, mode);
+        }
+
+        // Audio convolution function (with size limits)
+        function fftConvolve(x, y, mode = 'same') {
+            const lenX = x.length;
+            const lenY = y.length;
+            const fullLen = lenX + lenY - 1;
+            const n = nextPow2(fullLen);
+            
+            // Prevent stack overflow with very large FFT sizes
+            const MAX_SAFE_FFT_SIZE = 65536; // 2^16
+            if (n > MAX_SAFE_FFT_SIZE) {
+                throw new Error(`FFT size too large (${n}). Use chunked processing instead.`);
+            }
+
+            const xP = Float32Array.from({ length: n }, () => 0);
+            const yP = Float32Array.from({ length: n }, () => 0);
+            xP.set(x, 0);
+            yP.set(y, 0);
+
+            const fft = new FFT(n);
+            const A = fft.createComplexArray();
+            const B = fft.createComplexArray();
+
+            fft.realTransform(A, xP);
+            fft.realTransform(B, yP);
+            
+            if (typeof fft.completeSpectrum === 'function') {
+                fft.completeSpectrum(A);
+                fft.completeSpectrum(B);
+            }
+
+            const C = fft.createComplexArray();
+            for (let k = 0; k < n; k++) {
+                const ar = A[2 * k], ai = A[2 * k + 1];
+                const br = B[2 * k], bi = B[2 * k + 1];
+                C[2 * k] = ar * br - ai * bi;
+                C[2 * k + 1] = ai * br + ar * bi;
+            }
+
+            const out = fft.createComplexArray();
+            fft.inverseTransform(out, C);
+
+            const result = Float32Array.from({ length: fullLen }, () => 0);
+            for (let i = 0; i < fullLen; i++) {
+                result[i] = out[2 * i];
+            }
+
+            if (mode === 'same') {
+                const start = Math.floor((fullLen - lenX) / 2);
+                return result.slice(start, start + lenX);
+            }
+
+            return result;
+        }
+
+        // FFT class implementation
+        class FFT {
+            constructor(size) {
+                this.size = size | 0;
+                if (this.size <= 1 || (this.size & (this.size - 1)) !== 0)
+                    throw new Error('FFT size must be a power of two and bigger than 1');
+
+                this._csize = size << 1;
+
+                const table = new Array(this.size * 2);
+                for (let i = 0; i < table.length; i += 2) {
+                    const angle = Math.PI * i / this.size;
+                    table[i] = Math.cos(angle);
+                    table[i + 1] = -Math.sin(angle);
+                }
+                this.table = table;
+
+                let power = 0;
+                for (let t = 1; this.size > t; t <<= 1)
+                    power++;
+
+                this._width = power % 2 === 0 ? power - 1 : power;
+
+                this._bitrev = new Array(1 << this._width);
+                for (let j = 0; j < this._bitrev.length; j++) {
+                    this._bitrev[j] = 0;
+                    for (let shift = 0; shift < this._width; shift += 2) {
+                        const revShift = this._width - shift - 2;
+                        this._bitrev[j] |= ((j >>> shift) & 3) << revShift;
+                    }
+                }
+
+                this._out = null;
+                this._data = null;
+                this._inv = 0;
+            }
+
+            createComplexArray() {
+                const res = new Array(this._csize);
+                for (let i = 0; i < res.length; i++)
+                    res[i] = 0;
+                return res;
+            }
+
+            completeSpectrum(spectrum) {
+                const size = this._csize;
+                const half = size >>> 1;
+                for (let i = 2; i < half; i += 2) {
+                    spectrum[size - i] = spectrum[i];
+                    spectrum[size - i + 1] = -spectrum[i + 1];
+                }
+            }
+
+            realTransform(out, data) {
+                if (out === data)
+                    throw new Error('Input and output buffers must be different');
+
+                this._out = out;
+                this._data = data;
+                this._inv = 0;
+                this._realTransform4();
+                this._out = null;
+                this._data = null;
+            }
+
+            inverseTransform(out, data) {
+                if (out === data)
+                    throw new Error('Input and output buffers must be different');
+
+                this._out = out;
+                this._data = data;
+                this._inv = 1;
+                this._transform4();
+                for (let i = 0; i < out.length; i++)
+                    out[i] /= this.size;
+                this._out = null;
+                this._data = null;
+            }
+
+            _transform4() {
+                const out = this._out;
+                const size = this._csize;
+                const width = this._width;
+                let step = 1 << width;
+                let len = (size / step) << 1;
+                let outOff, t;
+                const bitrev = this._bitrev;
+                
+                if (len === 4) {
+                    for (outOff = 0, t = 0; outOff < size; outOff += len, t++) {
+                        const off = bitrev[t];
+                        this._singleTransform2(outOff, off, step);
+                    }
+                } else {
+                    for (outOff = 0, t = 0; outOff < size; outOff += len, t++) {
+                        const off = bitrev[t];
+                        this._singleTransform4(outOff, off, step);
+                    }
+                }
+
+                const inv = this._inv ? -1 : 1;
+                const table = this.table;
+                for (step >>= 2; step >= 2; step >>= 2) {
+                    len = (size / step) << 1;
+                    const quarterLen = len >>> 2;
+
+                    for (outOff = 0; outOff < size; outOff += len) {
+                        const limit = outOff + quarterLen;
+                        for (let i = outOff, k = 0; i < limit; i += 2, k += step) {
+                            const A = i;
+                            const B = A + quarterLen;
+                            const C = B + quarterLen;
+                            const D = C + quarterLen;
+
+                            const Ar = out[A], Ai = out[A + 1];
+                            const Br = out[B], Bi = out[B + 1];
+                            const Cr = out[C], Ci = out[C + 1];
+                            const Dr = out[D], Di = out[D + 1];
+
+                            const MAr = Ar, MAi = Ai;
+
+                            const tableBr = table[k], tableBi = inv * table[k + 1];
+                            const MBr = Br * tableBr - Bi * tableBi;
+                            const MBi = Br * tableBi + Bi * tableBr;
+
+                            const tableCr = table[2 * k], tableCi = inv * table[2 * k + 1];
+                            const MCr = Cr * tableCr - Ci * tableCi;
+                            const MCi = Cr * tableCi + Ci * tableCr;
+
+                            const tableDr = table[3 * k], tableDi = inv * table[3 * k + 1];
+                            const MDr = Dr * tableDr - Di * tableDi;
+                            const MDi = Dr * tableDi + Di * tableDr;
+
+                            const T0r = MAr + MCr, T0i = MAi + MCi;
+                            const T1r = MAr - MCr, T1i = MAi - MCi;
+                            const T2r = MBr + MDr, T2i = MBi + MDi;
+                            const T3r = inv * (MBr - MDr), T3i = inv * (MBi - MDi);
+
+                            out[A] = T0r + T2r; out[A + 1] = T0i + T2i;
+                            out[B] = T1r + T3i; out[B + 1] = T1i - T3r;
+                            out[C] = T0r - T2r; out[C + 1] = T0i - T2i;
+                            out[D] = T1r - T3i; out[D + 1] = T1i + T3r;
+                        }
+                    }
+                }
+            }
+
+            _realTransform4() {
+                const out = this._out;
+                const size = this._csize;
+                const width = this._width;
+                let step = 1 << width;
+                let len = (size / step) << 1;
+                let outOff, t;
+                const bitrev = this._bitrev;
+                
+                if (len === 4) {
+                    for (outOff = 0, t = 0; outOff < size; outOff += len, t++) {
+                        const off = bitrev[t];
+                        this._singleRealTransform2(outOff, off >>> 1, step >>> 1);
+                    }
+                } else {
+                    for (outOff = 0, t = 0; outOff < size; outOff += len, t++) {
+                        const off = bitrev[t];
+                        this._singleRealTransform4(outOff, off >>> 1, step >>> 1);
+                    }
+                }
+
+                const inv = this._inv ? -1 : 1;
+                const table = this.table;
+                for (step >>= 2; step >= 2; step >>= 2) {
+                    len = (size / step) << 1;
+                    const halfLen = len >>> 1;
+                    const quarterLen = halfLen >>> 1;
+                    const hquarterLen = quarterLen >>> 1;
+
+                    for (outOff = 0; outOff < size; outOff += len) {
+                        for (let i = 0, k = 0; i <= hquarterLen; i += 2, k += step) {
+                            const A = outOff + i;
+                            const B = A + quarterLen;
+                            const C = B + quarterLen;
+                            const D = C + quarterLen;
+
+                            const Ar = out[A], Ai = out[A + 1];
+                            const Br = out[B], Bi = out[B + 1];
+                            const Cr = out[C], Ci = out[C + 1];
+                            const Dr = out[D], Di = out[D + 1];
+
+                            const MAr = Ar, MAi = Ai;
+
+                            const tableBr = table[k], tableBi = inv * table[k + 1];
+                            const MBr = Br * tableBr - Bi * tableBi;
+                            const MBi = Br * tableBi + Bi * tableBr;
+
+                            const tableCr = table[2 * k], tableCi = inv * table[2 * k + 1];
+                            const MCr = Cr * tableCr - Ci * tableCi;
+                            const MCi = Cr * tableCi + Ci * tableCr;
+
+                            const tableDr = table[3 * k], tableDi = inv * table[3 * k + 1];
+                            const MDr = Dr * tableDr - Di * tableDi;
+                            const MDi = Dr * tableDi + Di * tableDr;
+
+                            const T0r = MAr + MCr, T0i = MAi + MCi;
+                            const T1r = MAr - MCr, T1i = MAi - MCi;
+                            const T2r = MBr + MDr, T2i = MBi + MDi;
+                            const T3r = inv * (MBr - MDr), T3i = inv * (MBi - MDi);
+
+                            out[A] = T0r + T2r; out[A + 1] = T0i + T2i;
+                            out[B] = T1r + T3i; out[B + 1] = T1i - T3r;
+
+                            if (i === 0) {
+                                out[C] = T0r - T2r; out[C + 1] = T0i - T2i;
+                                continue;
+                            }
+
+                            if (i === hquarterLen) continue;
+
+                            const ST0r = T1r, ST0i = -T1i;
+                            const ST1r = T0r, ST1i = -T0i;
+                            const ST2r = -inv * T3i, ST2i = -inv * T3r;
+                            const ST3r = -inv * T2i, ST3i = -inv * T2r;
+
+                            const SA = outOff + quarterLen - i;
+                            const SB = outOff + halfLen - i;
+
+                            out[SA] = ST0r + ST2r; out[SA + 1] = ST0i + ST2i;
+                            out[SB] = ST1r + ST3i; out[SB + 1] = ST1i - ST3r;
+                        }
+                    }
+                }
+            }
+
+            _singleTransform2(outOff, off, step) {
+                const out = this._out;
+                const data = this._data;
+
+                const evenR = data[off], evenI = data[off + 1];
+                const oddR = data[off + step], oddI = data[off + step + 1];
+
+                out[outOff] = evenR + oddR; out[outOff + 1] = evenI + oddI;
+                out[outOff + 2] = evenR - oddR; out[outOff + 3] = evenI - oddI;
+            }
+
+            _singleTransform4(outOff, off, step) {
+                const out = this._out;
+                const data = this._data;
+                const inv = this._inv ? -1 : 1;
+                const step2 = step * 2, step3 = step * 3;
+
+                const Ar = data[off], Ai = data[off + 1];
+                const Br = data[off + step], Bi = data[off + step + 1];
+                const Cr = data[off + step2], Ci = data[off + step2 + 1];
+                const Dr = data[off + step3], Di = data[off + step3 + 1];
+
+                const T0r = Ar + Cr, T0i = Ai + Ci;
+                const T1r = Ar - Cr, T1i = Ai - Ci;
+                const T2r = Br + Dr, T2i = Bi + Di;
+                const T3r = inv * (Br - Dr), T3i = inv * (Bi - Di);
+
+                out[outOff] = T0r + T2r; out[outOff + 1] = T0i + T2i;
+                out[outOff + 2] = T1r + T3i; out[outOff + 3] = T1i - T3r;
+                out[outOff + 4] = T0r - T2r; out[outOff + 5] = T0i - T2i;
+                out[outOff + 6] = T1r - T3i; out[outOff + 7] = T1i + T3r;
+            }
+
+            _singleRealTransform2(outOff, off, step) {
+                const out = this._out;
+                const data = this._data;
+
+                const evenR = data[off], oddR = data[off + step];
+                out[outOff] = evenR + oddR; out[outOff + 1] = 0;
+                out[outOff + 2] = evenR - oddR; out[outOff + 3] = 0;
+            }
+
+            _singleRealTransform4(outOff, off, step) {
+                const out = this._out;
+                const data = this._data;
+                const inv = this._inv ? -1 : 1;
+                const step2 = step * 2, step3 = step * 3;
+
+                const Ar = data[off], Br = data[off + step];
+                const Cr = data[off + step2], Dr = data[off + step3];
+
+                const T0r = Ar + Cr, T1r = Ar - Cr;
+                const T2r = Br + Dr, T3r = inv * (Br - Dr);
+
+                out[outOff] = T0r + T2r; out[outOff + 1] = 0;
+                out[outOff + 2] = T1r; out[outOff + 3] = -T3r;
+                out[outOff + 4] = T0r - T2r; out[outOff + 5] = 0;
+                out[outOff + 6] = T1r; out[outOff + 7] = T3r;
+            }
+        }
+
+        // Audio convolution function
+        function fftConvolve(x, y, mode = 'same') {
+            const lenX = x.length;
+            const lenY = y.length;
+            const fullLen = lenX + lenY - 1;
+            const n = nextPow2(fullLen);
+
+            const xP = Float32Array.from({ length: n }, () => 0);
+            const yP = Float32Array.from({ length: n }, () => 0);
+            xP.set(x, 0);
+            yP.set(y, 0);
+
+            const fft = new FFT(n);
+            const A = fft.createComplexArray();
+            const B = fft.createComplexArray();
+
+            fft.realTransform(A, xP);
+            fft.realTransform(B, yP);
+            
+            if (typeof fft.completeSpectrum === 'function') {
+                fft.completeSpectrum(A);
+                fft.completeSpectrum(B);
+            }
+
+            const C = fft.createComplexArray();
+            for (let k = 0; k < n; k++) {
+                const ar = A[2 * k], ai = A[2 * k + 1];
+                const br = B[2 * k], bi = B[2 * k + 1];
+                C[2 * k] = ar * br - ai * bi;
+                C[2 * k + 1] = ai * br + ar * bi;
+            }
+
+            const out = fft.createComplexArray();
+            fft.inverseTransform(out, C);
+
+            const result = Float32Array.from({ length: fullLen }, () => 0);
+            for (let i = 0; i < fullLen; i++) {
+                result[i] = out[2 * i];
+            }
+
+            if (mode === 'same') {
+                const start = Math.floor((fullLen - lenX) / 2);
+                return result.slice(start, start + lenX);
+            }
+
+            return result;
+        }
+
+        // FFT class implementation
+        async function read(bufferOrBlob) {
+            let buffer;
+            if (bufferOrBlob instanceof Blob) buffer = await bufferOrBlob.arrayBuffer();
+            else if (bufferOrBlob instanceof ArrayBuffer) buffer = bufferOrBlob;
+            else if (bufferOrBlob instanceof Uint8Array) {
+                const tmp = new ArrayBuffer(bufferOrBlob.byteLength);
+                new Uint8Array(tmp).set(bufferOrBlob);
+                buffer = tmp;
+            } else throw new TypeError('Expected Blob, ArrayBuffer or Uint8Array');
+
+            const view = new DataView(buffer);
+            const readStr = (off, len) => {
+                let s = '';
+                for (let i = 0; i < len && off + i < view.byteLength; i++) {
+                    const c = view.getUint8(off + i);
+                    if (c === 0) break;
+                    s += String.fromCharCode(c);
+                }
+                return s;
+            };
+
+            if (readStr(0, 4) !== 'RIFF' || readStr(8, 4) !== 'WAVE') 
+                throw new Error('Not a valid WAVE file');
+
+            let offset = 12;
+            let fmt = null;
+            let dataOffset = -1;
+            let dataSize = 0;
+            let bextChunk = null;
+            let ixmlChunk = null;
+
+            while (offset + 8 <= view.byteLength) {
+                const id = readStr(offset, 4);
+                const size = view.getUint32(offset + 4, true);
+                const chunkStart = offset + 8;
+
+                if (id === 'fmt ') {
+                    const audioFormat = view.getUint16(chunkStart, true);
+                    const channels = view.getUint16(chunkStart + 2, true);
+                    const sampleRate = view.getUint32(chunkStart + 4, true);
+                    const byteRate = view.getUint32(chunkStart + 8, true);
+                    const blockAlign = view.getUint16(chunkStart + 12, true);
+                    const bitsPerSample = view.getUint16(chunkStart + 14, true);
+                    fmt = { audioFormat, channels, sampleRate, byteRate, blockAlign, bitsPerSample };
+                } else if (id === 'data') {
+                    dataOffset = chunkStart;
+                    dataSize = size;
+                }
+
+                offset = chunkStart + size;
+                if (size % 2 === 1) offset++;
+            }
+
+            if (!fmt) throw new Error('Missing "fmt " chunk');
+            if (dataOffset < 0) throw new Error('Missing "data" chunk');
+
+            const { audioFormat, channels, sampleRate, bitsPerSample } = fmt;
+            const bytesPerSample = bitsPerSample / 8;
+            const totalFrames = Math.floor(dataSize / (bytesPerSample * channels));
+            const out = new Float32Array(totalFrames * channels);
+
+            let p = dataOffset;
+            if (audioFormat === 1) {
+                if (bitsPerSample === 16) {
+                    for (let i = 0, o = 0; i < totalFrames * channels; i++, o++) {
+                        const v = view.getInt16(p, true);
+                        p += 2;
+                        out[o] = v < 0 ? v / 0x8000 : v / 0x7fff;
+                    }
+                } else if (bitsPerSample === 24) {
+                    for (let i = 0, o = 0; i < totalFrames * channels; i++, o++) {
+                        const b0 = view.getUint8(p++);
+                        const b1 = view.getUint8(p++);
+                        const b2 = view.getUint8(p++);
+                        let val = (b2 << 16) | (b1 << 8) | b0;
+                        if (val & 0x800000) val |= ~0xffffff;
+                        out[o] = val / 8388608;
+                    }
+                } else if (bitsPerSample === 32) {
+                    for (let i = 0, o = 0; i < totalFrames * channels; i++, o++) {
+                        const v = view.getInt32(p, true);
+                        p += 4;
+                        out[o] = v < 0 ? v / 0x80000000 : v / 0x7fffffff;
+                    }
+                } else {
+                    throw new Error('Unsupported PCM bitsPerSample: ' + bitsPerSample);
+                }
+            } else if (audioFormat === 3) {
+                if (bitsPerSample === 32) {
+                    for (let i = 0, o = 0; i < totalFrames * channels; i++, o++) {
+                        out[o] = view.getFloat32(p, true);
+                        p += 4;
+                    }
+                } else {
+                    throw new Error('Unsupported float bit depth: ' + bitsPerSample);
+                }
+            } else {
+                throw new Error('Unsupported audio format: ' + audioFormat);
+            }
+
+            return {
+                samples: out,
+                sampleRate,
+                channels,
+                bitsPerSample,
+                format: audioFormat,
+                frames: totalFrames,
+                bext: bextChunk,
+                ixml: ixmlChunk
+            };
+        }
+
+        // Wave file download function  
+        function download(samples, sampleRate = 48000, name = 'output') {
+            const channels = 1;
+            const bytesPerSample = 2; // 16-bit
+            const blockAlign = channels * bytesPerSample;
+            const byteRate = sampleRate * blockAlign;
+            const dataSize = samples.length * bytesPerSample;
+            const fileSize = 44 + dataSize;
+
+            const buffer = new ArrayBuffer(fileSize);
+            const view = new DataView(buffer);
+            
+            const writeString = (offset, string) => {
+                for (let i = 0; i < string.length; i++) {
+                    view.setUint8(offset + i, string.charCodeAt(i));
+                }
+            };
+
+            writeString(0, 'RIFF');
+            view.setUint32(4, fileSize - 8, true);
+            writeString(8, 'WAVE');
+            writeString(12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true); // PCM
+            view.setUint16(22, channels, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, byteRate, true);
+            view.setUint16(32, blockAlign, true);
+            view.setUint16(34, 16, true); // bits per sample
+            writeString(36, 'data');
+            view.setUint32(40, dataSize, true);
+
+            let offset = 44;
+            for (let i = 0; i < samples.length; i++) {
+                const s = Math.max(-1, Math.min(1, samples[i]));
+                view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+                offset += 2;
+            }
+
+            const blob = new Blob([buffer], { type: 'audio/wav' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = name;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+        }
+
+        // === APPLICATION CODE ===
+        let firData = null;
+        let audioData = null;
+        let processedAudio = null;
+        
+        const firUploadBox = document.getElementById('firUploadBox');
+        const audioUploadBox = document.getElementById('audioUploadBox');
+        const firFileInput = document.getElementById('firFileInput');
+        const audioFileInput = document.getElementById('audioFileInput');
+        const processBtn = document.getElementById('processBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const statusMessage = document.getElementById('statusMessage');
+        const statusText = document.getElementById('statusText');
+        const progressFill = document.getElementById('progressFill');
+        
+        // File upload handlers
+        function setupFileUpload(uploadBox, fileInput, infoDiv, fileNameEl, fileDetailsEl, onFileLoaded) {
+            uploadBox.addEventListener('click', () => fileInput.click());
+            
+            uploadBox.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                uploadBox.classList.add('dragover');
+            });
+            
+            uploadBox.addEventListener('dragleave', () => {
+                uploadBox.classList.remove('dragover');
+            });
+            
+            uploadBox.addEventListener('drop', (e) => {
+                e.preventDefault();
+                uploadBox.classList.remove('dragover');
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    handleFileUpload(files[0], uploadBox, infoDiv, fileNameEl, fileDetailsEl, onFileLoaded);
+                }
+            });
+            
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    handleFileUpload(e.target.files[0], uploadBox, infoDiv, fileNameEl, fileDetailsEl, onFileLoaded);
+                }
+            });
+        }
+        
+        async function handleFileUpload(file, uploadBox, infoDiv, fileNameEl, fileDetailsEl, onFileLoaded) {
+            try {
+                showStatus('Loading file...', 'processing');
+                setProgress(10);
+                
+                const waveData = await read(file);
+                setProgress(50);
+                
+                uploadBox.classList.add('uploaded');
+                infoDiv.classList.add('visible');
+                fileNameEl.textContent = file.name;
+                fileDetailsEl.textContent = `${waveData.channels} ch, ${waveData.sampleRate} Hz, ${waveData.frames} samples`;
+                
+                setProgress(100);
+                onFileLoaded(waveData, file.name);
+                
+                setTimeout(() => hideStatus(), 1000);
+            } catch (error) {
+                console.error('Error loading file:', error);
+                showStatus(`Error loading file: ${error.message}`, 'error');
+                uploadBox.classList.remove('uploaded');
+                infoDiv.classList.remove('visible');
+            }
+        }
+        
+        function showStatus(text, type = 'processing') {
+            statusText.textContent = text;
+            statusMessage.className = `status visible ${type}`;
+        }
+        
+        function hideStatus() {
+            statusMessage.classList.remove('visible');
+            setProgress(0);
+        }
+        
+        function setProgress(percent) {
+            progressFill.style.width = `${percent}%`;
+        }
+        
+        function updateProcessButton() {
+            processBtn.disabled = !firData || !audioData;
+        }
+        
+        setupFileUpload(
+            firUploadBox, 
+            firFileInput, 
+            document.getElementById('firFileInfo'),
+            document.getElementById('firFileName'),
+            document.getElementById('firFileDetails'),
+            (waveData, filename) => {
+                firData = waveData;
+                updateProcessButton();
+            }
+        );
+        
+        setupFileUpload(
+            audioUploadBox, 
+            audioFileInput, 
+            document.getElementById('audioFileInfo'),
+            document.getElementById('audioFileName'),
+            document.getElementById('audioFileDetails'),
+            (waveData, filename) => {
+                audioData = waveData;
+                updateProcessButton();
+            }
+        );
+        
+        processBtn.addEventListener('click', async () => {
+            if (!firData || !audioData) return;
+            
+            try {
+                showStatus('Processing audio with FIR filter...', 'processing');
+                setProgress(10);
+                
+                // Validate filter size to prevent stack overflow
+                if (firData.frames > 100000) { // ~2.1 seconds at 48kHz for FIR
+                    throw new Error(`FIR filter too large (${firData.frames} samples). Maximum supported: 100000 samples.`);
+                }
+                
+                // Extract audio samples (convert to mono if stereo)
+                let audioSamples = audioData.samples;
+                if (audioData.channels > 1) {
+                    // Convert stereo to mono by averaging channels
+                    const monoSamples = new Float32Array(audioData.frames);
+                    for (let i = 0; i < audioData.frames; i++) {
+                        let sum = 0;
+                        for (let ch = 0; ch < audioData.channels; ch++) {
+                            sum += audioSamples[i * audioData.channels + ch];
+                        }
+                        monoSamples[i] = sum / audioData.channels;
+                    }
+                    audioSamples = monoSamples;
+                }
+                setProgress(30);
+                
+                // Extract FIR filter impulse response (convert to mono if stereo)
+                let firSamples = firData.samples;
+                if (firData.channels > 1) {
+                    // Convert stereo to mono by averaging channels
+                    const monoFir = new Float32Array(firData.frames);
+                    for (let i = 0; i < firData.frames; i++) {
+                        let sum = 0;
+                        for (let ch = 0; ch < firData.channels; ch++) {
+                            sum += firSamples[i * firData.channels + ch];
+                        }
+                        monoFir[i] = sum / firData.channels;
+                    }
+                    firSamples = monoFir;
+                }
+                setProgress(50);
+                
+                showStatus('Applying convolution...', 'processing');
+                
+                // Apply FIR filter using chunked FFT convolution for large files
+                let filtered;
+                try {
+                    filtered = fftConvolveChunked(audioSamples, firSamples, 'same');
+                } catch (error) {
+                    // Fallback to even smaller chunks or direct convolution
+                    if (audioSamples.length > 50000 || firSamples.length > 10000) {
+                        throw new Error('Files too large for processing. Please use smaller audio files.');
+                    }
+                    // For very small files, try direct convolution
+                    filtered = fftConvolve(audioSamples, firSamples, 'same');
+                }
+                setProgress(80);
+                
+                // Normalize to prevent clipping
+                let maxVal = 0;
+                for (let i = 0; i < filtered.length; i++) {
+                    const absVal = Math.abs(filtered[i]);
+                    if (absVal > maxVal) maxVal = absVal;
+                }
+                if (maxVal > 1.0) {
+                    for (let i = 0; i < filtered.length; i++) {
+                        filtered[i] /= maxVal;
+                    }
+                }
+                setProgress(90);
+                
+                processedAudio = {
+                    samples: filtered,
+                    sampleRate: audioData.sampleRate
+                };
+                
+                setProgress(100);
+                showStatus('Processing complete!', 'success');
+                
+                processBtn.style.display = 'none';
+                downloadBtn.style.display = 'inline-block';
+                
+                setTimeout(() => hideStatus(), 2000);
+                
+            } catch (error) {
+                console.error('Error processing audio:', error);
+                showStatus(`Processing failed: ${error.message}`, 'error');
+            }
+        });
+        
+        downloadBtn.addEventListener('click', () => {
+            if (!processedAudio) return;
+            
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+            const filename = `filtered_audio_${timestamp}.wav`;
+            
+            download(
+                processedAudio.samples,
+                processedAudio.sampleRate,
+                filename
+            );
+            
+            showStatus('Download started!', 'success');
+            setTimeout(() => hideStatus(), 2000);
+        });
+        
+        // Initialize
+        updateProcessButton();
+    </script>
+</body>
+</html>

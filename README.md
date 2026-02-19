@@ -5,6 +5,16 @@ Minimal README for the dunkadunka.se repository.
 ## Overview
 A small web project (static site or web app). This repo contains source, assets and deployment configuration for dunkadunka.se.
 
+## Tools
+
+- **[index.html](index.html)** - Main waveform frequency response analyzer
+- **[level.html](level.html)** - Level meter tool
+- **[p56-analyzer.html](p56-analyzer.html)** - P.56 active speech level analyzer
+- **[fir-filter.html](fir-filter.html)** - FIR filter application tool for applying .fir files to audio (NEW!)
+- **[waveform-composer.html](waveform-composer.html)** - 2-channel waveform composer
+- **[loopback/index.html](loopback/index.html)** - Audio loopback test
+- **[native-messaging-demo/README.md](native-messaging-demo/README.md)** - Native messaging demo for local OS volume control (popup + `three-channel-router.html`)
+
 ## Contents
 - README.md — this file
 - response/ — supporting content (this README is located here)

@@ -1,12 +1,13 @@
-import { Audio, computeFFT, updatedFFT, computeFFTFromIR, db, FFTResult, groupDelays, ImpulseResponseResult, loadAudioFromFilename, rms, smoothFFT, twoChannelFFT, twoChannelImpulseResponse, dbToLinear } from "./audio";
+import { Audio, computeFFT, computeIFFT, updatedFFT, computeFFTFromIR, db, FFTResult, groupDelays, ImpulseResponseResult, loadAudioFromFilename, rms, smoothFFT, twoChannelFFT, twoChannelImpulseResponse, dbToLinear } from "./audio";
 import { Farina, plotDistortion, plotTHD } from "./farina";
 import { storage } from "./storage";
 import { audio } from "./audio";
 import "./device-settings";
-import { average, linspace, max, nextPow2 } from "./math";
+import { linspace, max, nextPow2, closest, abs } from "./math";
 import { COLORS, plot } from "./plotting";
 import { AudioRecorder } from "./recorder";
-import { download, BextChunk, convertToIXML } from "./wave";
+import { download, convertToIXML } from "./wave";
+import { BiquadCoefficients, firToMinPhase, generateTargetCurve, getFrequencyResponse, createBiquadCoefficients } from "./filter";
 
 console.debug("App module loaded");
 
@@ -500,8 +501,33 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
         <div class="flex h-full">
             <div class="flex-none w-86 border-r border-[#ddd] p-2 relative sidecar" style="transition:50ms linear;">
                 <div class="section">
-                    <div class="title">Settings</div>
-                    <p><i>There are no settings for this analysis.</i></p>
+                    <div class="title">Generate FIR Filter</div>
+                    <div class="param-row" style="margin-bottom: 8px;">
+                        <label for="fir-freq-start-${tabId}" style="font-size: 12px;">Freq Start (Hz):</label>
+                        <input type="number" id="fir-freq-start-${tabId}" min="10" max="20000" value="100" class="param-input" style="width: 100%; font-size: 12px;">
+                    </div>
+                    <div class="param-row" style="margin-bottom: 8px;">
+                        <label for="fir-freq-end-${tabId}" style="font-size: 12px;">Freq End (Hz):</label>
+                        <input type="number" id="fir-freq-end-${tabId}" min="10" max="20000" value="20000" class="param-input" style="width: 100%; font-size: 12px;">
+                    </div>
+                    <div class="param-row" style="margin-bottom: 8px;">
+                        <label for="fir-taps-${tabId}" style="font-size: 12px;">Filter Taps:</label>
+                        <input type="number" id="fir-taps-${tabId}" min="32" max="8192" value="2048" class="param-input" style="width: 100%; font-size: 12px;">
+                    </div>
+                    <div class="param-row" style="margin-bottom: 8px;">
+                        <label for="fir-epsilon-${tabId}" style="font-size: 12px;">Regularization (β):</label>
+                        <input type="number" id="fir-epsilon-${tabId}" min="0.000001" max="1" step="0.000001" value="0.1" class="param-input" style="width: 100%; font-size: 12px;">
+                    </div>
+                    <div class="param-row" style="margin-bottom: 8px;">
+                        <label for="fir-target-${tabId}" style="font-size: 12px;">Target Curve:</label>
+                        <select id="fir-target-${tabId}" class="param-input" style="width: 100%; font-size: 12px;">
+                            <option value="flat">Flat (0 dB)</option>
+                            <option value="tilt">-1 dB/decade Tilt</option>
+                            <option value="harman">Harman Target</option>
+                        </select>
+                    </div>
+                    <button id="generate-fir-${tabId}" class="button-custom button-custom-primary" style="width: 100%; margin-top: 8px; font-size: 12px;">Generate & Download Filter</button>
+                    <p id="fir-status-${tabId}" style="margin-top: 8px; font-size: 11px; color: #666;"></p>
                 </div>
                 <div class="section">
                     <div class="title">Plots</div>
@@ -563,6 +589,247 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
                     sidebarToggleBtn.title = 'Open settings pane';
                 }
             });
+
+            // FIR filter generation handler
+            const generateFirBtn = content.querySelector(`#generate-fir-${tabId}`) as HTMLButtonElement;
+            const firStatusEl = content.querySelector(`#fir-status-${tabId}`) as HTMLParagraphElement;
+            
+            if (generateFirBtn && referenceData) {
+                generateFirBtn.addEventListener('click', async () => {
+                    try {
+                        if (firStatusEl) {
+                            firStatusEl.textContent = 'Generating FIR filter...';
+                            firStatusEl.style.color = '#0366d6';
+                        }
+                        generateFirBtn.disabled = true;
+
+                        // Get parameters from UI
+                        const freqStartInput = content.querySelector(`#fir-freq-start-${tabId}`) as HTMLInputElement;
+                        const freqEndInput = content.querySelector(`#fir-freq-end-${tabId}`) as HTMLInputElement;
+                        const tapsInput = content.querySelector(`#fir-taps-${tabId}`) as HTMLInputElement;
+                        const epsilonInput = content.querySelector(`#fir-epsilon-${tabId}`) as HTMLInputElement;
+                        const targetCurveInput = content.querySelector(`#fir-target-${tabId}`) as HTMLSelectElement;
+                        
+                        if (!freqStartInput || !freqEndInput || !tapsInput || !epsilonInput || !targetCurveInput) {
+                            throw new Error('Filter parameter inputs not found');
+                        }
+                        
+                        const freqStart = parseFloat(freqStartInput.value);
+                        const freqEnd = parseFloat(freqEndInput.value);
+                        const taps = parseInt(tapsInput.value);
+                        const beta = parseFloat(epsilonInput.value);
+                        const targetCurveType = targetCurveInput.value;
+
+
+                        // Compute the transfer function
+                        const responseSamples = responseData.getChannelData(0);
+                        const referenceSamples = referenceData.getChannelData(0);
+                        const ir: ImpulseResponseResult = twoChannelImpulseResponse(responseSamples, referenceSamples);
+                        const transferFunction: FFTResult = computeFFTFromIR(ir);
+
+
+                        // Create target curve (apply curve in specified range, measured outside)
+                        const N = transferFunction.frequency.length;
+                        const targetMagnitude = generateTargetCurve(targetCurveType, transferFunction.frequency, freqStart, freqEnd);
+                        
+                        const normalizeFrequency = 1000; // 1 kHz reference
+                        const normalizeFrequencyIdx = closest(normalizeFrequency, transferFunction.frequency);
+                        const normalizeFrequencyStartIdx = closest(freqStart, transferFunction.frequency);
+                        const normalizeFrequencyEndIdx = closest(freqEnd, transferFunction.frequency);
+
+                        // Normalize target curve to 0 dB at 1000 Hz
+                        const normalizationFactor = rms(transferFunction.magnitude.slice(normalizeFrequencyStartIdx, normalizeFrequencyEndIdx + 1));
+                        for (let k = 0; k < N; k++) {
+                            transferFunction.magnitude[k] /= normalizationFactor;
+                            targetMagnitude[k] /= targetMagnitude[normalizeFrequencyIdx];
+                        }
+
+                        const transferFunctionDb = db(transferFunction.magnitude);
+                        const targetMagnitudeDb = db(targetMagnitude);
+
+                        //Plot the target curve for debugging
+                        plot(
+                            [
+                                { x: transferFunction.frequency, y: transferFunctionDb, name: 'Measured Response', line: { color: '#1f77b4', width: 1 } },
+                                { x: transferFunction.frequency, y: targetMagnitudeDb, name: 'Target Curve', line: { color: '#d62728', width: 1 } },
+                                { x: transferFunction.frequency, y: targetMagnitudeDb.map((val, idx) => val - transferFunctionDb[idx]), name: 'Difference', line: { color: '#ff7f0e', width: 1 } }
+                            ],
+                            tabId,
+                            'Target Curve Debug',
+                            'Frequency (Hz)',
+                            'Magnitude (dB)',
+                            { type: 'log', range: [Math.log10(20), Math.log10(20000)] },
+                            {},
+                            {},
+                            false
+                        );
+
+                        const inverseDifference = dbToLinear(transferFunctionDb.map((val, idx) => val - targetMagnitudeDb[idx]));
+                        
+                        const targetRe = new Float32Array(N);
+                        const betaResponse = new Float32Array(N);
+                        
+                        for (let k = 0; k < N; k++) {
+                            const freq = transferFunction.frequency[k];
+                            if (freq >= freqStart && freq <= freqEnd) {
+                                // Use target curve in the correction range
+                                targetRe[k] = inverseDifference[k];
+                                betaResponse[k] = beta;
+                            } else {
+                                // Outside range: roll off to 1.0 with 12 dB/decade fade
+                                const octavesFromRange = freq < freqStart 
+                                    ? Math.log2(freqStart / freq)
+                                    : Math.log2(freq / freqEnd);
+                                const attenDb = octavesFromRange * 24; // 12 dB per octave
+                                const fadeToOne = Math.pow(10, -attenDb / 20);
+                                targetRe[k] = inverseDifference[k] * fadeToOne + (1 - fadeToOne);
+                                betaResponse[k] = (1 - fadeToOne - (1 - fadeToOne)) * beta; // Minimal regularization outside the correction range
+                            }
+                        }
+                        // Plot target real part for debugging
+                        plot(
+                            [
+                                { x: transferFunction.frequency, y: db(targetRe), name: 'Target Real Part', line: { color: '#2ca02c', width: 1 } }
+                            ],
+                            tabId,
+                            'Target Real Part Debug',
+                            'Frequency (Hz)',
+                            'Magnitude (dB)',
+                            { type: 'log', range: [Math.log10(20), Math.log10(20000)] },
+                            {},
+                            {},
+                            false
+                        );
+
+                        // Apply smoothing to targetRe for better FIR design
+                        const smoothedTargetRe = smoothFFT({ frequency: transferFunction.frequency, magnitude: targetRe, phase: new Float32Array(N), fftSize: N }, 1 / 6).magnitude;
+
+                        // Run Kirkeby regularization... compute the regularization factor for each frequency bin.
+                        const kirkeby = new Float32Array(N);
+                        for (let k = 0; k < N; k++) {
+                            const numerator = smoothedTargetRe[k];
+                            const denominator = smoothedTargetRe[k] * smoothedTargetRe[k] + betaResponse[k];
+                            kirkeby[k] = numerator / denominator;
+                        }
+
+                        //Compute inverse FFT of Kirkeby regularization to get FIR coefficients
+                        const kirkebyFFT: FFTResult = {
+                            frequency: transferFunction.frequency,
+                            magnitude: kirkeby,
+                            phase: zeros(N),
+                            fftSize: N
+                        };
+                        const kirkebyFIR = computeIFFT(kirkebyFFT);
+
+                        // Make FIR causal by mirroring
+                        const linearPhaseFIR = new Float32Array(taps);
+                        const halfaTaps = Math.floor(taps / 2);
+                        for (let n = 0; n < taps; n++) {
+                            const idx = Math.abs(n - halfaTaps); // Circular shift
+                            linearPhaseFIR[n] = kirkebyFIR[idx];
+                        }
+                        if (firStatusEl) {
+                            firStatusEl.textContent = 'Converting to minimum phase...';
+                        }
+                        
+                        // Convert to minimum phase
+                        const minPhaseFIR = firToMinPhase(linearPhaseFIR, taps); // Zero-pad for better frequency resolution in the cepstrum
+
+                        if (firStatusEl) {
+                            firStatusEl.textContent = 'Computing filter response...';
+                        }
+                        
+
+                        plot(
+                            [
+                                { x: Array.from({ length: linearPhaseFIR.length }, (_, i) => i), y: linearPhaseFIR, name: 'Linear Phase Kirkeby FIR Coefficients', line: { color: '#1f77b4', width: 1 } },
+                                { x: Array.from({ length: minPhaseFIR.length }, (_, i) => i), y: minPhaseFIR, name: 'Minimum Phase FIR Coefficients', line: { color: '#d62728', width: 1 } }
+                            ],
+                            tabId,
+                            'Kirkeby FIR DebugUnshifted',
+                            'Sample Index',
+                            'Amplitude',
+                            {},
+                            {},
+                            {},
+                            false
+                        );
+
+                        // Plot response of Kirkeby FIR for debugging
+                        const kirkebyFIRFFT = computeFFT(linearPhaseFIR);
+                        const kirkebyMinPhaseFIRFFT = computeFFT(minPhaseFIR);
+                        
+                        // Plot Kirkeby regularization factor for debugging
+                        plot(
+                            [
+                                { x: transferFunction.frequency, y: db(smoothedTargetRe).map(v => -v), name: 'Target Real Part', line: { color: '#2ca02c', width: 1 } },
+                                { x: transferFunction.frequency, y: db(kirkeby), name: 'Kirkeby Regularization Factor', line: { color: '#9467bd', width: 1 } },
+                                { x: kirkebyFIRFFT.frequency, y: db(kirkebyFIRFFT.magnitude), name: 'Kirkeby FIR Response', line: { color: '#1f77b4', width: 1 } },
+                                { x: kirkebyMinPhaseFIRFFT.frequency, y: db(kirkebyMinPhaseFIRFFT.magnitude), name: 'Minimum Phase Kirkeby FIR Response', line: { color: '#d62728', width: 1 } }
+                            
+                            ],
+                            tabId,
+                            'Kirkeby Regularization Debug',
+                            'Frequency (Hz)',
+                            'Magnitude (dB)',
+                            { type: 'log', range: [Math.log10(20), Math.log10(20000)] },
+                            {},
+                            {},
+                            false
+                        );
+
+                        // Ensure this tab is active before plotting
+                        console.log('Switching to tab:', tabId);
+                        switchTab(tabId);
+
+                        if (firStatusEl) {
+                            firStatusEl.textContent = 'Downloading filter...';
+                        }
+
+                        // Download as WAV file
+                        const sampleRate = responseData.sampleRate || 48000;
+                        download(
+                            minPhaseFIR,
+                            sampleRate,
+                            `fir_filter_${targetCurveType}_${freqStart}-${freqEnd}Hz_${taps}taps.fir`,
+                            {},
+                            convertToIXML(`
+                                <FILTER_TYPE>FIR_MINIMUM_PHASE</FILTER_TYPE>
+                                <FILTER_TAPS>${taps}</FILTER_TAPS>
+                                <FREQ_START>${freqStart}</FREQ_START>
+                                <FREQ_END>${freqEnd}</FREQ_END>
+                                <KIRKEBY_EPSILON>${beta}</KIRKEBY_EPSILON>
+                                <TARGET_CURVE>${targetCurveType}</TARGET_CURVE>
+                                <SAMPLE_RATE>${sampleRate}</SAMPLE_RATE>
+                                <GENERATED>${new Date().toISOString()}</GENERATED>
+                            `)
+                        );
+
+                        if (firStatusEl) {
+                            firStatusEl.textContent = `✓ Filter generated (${taps} taps, ${targetCurveType} target, ${freqStart}-${freqEnd} Hz)`;
+                            firStatusEl.style.color = '#28a745';
+                        }
+                        
+                    } catch (error) {
+                        console.error('Error generating FIR filter:', error);
+                        if (firStatusEl) {
+                            firStatusEl.textContent = `Error: ${(error as Error).message}`;
+                            firStatusEl.style.color = '#d73a49';
+                        }
+                    } finally {
+                        generateFirBtn.disabled = false;
+                    }
+                });
+            } else if (generateFirBtn && !referenceData) {
+                // Disable button if no reference data
+                generateFirBtn.disabled = true;
+                generateFirBtn.title = 'Reference signal required for filter generation';
+                if (firStatusEl) {
+                    firStatusEl.textContent = 'Reference signal required';
+                    firStatusEl.style.color = '#d73a49';
+                }
+            }
+
 
             let isResizing = false;
             let lastDownX = 0;
@@ -683,7 +950,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
                     {},
                     {},
                     {},
-                    false
+                    true
                 );
 
                 plot(
@@ -713,7 +980,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
                     { range: [-1, 1] },
                     { range: [-150, 10] },
                     {},
-                    false
+                    true
                 );
                 const transferFunction = computeFFTFromIR(ir);
                 // const dreferenceFFT = twoChannelFFT(responseData.data, referenceSamples, nextPow2(referenceSamples.length), -5627);
@@ -733,7 +1000,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
                     { type: 'log', range: [Math.log10(20), Math.log10(20000)] },
                     { range: [-85, 5] },
                     {},
-                    false
+                    true
                 );
 
                 plot(
@@ -748,7 +1015,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
                     { type: 'log', range: [Math.log10(20), Math.log10(20000)] },
                     { range: [-720, 720] },
                     {},
-                    false
+                    true
                 );
                 plot(
                     [
@@ -761,7 +1028,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
                     { type: 'log', range: [Math.log10(20), Math.log10(20000)] },
                     { range: [-20, 20] },
                     {},
-                    false
+                    true
                 );
 
                 // --- Colormap / Spectrogram (Plotly heatmap) ---
@@ -844,7 +1111,7 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
                         {},
                         { type: 'log', range: [Math.log10(20), Math.log10(20000)] },
                         { margin: { l: 60, r: 20, t: 40, b: 50 } },
-                        false
+                        true
                     );
                 })();
             }
@@ -1087,7 +1354,7 @@ function createDirectivityPlotTab(responseDatas: Audio[], referenceData: Audio, 
                 { type: 'log', range: [Math.log10(20), Math.log10(20000)] },
                 { range: [-85, 5] },
                 {},
-                false
+                true
             );
 
             // Plot directivity index.
@@ -1102,7 +1369,7 @@ function createDirectivityPlotTab(responseDatas: Audio[], referenceData: Audio, 
                 { type: 'log', range: [Math.log10(20), Math.log10(20000)] },
                 { range: [-10, 50] },
                 {},
-                false
+                true
             );
 
             // Polar directivity plots (add several frequency slices)
@@ -1285,8 +1552,8 @@ function createListItem(audioObject: Audio, id: string): HTMLLIElement {
             <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${audioObject.metadata?.filename || 'Unknown'}</div>
             <div style="font-size:12px;color:#666;">${audioObject.metadata?.mime || 'audio/*'}</div>
             <div style="font-size:12px;color:#666;">Duration: ${audioObject.duration.toFixed(2)} seconds</div>
-            <div style="font-size:12px;color:#666;">Angle: ${audioObject?.metadata?.iXML?.angle ?? 'N/A'} deg</div>
-            <div style="font-size:12px;color:#666;">Origin: ${audioObject?.metadata?.iXML?.origin ?? 'Imported'}</div>
+            <div style="font-size:12px;color:#666;">Angle: ${typeof audioObject?.metadata?.iXML === 'object' && audioObject.metadata.iXML && 'angle' in audioObject.metadata.iXML ? (audioObject.metadata.iXML as any).angle : 'N/A'} deg</div>
+            <div style="font-size:12px;color:#666;">Origin: ${typeof audioObject?.metadata?.iXML === 'object' && audioObject.metadata?.iXML && 'origin' in audioObject.metadata.iXML ? (audioObject.metadata.iXML as any).origin : 'Imported'}</div>
         </div>
         <div class="file-list-item-controls flex:1;min-width:0;">
             <div><label style="font-size:13px;"><input type="radio" name="selectedResponse" value="${id}"> Response</label></div>
@@ -1336,15 +1603,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const respInput = document.getElementById('responseFileUpload');
     const refInput = document.getElementById('referenceFileUpload'); // exists below
     if (respInput) respInput.addEventListener('change', e => {
-        if (e?.target?.files?.length) addFilesFromInput(e.target.files);
-        e.target.value = '';
+        const target = e.target as HTMLInputElement;
+        if (target?.files?.length) addFilesFromInput(target.files);
+        target.value = '';
     });
 
-    document.getElementById('fileList').addEventListener('click', e => {
-        const li = e.target.closest('li');
+    document.getElementById('fileList')?.addEventListener('click', e => {
+        const li = (e.target as HTMLElement).closest('li');
         if (!li) return;
         const id = li.dataset.id;
-        if (e.target.matches('button[data-action="remove"]')) {
+        if ((e.target as HTMLElement).matches('button[data-action="remove"]')) {
             // remove
             // if removed file was chosen in underlying file inputs, clear radios
             const responseRadio = document.querySelector(`input[name="selectedResponse"][value="${id}"]`);
@@ -1365,8 +1633,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    document.getElementById('fileList').addEventListener('change', e => {
-        if (e.target.name === 'selectedResponse') {
+    document.getElementById('fileList')?.addEventListener('change', e => {
+        if ((e.target as HTMLInputElement).name === 'selectedResponse') {
             // ensure analyze button is enabled/disabled
             updateAnalyzeState();
         }
@@ -1401,10 +1669,138 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        createAnalysisTab(response.applyGain(1 / 16384), reference ? reference.applyGain(1 / 16384) : null, response.metadata?.filename || 'Response', reference?.metadata?.filename || 'Reference');
+        createAnalysisTab(response.applyGain(1 / 16384), reference ? reference.applyGain(1 / 16384) : null, response.metadata?.filename + '' || 'Response', (reference?.metadata?.filename || 'Reference') as string);
     });
 });
 
-loadTestPolarData();
+//loadTestPolarData();
 // Load state on page load
 loadState();
+
+function zeros(N: number): Float32Array {
+    return new Float32Array(N);
+}
+function fitBiquadFilters(kirkeby: Float32Array, frequency: Float32Array, numBiquads: number) {
+    // Fit numBiquads cascaded biquad filters to approximate the kirkeby magnitude response
+    // using least squares optimization
+    
+    const N = kirkeby.length;
+    if (N === 0) throw new Error("kirkeby array is empty");
+    
+    const biquads: BiquadCoefficients[] = [];
+    const sampleRate = 48000;
+    
+    // Initialize biquad parameters: [freq1, Q1, gain1, freq2, Q2, gain2, ...]
+    const numParams = numBiquads * 3;
+    let params = new Float32Array(numParams);
+    
+    // Initialize with logarithmically spaced frequencies
+    const minFreq = Math.max(frequency[0], 20);
+    const maxFreq = Math.min(frequency[N - 1], sampleRate / 2);
+    const logMinFreq = Math.log10(minFreq);
+    const logMaxFreq = Math.log10(maxFreq);
+    
+    for (let i = 0; i < numBiquads; i++) {
+        const logFreq = logMinFreq + ((i + 0.5) / numBiquads) * (logMaxFreq - logMinFreq);
+        params[i * 3] = Math.pow(10, logFreq); // center frequency
+        params[i * 3 + 1] = 1.0; // Q
+        params[i * 3 + 2] = 0.0; // gain in dB
+    }
+    console.log('Initial biquad parameters:', params);
+    
+    // Compute cascaded response for given parameters
+    function computeResponse(p: Float32Array): Float32Array {
+        const response = new Float32Array(N);
+        
+        for (let i = 0; i < numBiquads; i++) {
+            const centerFreq = p[i * 3];
+            const Q = Math.max(0.1, p[i * 3 + 1]);
+            const gainDb = p[i * 3 + 2];
+            
+            const biquad = createBiquadCoefficients('peaking', centerFreq, Q, gainDb, sampleRate);
+            const [biquadMags, _] = getFrequencyResponse(biquad, N);
+            console.log(`Biquad ${i + 1}: freq=${centerFreq.toFixed(2)} Hz, Q=${Q.toFixed(2)}, gain=${gainDb.toFixed(2)} dB`);
+            
+            response.set(response.map((v, k) => v + db(biquadMags[k])));
+        }
+        return dbToLinear(response);
+    }
+    
+    // Compute error (sum of squared differences in dB)
+    function computeError(p: Float32Array): number {
+        const response = computeResponse(p);
+        let error = 0;
+        for (let k = 0; k < N; k++) {
+            const targetDb = db(kirkeby[k]);
+            const responseDb = db(response[k]);
+            const diff = targetDb - responseDb;
+            error += diff;
+        }
+        return error;
+    }
+    
+    // Simple gradient descent optimization
+    const learningRate = 0.1;
+    const maxIterations = 10;
+    const epsilon = 1e-3;
+    
+    for (let iter = 0; iter < maxIterations; iter++) {
+        const currentError = computeError(params);
+        console.log(`Iteration ${iter + 1}, Error: ${currentError.toFixed(4)}`);
+        let improved = false;
+        
+        for (let i = 0; i < numParams; i++) {
+            let delta = epsilon;
+            const original = params[i];
+
+            // Add constraints
+            if (i % 3 === 0) {
+                delta = 10
+            } else if (i % 3 === 1) {
+                delta = 0.1
+            } else {
+                delta = 1.0
+            }
+            
+            params[i] = original + delta;
+            const errorPlus = computeError(params);
+            
+            params[i] = original - delta;
+            const errorMinus = computeError(params);
+            
+            params[i] = original;
+            
+            const gradient = (errorPlus - errorMinus) / (2 * delta);
+            const newValue = original - learningRate * gradient;
+            
+            // Add constraints
+            if (i % 3 === 0) {
+                // Frequency: keep in valid range
+                params[i] = Math.max(20, Math.min(sampleRate / 2, newValue));
+            } else if (i % 3 === 1) {
+                // Q: keep positive
+                params[i] = Math.min(Math.max(0.1, newValue), 20);
+            } else {
+                // Gain: keep reasonable range
+                params[i] = Math.max(-24, Math.min(24, newValue));
+            }
+            
+            if (Math.abs(params[i] - original) > 1e-8) {
+                improved = true;
+            }
+        }
+    }
+    
+    // Create biquad coefficients from optimized parameters
+    for (let i = 0; i < numBiquads; i++) {
+        const centerFreq = params[i * 3];
+        const Q = Math.max(0.1, params[i * 3 + 1]);
+        const gainDb = params[i * 3 + 2];
+        
+        const biquad = createBiquadCoefficients('peaking', centerFreq, Q, gainDb, sampleRate);
+        biquads.push(biquad);
+    }
+    
+    return biquads;
+}
+

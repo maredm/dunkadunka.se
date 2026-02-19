@@ -756,20 +756,6 @@ function loadAudioFile(file) {
     return Audio.fromAudioBuffer(audioBuffer, metadata);
   });
 }
-function loadAudioFromBlob(blob, filename) {
-  return __async(this, null, function* () {
-    const file = blob instanceof File ? blob : new File([blob], filename != null ? filename : "blob", { type: blob.type || "" });
-    return yield loadAudioFile(file);
-  });
-}
-function loadAudioFromFilename(filename) {
-  return __async(this, null, function* () {
-    const resp = yield fetch(filename);
-    const blob = yield resp.blob();
-    console.log(`Fetched audio file from ${filename}:`, blob);
-    return yield loadAudioFromBlob(blob, filename);
-  });
-}
 var Audio = class _Audio extends AudioBuffer {
   constructor() {
     super(...arguments);
@@ -788,14 +774,14 @@ var Audio = class _Audio extends AudioBuffer {
     console.log("Created Audio from AudioBuffer with metadata:", audio2.metadata);
     return audio2;
   }
-  static fromSamples(samples, sampleRate = 48e3, metadata) {
+  static fromSamples(samples, sampleRate = 48e3, metadata = {}) {
     if (!samples || samples.length == 0) return new _Audio({ length: 0, numberOfChannels: 1, sampleRate });
     const audio2 = new _Audio({
       length: samples.length,
       numberOfChannels: 1,
       sampleRate
     });
-    audio2.copyToChannel(samples, 0);
+    audio2.copyToChannel(new Float32Array(samples), 0);
     audio2.metadata = metadata;
     return audio2;
   }
@@ -977,10 +963,15 @@ function chirp(f_start, f_stop, duration = null, rate = null, fade = 0.01, fs = 
   for (let i = 0; i < sweep.length; i++) sweepWindowed[i] = sweep[i] * window2[i];
   return [sweepWindowed, t, envelope];
 }
-function smoothFFT(fftData, fraction, resolution) {
+function smoothFFT(fftData, fraction, resolution = null) {
   const { frequency, magnitude, phase, fftSize } = fftData;
   const smoothedMagnitude = Float32Array.from({ length: magnitude.length }, () => 0);
-  const fractionalFrequencies = getFractionalOctaveFrequencies(resolution, 20, 24e3, fftSize);
+  let fractionalFrequencies = null;
+  if (resolution != null) {
+    fractionalFrequencies = getFractionalOctaveFrequencies(resolution, 20, 24e3, fftSize);
+  } else {
+    fractionalFrequencies = frequency;
+  }
   const smoothed = dbToLinear(fractionalOctaveSmoothing(db(magnitude), fraction, fractionalFrequencies));
   const smoothedPhase = fractionalOctaveSmoothing(phase, fraction, fractionalFrequencies);
   return {
@@ -1122,6 +1113,25 @@ function fftConvolve(x, y, mode = "same") {
     const start = Math.floor((fullLen - lenX) / 2);
     return result.slice(start, start + lenX);
   }
+  return result;
+}
+function computeIFFT(fftResult) {
+  const { magnitude, phase, fftSize } = fftResult;
+  const fft = new FFT(fftSize * 2);
+  const complexInput = fft.createComplexArray();
+  for (let i = 0; i < fftSize; i++) {
+    const mag = magnitude[i] * Math.SQRT1_2;
+    const phi = phase[i] * (Math.PI / 180);
+    complexInput[2 * i] = mag * Math.cos(phi);
+    complexInput[2 * i + 1] = mag * Math.sin(phi);
+  }
+  for (let i = 1; i < fftSize; i++) {
+    complexInput[2 * (2 * fftSize - i)] = complexInput[2 * i];
+    complexInput[2 * (2 * fftSize - i) + 1] = -complexInput[2 * i + 1];
+  }
+  const output = fft.createComplexArray();
+  fft.inverseTransform(output, complexInput);
+  const result = Float32Array.from({ length: fftSize }, (_, i) => output[2 * i]);
   return result;
 }
 function twoChannelImpulseResponse(y, x) {
@@ -1441,8 +1451,11 @@ function addPlotToList(tabId, plotId, plotName, hidden = false) {
   plotList.appendChild(listItem);
 }
 function addPlotElement(tabId, plotId, hidden = false) {
-  var _a;
   const tabContent = document.querySelector(`[data-content="${tabId}"]`);
+  if (!tabContent) {
+    console.error("Tab content not found for tabId:", tabId);
+    throw new Error(`Tab content not found for tabId: ${tabId}`);
+  }
   const plotBox = document.createElement("div");
   plotBox.className = "plot-box";
   plotBox.innerHTML = `
@@ -1453,11 +1466,21 @@ function addPlotElement(tabId, plotId, hidden = false) {
             <label for="checkbox-${plotId}">Hide</label>
         </div>
     `;
-  (_a = tabContent.querySelector(".plot-outer")) == null ? void 0 : _a.appendChild(plotBox);
+  const plotOuter = tabContent.querySelector(".plot-outer");
+  if (!plotOuter) {
+    console.error("Plot outer container not found in tab:", tabId);
+    throw new Error(`Plot outer container not found in tab: ${tabId}`);
+  }
+  plotOuter.appendChild(plotBox);
   if (hidden) {
     plotBox.style.display = "none";
   }
-  return plotBox.querySelector(`#${plotId}`);
+  const element = plotBox.querySelector(`#${plotId}`);
+  if (!element) {
+    console.error("Plot element not found after creation. plotId:", plotId);
+    throw new Error(`Plot element not found after creation: ${plotId}`);
+  }
+  return element;
 }
 function plot(traces, tabId, title, xTitle, yTitle, xAxisExtras = {}, yAxisExtras = {}, layoutExtras = {}, hidden = false) {
   var _a;
@@ -2161,6 +2184,93 @@ function convertToIXML(xmlContent) {
 </BWFXML>`;
 }
 
+// src/filter.ts
+function generateTargetCurve(type, frequencies, freqStart, freqEnd) {
+  const target = new Float32Array(frequencies.length);
+  for (let k = 0; k < frequencies.length; k++) {
+    const freq = frequencies[k];
+    if (type === "flat") {
+      target[k] = 1;
+    } else if (type === "tilt") {
+      const refFreq = 1e3;
+      const tiltDb = -1 * Math.log2(freq / refFreq);
+      target[k] = Math.pow(10, tiltDb / 20);
+    } else if (type === "harman") {
+      let targetDb = 0;
+      if (freq < 20) {
+        targetDb = 0;
+      } else if (freq <= 105) {
+        targetDb = 4 * (1 - (freq - 20) / 85);
+      } else if (freq <= 1e3) {
+        const t = (freq - 105) / 895;
+        targetDb = 0;
+      } else if (freq <= 2e4) {
+        const decades = Math.log10(freq / 1e3);
+        targetDb = -7.5 * decades;
+      } else {
+        targetDb = -10;
+      }
+      target[k] = Math.pow(10, targetDb / 20);
+    } else {
+      target[k] = 1;
+    }
+  }
+  return target;
+}
+function firToMinPhase(input, fftSize = null, eps = 1e-12) {
+  const hIn = input instanceof Float32Array ? input : new Float32Array(input);
+  const L = hIn.length;
+  const minN = Math.max(16, 1 << Math.ceil(Math.log2(Math.max(1, 2 * L))));
+  const N = fftSize ? fftSize : minN;
+  const x = new Float32Array(N);
+  x.set(hIn);
+  const fft = new FFT(N);
+  const Xc = new Float32Array(2 * N);
+  fft.realTransform(Xc, x);
+  if (typeof fft.completeSpectrum === "function") {
+    fft.completeSpectrum(Xc);
+  }
+  const logMag = new Float32Array(N);
+  for (let k = 0; k < N; k++) {
+    const re = Xc[2 * k];
+    const im = Xc[2 * k + 1];
+    const mag = Math.hypot(re, im);
+    logMag[k] = Math.log(Math.max(eps, mag));
+  }
+  const specLog = new Float32Array(2 * N);
+  for (let k = 0; k < N; k++) {
+    specLog[2 * k] = logMag[k];
+    specLog[2 * k + 1] = 0;
+  }
+  const timeBuf = new Float32Array(2 * N);
+  fft.inverseTransform(timeBuf, specLog);
+  const cep = new Float32Array(N);
+  for (let n = 0; n < N; n++) cep[n] = timeBuf[2 * n];
+  const cepMin = new Float32Array(N);
+  cepMin[0] = cep[0];
+  const half = Math.floor(N / 2);
+  for (let n = 1; n < half; n++) cepMin[n] = 2 * cep[n];
+  if (N % 2 === 0) cepMin[half] = cep[half];
+  const Sc = new Float32Array(2 * N);
+  fft.realTransform(Sc, cepMin);
+  if (typeof fft.completeSpectrum === "function") {
+    fft.completeSpectrum(Sc);
+  }
+  const Hspec = new Float32Array(2 * N);
+  for (let k = 0; k < N; k++) {
+    const Sr = Sc[2 * k];
+    const Si = Sc[2 * k + 1];
+    const mag = Math.exp(Sr);
+    Hspec[2 * k] = mag * Math.cos(Si);
+    Hspec[2 * k + 1] = mag * Math.sin(Si);
+  }
+  const hTimeCplx = new Float32Array(2 * N);
+  fft.inverseTransform(hTimeCplx, Hspec);
+  const hMinFull = new Float32Array(N);
+  for (let n = 0; n < N; n++) hMinFull[n] = hTimeCplx[2 * n];
+  return hMinFull.subarray(0, L);
+}
+
 // src/app.ts
 console.debug("App module loaded");
 var fileMap = /* @__PURE__ */ new Map();
@@ -2179,11 +2289,6 @@ var polarMeasurementsEl = document.getElementById("polarMeasurements");
 var addPolarMeasurementBtn = document.getElementById("addPolarMeasurementBtn");
 var analyzePolarBtn = document.getElementById("analyzePolarBtn");
 var polarStatusEl = document.getElementById("polarStatus");
-function normalizeAngleDeg(angleDeg) {
-  let a = angleDeg % 360;
-  if (a < 0) a += 360;
-  return a;
-}
 var statusMessage = document.getElementById("statusMessage");
 function setStatusMessage(message, isError = false) {
   statusMessage.textContent = message;
@@ -2534,8 +2639,33 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
         <div class="flex h-full">
             <div class="flex-none w-86 border-r border-[#ddd] p-2 relative sidecar" style="transition:50ms linear;">
                 <div class="section">
-                    <div class="title">Settings</div>
-                    <p><i>There are no settings for this analysis.</i></p>
+                    <div class="title">Generate FIR Filter</div>
+                    <div class="param-row" style="margin-bottom: 8px;">
+                        <label for="fir-freq-start-${tabId}" style="font-size: 12px;">Freq Start (Hz):</label>
+                        <input type="number" id="fir-freq-start-${tabId}" min="10" max="20000" value="100" class="param-input" style="width: 100%; font-size: 12px;">
+                    </div>
+                    <div class="param-row" style="margin-bottom: 8px;">
+                        <label for="fir-freq-end-${tabId}" style="font-size: 12px;">Freq End (Hz):</label>
+                        <input type="number" id="fir-freq-end-${tabId}" min="10" max="20000" value="20000" class="param-input" style="width: 100%; font-size: 12px;">
+                    </div>
+                    <div class="param-row" style="margin-bottom: 8px;">
+                        <label for="fir-taps-${tabId}" style="font-size: 12px;">Filter Taps:</label>
+                        <input type="number" id="fir-taps-${tabId}" min="32" max="8192" value="2048" class="param-input" style="width: 100%; font-size: 12px;">
+                    </div>
+                    <div class="param-row" style="margin-bottom: 8px;">
+                        <label for="fir-epsilon-${tabId}" style="font-size: 12px;">Regularization (\u03B2):</label>
+                        <input type="number" id="fir-epsilon-${tabId}" min="0.000001" max="1" step="0.000001" value="0.1" class="param-input" style="width: 100%; font-size: 12px;">
+                    </div>
+                    <div class="param-row" style="margin-bottom: 8px;">
+                        <label for="fir-target-${tabId}" style="font-size: 12px;">Target Curve:</label>
+                        <select id="fir-target-${tabId}" class="param-input" style="width: 100%; font-size: 12px;">
+                            <option value="flat">Flat (0 dB)</option>
+                            <option value="tilt">-1 dB/decade Tilt</option>
+                            <option value="harman">Harman Target</option>
+                        </select>
+                    </div>
+                    <button id="generate-fir-${tabId}" class="button-custom button-custom-primary" style="width: 100%; margin-top: 8px; font-size: 12px;">Generate & Download Filter</button>
+                    <p id="fir-status-${tabId}" style="margin-top: 8px; font-size: 11px; color: #666;"></p>
                 </div>
                 <div class="section">
                     <div class="title">Plots</div>
@@ -2594,6 +2724,193 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
           sidebarToggleBtn.title = "Open settings pane";
         }
       });
+      const generateFirBtn = content.querySelector(`#generate-fir-${tabId}`);
+      const firStatusEl = content.querySelector(`#fir-status-${tabId}`);
+      if (generateFirBtn && referenceData) {
+        generateFirBtn.addEventListener("click", () => __async(null, null, function* () {
+          try {
+            if (firStatusEl) {
+              firStatusEl.textContent = "Generating FIR filter...";
+              firStatusEl.style.color = "#0366d6";
+            }
+            generateFirBtn.disabled = true;
+            const freqStartInput = content.querySelector(`#fir-freq-start-${tabId}`);
+            const freqEndInput = content.querySelector(`#fir-freq-end-${tabId}`);
+            const tapsInput = content.querySelector(`#fir-taps-${tabId}`);
+            const epsilonInput = content.querySelector(`#fir-epsilon-${tabId}`);
+            const targetCurveInput = content.querySelector(`#fir-target-${tabId}`);
+            if (!freqStartInput || !freqEndInput || !tapsInput || !epsilonInput || !targetCurveInput) {
+              throw new Error("Filter parameter inputs not found");
+            }
+            const freqStart = parseFloat(freqStartInput.value);
+            const freqEnd = parseFloat(freqEndInput.value);
+            const taps = parseInt(tapsInput.value);
+            const beta = parseFloat(epsilonInput.value);
+            const targetCurveType = targetCurveInput.value;
+            const responseSamples2 = responseData.getChannelData(0);
+            const referenceSamples2 = referenceData.getChannelData(0);
+            const ir = twoChannelImpulseResponse(responseSamples2, referenceSamples2);
+            const transferFunction = computeFFTFromIR(ir);
+            const N = transferFunction.frequency.length;
+            const targetMagnitude = generateTargetCurve(targetCurveType, transferFunction.frequency, freqStart, freqEnd);
+            const normalizeFrequency = 1e3;
+            const normalizeFrequencyIdx = closest(normalizeFrequency, transferFunction.frequency);
+            const normalizeFrequencyStartIdx = closest(freqStart, transferFunction.frequency);
+            const normalizeFrequencyEndIdx = closest(freqEnd, transferFunction.frequency);
+            const normalizationFactor = rms(transferFunction.magnitude.slice(normalizeFrequencyStartIdx, normalizeFrequencyEndIdx + 1));
+            for (let k = 0; k < N; k++) {
+              transferFunction.magnitude[k] /= normalizationFactor;
+              targetMagnitude[k] /= targetMagnitude[normalizeFrequencyIdx];
+            }
+            const transferFunctionDb = db(transferFunction.magnitude);
+            const targetMagnitudeDb = db(targetMagnitude);
+            plot(
+              [
+                { x: transferFunction.frequency, y: transferFunctionDb, name: "Measured Response", line: { color: "#1f77b4", width: 1 } },
+                { x: transferFunction.frequency, y: targetMagnitudeDb, name: "Target Curve", line: { color: "#d62728", width: 1 } },
+                { x: transferFunction.frequency, y: targetMagnitudeDb.map((val, idx) => val - transferFunctionDb[idx]), name: "Difference", line: { color: "#ff7f0e", width: 1 } }
+              ],
+              tabId,
+              "Target Curve Debug",
+              "Frequency (Hz)",
+              "Magnitude (dB)",
+              { type: "log", range: [Math.log10(20), Math.log10(2e4)] },
+              {},
+              {},
+              false
+            );
+            const inverseDifference = dbToLinear(transferFunctionDb.map((val, idx) => val - targetMagnitudeDb[idx]));
+            const targetRe = new Float32Array(N);
+            const betaResponse = new Float32Array(N);
+            for (let k = 0; k < N; k++) {
+              const freq = transferFunction.frequency[k];
+              if (freq >= freqStart && freq <= freqEnd) {
+                targetRe[k] = inverseDifference[k];
+                betaResponse[k] = beta;
+              } else {
+                const octavesFromRange = freq < freqStart ? Math.log2(freqStart / freq) : Math.log2(freq / freqEnd);
+                const attenDb = octavesFromRange * 24;
+                const fadeToOne = Math.pow(10, -attenDb / 20);
+                targetRe[k] = inverseDifference[k] * fadeToOne + (1 - fadeToOne);
+                betaResponse[k] = (1 - fadeToOne - (1 - fadeToOne)) * beta;
+              }
+            }
+            plot(
+              [
+                { x: transferFunction.frequency, y: db(targetRe), name: "Target Real Part", line: { color: "#2ca02c", width: 1 } }
+              ],
+              tabId,
+              "Target Real Part Debug",
+              "Frequency (Hz)",
+              "Magnitude (dB)",
+              { type: "log", range: [Math.log10(20), Math.log10(2e4)] },
+              {},
+              {},
+              false
+            );
+            const smoothedTargetRe = smoothFFT({ frequency: transferFunction.frequency, magnitude: targetRe, phase: new Float32Array(N), fftSize: N }, 1 / 6).magnitude;
+            const kirkeby = new Float32Array(N);
+            for (let k = 0; k < N; k++) {
+              const numerator = smoothedTargetRe[k];
+              const denominator = smoothedTargetRe[k] * smoothedTargetRe[k] + betaResponse[k];
+              kirkeby[k] = numerator / denominator;
+            }
+            const kirkebyFFT = {
+              frequency: transferFunction.frequency,
+              magnitude: kirkeby,
+              phase: zeros(N),
+              fftSize: N
+            };
+            const kirkebyFIR = computeIFFT(kirkebyFFT);
+            const linearPhaseFIR = new Float32Array(taps);
+            const halfaTaps = Math.floor(taps / 2);
+            for (let n = 0; n < taps; n++) {
+              const idx = Math.abs(n - halfaTaps);
+              linearPhaseFIR[n] = kirkebyFIR[idx];
+            }
+            if (firStatusEl) {
+              firStatusEl.textContent = "Converting to minimum phase...";
+            }
+            const minPhaseFIR = firToMinPhase(linearPhaseFIR, taps);
+            if (firStatusEl) {
+              firStatusEl.textContent = "Computing filter response...";
+            }
+            plot(
+              [
+                { x: Array.from({ length: linearPhaseFIR.length }, (_, i) => i), y: linearPhaseFIR, name: "Linear Phase Kirkeby FIR Coefficients", line: { color: "#1f77b4", width: 1 } },
+                { x: Array.from({ length: minPhaseFIR.length }, (_, i) => i), y: minPhaseFIR, name: "Minimum Phase FIR Coefficients", line: { color: "#d62728", width: 1 } }
+              ],
+              tabId,
+              "Kirkeby FIR DebugUnshifted",
+              "Sample Index",
+              "Amplitude",
+              {},
+              {},
+              {},
+              false
+            );
+            const kirkebyFIRFFT = computeFFT(linearPhaseFIR);
+            const kirkebyMinPhaseFIRFFT = computeFFT(minPhaseFIR);
+            plot(
+              [
+                { x: transferFunction.frequency, y: db(smoothedTargetRe).map((v) => -v), name: "Target Real Part", line: { color: "#2ca02c", width: 1 } },
+                { x: transferFunction.frequency, y: db(kirkeby), name: "Kirkeby Regularization Factor", line: { color: "#9467bd", width: 1 } },
+                { x: kirkebyFIRFFT.frequency, y: db(kirkebyFIRFFT.magnitude), name: "Kirkeby FIR Response", line: { color: "#1f77b4", width: 1 } },
+                { x: kirkebyMinPhaseFIRFFT.frequency, y: db(kirkebyMinPhaseFIRFFT.magnitude), name: "Minimum Phase Kirkeby FIR Response", line: { color: "#d62728", width: 1 } }
+              ],
+              tabId,
+              "Kirkeby Regularization Debug",
+              "Frequency (Hz)",
+              "Magnitude (dB)",
+              { type: "log", range: [Math.log10(20), Math.log10(2e4)] },
+              {},
+              {},
+              false
+            );
+            console.log("Switching to tab:", tabId);
+            switchTab(tabId);
+            if (firStatusEl) {
+              firStatusEl.textContent = "Downloading filter...";
+            }
+            const sampleRate = responseData.sampleRate || 48e3;
+            download(
+              minPhaseFIR,
+              sampleRate,
+              `fir_filter_${targetCurveType}_${freqStart}-${freqEnd}Hz_${taps}taps.fir`,
+              {},
+              convertToIXML(`
+                                <FILTER_TYPE>FIR_MINIMUM_PHASE</FILTER_TYPE>
+                                <FILTER_TAPS>${taps}</FILTER_TAPS>
+                                <FREQ_START>${freqStart}</FREQ_START>
+                                <FREQ_END>${freqEnd}</FREQ_END>
+                                <KIRKEBY_EPSILON>${beta}</KIRKEBY_EPSILON>
+                                <TARGET_CURVE>${targetCurveType}</TARGET_CURVE>
+                                <SAMPLE_RATE>${sampleRate}</SAMPLE_RATE>
+                                <GENERATED>${(/* @__PURE__ */ new Date()).toISOString()}</GENERATED>
+                            `)
+            );
+            if (firStatusEl) {
+              firStatusEl.textContent = `\u2713 Filter generated (${taps} taps, ${targetCurveType} target, ${freqStart}-${freqEnd} Hz)`;
+              firStatusEl.style.color = "#28a745";
+            }
+          } catch (error) {
+            console.error("Error generating FIR filter:", error);
+            if (firStatusEl) {
+              firStatusEl.textContent = `Error: ${error.message}`;
+              firStatusEl.style.color = "#d73a49";
+            }
+          } finally {
+            generateFirBtn.disabled = false;
+          }
+        }));
+      } else if (generateFirBtn && !referenceData) {
+        generateFirBtn.disabled = true;
+        generateFirBtn.title = "Reference signal required for filter generation";
+        if (firStatusEl) {
+          firStatusEl.textContent = "Reference signal required";
+          firStatusEl.style.color = "#d73a49";
+        }
+      }
       let isResizing = false;
       let lastDownX = 0;
       resizeHandle.addEventListener("mousedown", (e) => {
@@ -2698,7 +3015,7 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
           {},
           {},
           {},
-          false
+          true
         );
         plot(
           [
@@ -2726,7 +3043,7 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
           { range: [-1, 1] },
           { range: [-150, 10] },
           {},
-          false
+          true
         );
         const transferFunction = computeFFTFromIR(ir);
         const smoothedFreqResponse = smoothFFT(transferFunction, 1 / 6, 1 / 48);
@@ -2743,7 +3060,7 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
           { type: "log", range: [Math.log10(20), Math.log10(2e4)] },
           { range: [-85, 5] },
           {},
-          false
+          true
         );
         plot(
           [
@@ -2757,7 +3074,7 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
           { type: "log", range: [Math.log10(20), Math.log10(2e4)] },
           { range: [-720, 720] },
           {},
-          false
+          true
         );
         plot(
           [
@@ -2770,7 +3087,7 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
           { type: "log", range: [Math.log10(20), Math.log10(2e4)] },
           { range: [-20, 20] },
           {},
-          false
+          true
         );
         (() => {
           var _a2, _b2;
@@ -2828,7 +3145,7 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
             {},
             { type: "log", range: [Math.log10(20), Math.log10(2e4)] },
             { margin: { l: 60, r: 20, t: 40, b: 50 } },
-            false
+            true
           );
         })();
       }
@@ -2867,238 +3184,6 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
     });
   });
 }
-function createDirectivityPlotTab(responseDatas, referenceData, anglesDeg) {
-  console.log("Creating directivity plot tab with", responseDatas.length, "responses and reference data", referenceData);
-  if (responseDatas.length === 0 || referenceData.length === 0) return;
-  tabCounter++;
-  const tabId = `directivity-${tabCounter}`;
-  const shortName = `Directivity (${responseDatas.length})`;
-  const tab = document.createElement("button");
-  tab.className = "tab tab-closable tab-loading";
-  tab.dataset.tab = tabId;
-  tab.innerHTML = `<span class="tab-icon-analysis"></span>${shortName} <span class="tab-close">\u2715</span>`;
-  tabsInnerContainer.appendChild(tab);
-  const content = document.createElement("div");
-  content.className = "tab-content";
-  content.dataset.content = tabId;
-  content.innerHTML = `
-        <button class="sidecar-toggle" id="sidebar-toggle-${tabId}" title="Toggle Sidecar">Open settings pane</button>
-        <div class="flex h-full">
-            <div class="flex-none w-86 border-r border-[#ddd] p-2 relative sidecar" style="transition:50ms linear;">
-                <div class="section">
-                    <div class="title">Settings</div>
-                    <p><i>There are no settings for this analysis.</i></p>
-                </div>
-                <div class="section">
-                    <div class="title">Plots</div>
-                    <ul class="list" id="plot-list-${tabId}">
-                        <!--li><input type="checkbox" id="checkbox-magnitude-${tabId}" alt="show/hide" checked><label for="checkbox-magnitude-${tabId}">Magnitude</label></li>
-                        <li><input type="checkbox" id="checkbox-phase-${tabId}" alt="show/hide" checked><label for="checkbox-phase-${tabId}">Phase</label></li>
-                        <li><input type="checkbox" id="checkbox-ir-${tabId}" alt="show/hide" checked><label for="checkbox-ir-${tabId}">Impulse Response</label></li>
-                        <li><input type="checkbox" id="checkbox-ir-${tabId}" alt="show/hide" disabled><label for="checkbox-ir-${tabId}">Fundamental + Harmonic Distortion</label></li>
-                        <li><input type="checkbox" id="checkbox-distortion-${tabId}" alt="show/hide" disabled><label for="checkbox-distortion-${tabId}">Distortion</label></li>
-                        <li><input type="checkbox" id="checkbox-distortion-${tabId}" alt="show/hide" disabled><label for="checkbox-distortion-${tabId}">Sound Pressure Level</label></li>
-                        <li><input type="checkbox" id="checkbox-deconvoluted-ir-${tabId}" alt="show/hide" disabled><label for="checkbox-deconvoluted-ir-${tabId}">Deconvoluted Impulse Response</label></li>
-                        <li><input type="checkbox" id="checkbox-stimulus-waveform-${tabId}" alt="show/hide" disabled><label for="checkbox-stimulus-waveform-${tabId}">Stimulus Waveform</label></li>
-                        <li><input type="checkbox" id="checkbox-recorded-waveform-${tabId}" alt="show/hide" disabled><label for="checkbox-recorded-waveform-${tabId}">Recorded Waveform</label></li>
-                        <li><input type="checkbox" id="checkbox-recorded-noise-floor-${tabId}" alt="show/hide" disabled><label for="checkbox-recorded-noise-floor-${tabId}">Recorded Noise Floor</label></li>
-                        <li><input type="checkbox" id="checkbox-target-curve-${tabId}" alt="show/hide" disabled><label for="checkbox-target-curve-${tabId}">Target Curve<button class="float-right text-xs cursor-pointer" style="color: #bbb; padding-top: 3px">Set</button></label></li-->
-                    </ul>
-                </div>
-                <div class="section">
-                    <div class="title">Properties</div>
-                    <p id="properties-${tabId}"><i>There are no properties for this analysis.</i></p>
-                </div>
-                <div id="resize-handle" class="resize-handle"></div>
-            </div>
-            <div class="flex-1 main-content">
-                <div class="grid grid-cols-6 gap-[1px] bg-[#ddd] border-b border-[#ddd] plot-outer">
-                </div>
-            </div>
-        </div>
-
-
-    `;
-  tabContents.appendChild(content);
-  window.requestAnimationFrame(() => {
-    window.requestAnimationFrame(() => {
-      var _a;
-      const startTime = performance.now();
-      const useCustomAngles = !!anglesDeg && anglesDeg.length === responseDatas.length;
-      const angles = useCustomAngles ? anglesDeg.map(normalizeAngleDeg) : responseDatas.map((_, i) => 360 * i / responseDatas.length);
-      const referenceSamples = Float32Array.from(referenceData.getChannelData(0));
-      const len = Math.min(7.5 * 48e3, referenceSamples.length);
-      const referenceFFT = updatedFFT(referenceSamples.subarray(0, len), len);
-      const calcStartTime = performance.now();
-      const transfers = [];
-      const smoothTransfers = [];
-      for (let i = 0; i < responseDatas.length; i++) {
-        const resp = responseDatas[i];
-        const loopStartTime = performance.now();
-        const fftr = twoChannelFFT(
-          resp.getChannelData(0).subarray(0, len),
-          referenceSamples.subarray(0, len),
-          nextPow2(len),
-          0,
-          referenceFFT
-        );
-        fftr.magnitude = fftr.magnitude.map((v, i2) => Math.abs(v));
-        const ffto = smoothFFT(fftr, 1 / 3, 1 / 48);
-        smoothTransfers.push(ffto);
-        transfers.push(fftr);
-      }
-      const calcEndTime = performance.now();
-      console.warn(`CALC TOOK ${calcEndTime - calcStartTime} milliseconds`);
-      const baseFreq = (_a = transfers[0]) == null ? void 0 : _a.frequency;
-      if (!baseFreq || baseFreq.length === 0) return;
-      const normHz = 1e3;
-      let normIdx = 0;
-      let best = Number.POSITIVE_INFINITY;
-      for (let i = 0; i < baseFreq.length; i++) {
-        const d = Math.abs(baseFreq[i] - normHz);
-        if (d < best) {
-          best = d;
-          normIdx = i;
-        }
-      }
-      transfers.push(transfers[0]);
-      angles.push(360);
-      const cycleBy = 18;
-      const cycleTransfers = smoothTransfers.slice(cycleBy).concat(smoothTransfers.slice(0, cycleBy));
-      const asngles = angles.map((a) => a - 180);
-      const z = cycleTransfers.map((tf) => {
-        const magDb = db(tf.magnitude);
-        return magDb.map((v, i) => v - db(smoothTransfers[0].magnitude)[i]);
-      });
-      const endTime = performance.now();
-      console.warn(`TOOK ${endTime - startTime} milliseconds`);
-      plot(
-        [
-          {
-            type: "heatmap",
-            x: smoothTransfers[0].frequency,
-            y: asngles,
-            z,
-            colorscale: "Portland",
-            zmin: -24,
-            contours: { coloring: "#fff", showlines: true, start: -36, end: 0, size: 6 },
-            zmax: 6,
-            zsmooth: "best",
-            colorbar: { title: "dB (norm @ 1 kHz)" }
-          }
-        ],
-        tabId,
-        "Directivity Map",
-        "Frequency (Hz)",
-        "Angle (deg)",
-        { type: "log", range: [Math.log10(20), Math.log10(2e4)] },
-        { range: [-180, 180] },
-        { margin: { l: 60, r: 20, t: 40, b: 50 } },
-        false
-      );
-      const avgMagnitude = new Float32Array(baseFreq.length);
-      for (let i = 0; i < baseFreq.length; i++) {
-        let sum2 = 0;
-        for (let j = 0; j < transfers.length - 1; j++) {
-          sum2 += transfers[j].magnitude[i];
-        }
-        avgMagnitude[i] = sum2 / (transfers.length - 1);
-      }
-      const smoothAvgMagnitude = smoothFFT({ frequency: baseFreq, magnitude: avgMagnitude, phase: new Float32Array(baseFreq.length), fftSize: nextPow2(baseFreq.length) }, 1 / 6, 1 / 48);
-      const on = smoothFFT(transfers[0], 1 / 6, 1 / 48);
-      const anglesToPlot = [0, 30, 60, 90, 180];
-      plot(
-        [
-          ...anglesToPlot.map((angle, i) => {
-            const idx = angles.findIndex((a) => Math.abs(a - angle) < 0.1);
-            if (idx === -1) {
-              return null;
-            }
-            return { x: smoothFFT(transfers[idx], 1 / 6, 1 / 48).frequency, y: db(smoothFFT(transfers[idx], 1 / 6, 1 / 48).magnitude), name: `${angle} deg response`, line: { width: 1.5, color: COLORS[i] } };
-          }),
-          { x: smoothAvgMagnitude.frequency, y: db(smoothAvgMagnitude.magnitude), name: "Average Response", line: { width: 2, color: "#000000" } }
-        ],
-        tabId,
-        "Transfer Function",
-        "Frequency (Hz)",
-        "Amplitude (dB)",
-        { type: "log", range: [Math.log10(20), Math.log10(2e4)] },
-        { range: [-85, 5] },
-        {},
-        false
-      );
-      plot(
-        [
-          { x: on.frequency, y: db(smoothAvgMagnitude.magnitude).map((v, i) => db(on.magnitude)[i] - v), name: "Average Response", line: { width: 2, color: "#000000" } }
-        ],
-        tabId,
-        "Directivity Index",
-        "Frequency (Hz)",
-        "DI (dB)",
-        { type: "log", range: [Math.log10(20), Math.log10(2e4)] },
-        { range: [-10, 50] },
-        {},
-        false
-      );
-      (() => {
-        const freqsToPlot = [62.5, 125, 250, 500, 1e3, 2e3, 4e3, 8e3, 16e3];
-        const uniqueTransfers = smoothTransfers;
-        const uniqueAngles = angles;
-        const traces = [];
-        const aseFreq = uniqueTransfers[0].frequency;
-        for (let fi = 0; fi < freqsToPlot.length; fi++) {
-          const hz = freqsToPlot[fi];
-          let idx = 0;
-          let best2 = Number.POSITIVE_INFINITY;
-          for (let i = 0; i < aseFreq.length; i++) {
-            const d = Math.abs(aseFreq[i] - hz);
-            if (d < best2) {
-              best2 = d;
-              idx = i;
-            }
-          }
-          const magDb = uniqueTransfers.map((tf) => {
-            var _a2;
-            return (_a2 = db(tf.magnitude)[idx]) != null ? _a2 : -999;
-          });
-          const maxVal = Math.max(...magDb);
-          const r = magDb.map((v) => v - maxVal);
-          const theta = [...uniqueAngles, 360];
-          const rClosed = [...r];
-          traces.push({
-            type: "scatterpolar",
-            r: rClosed,
-            theta,
-            mode: "lines+markers",
-            name: `${hz} Hz`,
-            line: { color: COLORS[fi % COLORS.length], width: 2 },
-            marker: { size: 4 }
-          });
-        }
-        plot(
-          traces,
-          tabId,
-          "Polar Directivity",
-          "Frequency (Hz)",
-          "Angle (deg)",
-          {},
-          // x-axis options unused for polar
-          {},
-          // y-axis options unused for polar
-          {
-            polar: {
-              radialaxis: { title: { text: "Relative dB (max = 0 dB)" }, angle: 90, dtick: 10, range: [-50, 0] },
-              angularaxis: { direction: "clockwise", rotation: 90, tickmode: "array" }
-            },
-            margin: { l: 60, r: 20, t: 40, b: 50 }
-          },
-          false
-        );
-      })();
-      tab.classList.remove("tab-loading");
-    });
-  });
-}
 function saveState() {
   const tabs = Array.from(document.querySelectorAll(".tab[data-tab]")).map((tab) => {
     var _a;
@@ -3128,54 +3213,6 @@ function loadState() {
     } catch (e) {
       console.error("Failed to load saved state:", e);
     }
-  });
-}
-function loadTestPolarData() {
-  return __async(this, null, function* () {
-    const angles = [
-      0,
-      10,
-      20,
-      30,
-      40,
-      50,
-      60,
-      70,
-      80,
-      90,
-      100,
-      110,
-      120,
-      130,
-      140,
-      150,
-      160,
-      170,
-      180,
-      190,
-      200,
-      210,
-      220,
-      230,
-      240,
-      250,
-      260,
-      270,
-      280,
-      290,
-      300,
-      310,
-      320,
-      330,
-      340,
-      350
-    ];
-    const files = angles.map((a) => `testdata/${a}.wav`);
-    createDirectivityPlotTab(
-      yield Promise.all(files.map((f) => loadAudioFromFilename(f))),
-      yield loadAudioFromFilename("testdata/sweep_signal.wav.wav"),
-      angles
-    );
   });
 }
 function loadWaveformsFromStorage() {
@@ -3220,7 +3257,7 @@ function saveWaveformsToStorage(waveforms) {
   });
 }
 function createListItem(audioObject, id) {
-  var _a, _b, _c, _d, _e, _f, _g, _h;
+  var _a, _b, _c, _d, _e;
   const li = document.createElement("li");
   li.dataset.id = id;
   li.style.display = "flex";
@@ -3230,8 +3267,8 @@ function createListItem(audioObject, id) {
             <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${((_a = audioObject.metadata) == null ? void 0 : _a.filename) || "Unknown"}</div>
             <div style="font-size:12px;color:#666;">${((_b = audioObject.metadata) == null ? void 0 : _b.mime) || "audio/*"}</div>
             <div style="font-size:12px;color:#666;">Duration: ${audioObject.duration.toFixed(2)} seconds</div>
-            <div style="font-size:12px;color:#666;">Angle: ${(_e = (_d = (_c = audioObject == null ? void 0 : audioObject.metadata) == null ? void 0 : _c.iXML) == null ? void 0 : _d.angle) != null ? _e : "N/A"} deg</div>
-            <div style="font-size:12px;color:#666;">Origin: ${(_h = (_g = (_f = audioObject == null ? void 0 : audioObject.metadata) == null ? void 0 : _f.iXML) == null ? void 0 : _g.origin) != null ? _h : "Imported"}</div>
+            <div style="font-size:12px;color:#666;">Angle: ${typeof ((_c = audioObject == null ? void 0 : audioObject.metadata) == null ? void 0 : _c.iXML) === "object" && audioObject.metadata.iXML && "angle" in audioObject.metadata.iXML ? audioObject.metadata.iXML.angle : "N/A"} deg</div>
+            <div style="font-size:12px;color:#666;">Origin: ${typeof ((_d = audioObject == null ? void 0 : audioObject.metadata) == null ? void 0 : _d.iXML) === "object" && ((_e = audioObject.metadata) == null ? void 0 : _e.iXML) && "origin" in audioObject.metadata.iXML ? audioObject.metadata.iXML.origin : "Imported"}</div>
         </div>
         <div class="file-list-item-controls flex:1;min-width:0;">
             <div><label style="font-size:13px;"><input type="radio" name="selectedResponse" value="${id}"> Response</label></div>
@@ -3275,15 +3312,16 @@ function addFilesFromInput(fileList) {
   });
 }
 document.addEventListener("DOMContentLoaded", () => {
-  var _a;
+  var _a, _b, _c;
   const respInput = document.getElementById("responseFileUpload");
   const refInput = document.getElementById("referenceFileUpload");
   if (respInput) respInput.addEventListener("change", (e) => {
-    var _a2, _b;
-    if ((_b = (_a2 = e == null ? void 0 : e.target) == null ? void 0 : _a2.files) == null ? void 0 : _b.length) addFilesFromInput(e.target.files);
-    e.target.value = "";
+    var _a2;
+    const target = e.target;
+    if ((_a2 = target == null ? void 0 : target.files) == null ? void 0 : _a2.length) addFilesFromInput(target.files);
+    target.value = "";
   });
-  document.getElementById("fileList").addEventListener("click", (e) => {
+  (_a = document.getElementById("fileList")) == null ? void 0 : _a.addEventListener("click", (e) => {
     const li = e.target.closest("li");
     if (!li) return;
     const id = li.dataset.id;
@@ -3304,7 +3342,7 @@ document.addEventListener("DOMContentLoaded", () => {
       updateAnalyzeState();
     }
   });
-  document.getElementById("fileList").addEventListener("change", (e) => {
+  (_b = document.getElementById("fileList")) == null ? void 0 : _b.addEventListener("change", (e) => {
     if (e.target.name === "selectedResponse") {
       updateAnalyzeState();
     }
@@ -3320,8 +3358,8 @@ document.addEventListener("DOMContentLoaded", () => {
       (_a2 = document.getElementById("fileList")) == null ? void 0 : _a2.appendChild(li);
     }
   });
-  (_a = document.getElementById("analyzeUploadBtn")) == null ? void 0 : _a.addEventListener("click", () => {
-    var _a2, _b;
+  (_c = document.getElementById("analyzeUploadBtn")) == null ? void 0 : _c.addEventListener("click", () => {
+    var _a2, _b2;
     const responseRadio = document.querySelector('input[name="selectedResponse"]:checked');
     const referenceRadio = document.querySelector('input[name="selectedReference"]:checked');
     if (!responseRadio) {
@@ -3335,9 +3373,11 @@ document.addEventListener("DOMContentLoaded", () => {
       alert("Selected response file not found.");
       return;
     }
-    createAnalysisTab(response.applyGain(1 / 16384), reference ? reference.applyGain(1 / 16384) : null, ((_a2 = response.metadata) == null ? void 0 : _a2.filename) || "Response", ((_b = reference == null ? void 0 : reference.metadata) == null ? void 0 : _b.filename) || "Reference");
+    createAnalysisTab(response.applyGain(1 / 16384), reference ? reference.applyGain(1 / 16384) : null, ((_a2 = response.metadata) == null ? void 0 : _a2.filename) + "" || "Response", ((_b2 = reference == null ? void 0 : reference.metadata) == null ? void 0 : _b2.filename) || "Reference");
   });
 });
-loadTestPolarData();
 loadState();
+function zeros(N) {
+  return new Float32Array(N);
+}
 //# sourceMappingURL=app.js.map
