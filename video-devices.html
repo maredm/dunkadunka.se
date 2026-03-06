@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="dark">
+    <title>Video Devices - 720p</title>
+    <link rel="stylesheet" href="static/styles.css">
+    <style>
+        body {
+            background: #1a1a1a;
+            color: #e0e0e0;
+        }
+        .video-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(640px, 1fr));
+            gap: 20px;
+            padding: 20px;
+        }
+        .video-container {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        .video-container h3 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            color: #e0e0e0;
+        }
+        .video-container video {
+            width: 100%;
+            height: auto;
+            background: #000;
+            border-radius: 4px;
+        }
+        .video-info {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #a0a0a0;
+        }
+        .error-message {
+            color: #ff6b6b;
+            padding: 15px;
+            background: #3a1f1f;
+            border-radius: 4px;
+            margin: 20px;
+            border: 1px solid #5a2f2f;
+        }
+        .info-message {
+            padding: 15px;
+            background: #1f2a3a;
+            border-radius: 4px;
+            margin: 20px;
+            color: #64b5f6;
+            border: 1px solid #2f4a5a;
+        }
+        .controls {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 20px;
+            background: #2a2a2a;
+            border-bottom: 2px solid #3a3a3a;
+            gap: 20px;
+        }
+        .controls h1 {
+            margin: 0;
+            font-size: 18px;
+            color: #e0e0e0;
+            font-weight: 500;
+        }
+        .button-group {
+            display: flex;
+            gap: 10px;
+        }
+        .button-custom {
+            padding: 8px 16px;
+            font-size: 13px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        .button-custom-primary {
+            background-color: #2196f3;
+            color: white;
+        }
+        .button-custom-primary:hover {
+            background-color: #1976d2;
+        }
+        .button-custom-secondary {
+            background-color: #616161;
+            color: white;
+        }
+        .button-custom-secondary:hover {
+            background-color: #525252;
+        }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <div style="display: flex; align-items: center; gap: 20px;">
+            <span style="color: #e0e0e0; font-weight: 600;">Web Toolbox</span>
+            <span style="color: #666;">|</span>
+            <h1>Video Devices - 720p</h1>
+        </div>
+        <div class="button-group">
+            <button id="startBtn" class="button-custom button-custom-primary">Open All Video Devices</button>
+            <button id="stopBtn" class="button-custom button-custom-secondary" disabled>Stop All</button>
+        </div>
+    </div>
+
+    <div id="status"></div>
+    <div id="videoGrid" class="video-grid"></div>
+
+    <script>
+        let streams = [];
+        const videoGrid = document.getElementById('videoGrid');
+        const statusDiv = document.getElementById('status');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+
+        async function getVideoDevices() {
+            try {
+                // Request permissions first
+                const permissionStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                permissionStream.getTracks().forEach(track => track.stop());
+
+                // Enumerate devices
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(device => device.kind === 'videoinput');
+                
+                return videoDevices;
+            } catch (error) {
+                console.error('Error getting video devices:', error);
+                throw error;
+            }
+        }
+
+        async function openVideoDevice(device) {
+            const constraints = {
+                video: {
+                    deviceId: { exact: device.deviceId },
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                }
+            };
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                
+                // Create container
+                const container = document.createElement('div');
+                container.className = 'video-container';
+                container.dataset.deviceId = device.deviceId;
+
+                // Create title
+                const title = document.createElement('h3');
+                title.textContent = device.label || `Camera ${streams.length + 1}`;
+                container.appendChild(title);
+
+                // Create video element
+                const video = document.createElement('video');
+                video.srcObject = stream;
+                video.autoplay = true;
+                video.playsinline = true;
+                video.muted = true;
+                container.appendChild(video);
+
+                // Get actual video settings
+                const videoTrack = stream.getVideoTracks()[0];
+                const settings = videoTrack.getSettings();
+
+                // Create info div
+                const info = document.createElement('div');
+                info.className = 'video-info';
+                info.innerHTML = `
+                    Resolution: ${settings.width}x${settings.height}<br>
+                    Frame rate: ${settings.frameRate ? settings.frameRate.toFixed(1) : 'N/A'} fps<br>
+                    Device ID: ${device.deviceId.substring(0, 20)}...
+                `;
+                container.appendChild(info);
+
+                videoGrid.appendChild(container);
+                streams.push({ stream, container, device });
+
+                return stream;
+            } catch (error) {
+                console.error(`Error opening device ${device.label}:`, error);
+                throw error;
+            }
+        }
+
+        async function openAllDevices() {
+            try {
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                statusDiv.innerHTML = '<div class="info-message">Enumerating video devices...</div>';
+                
+                const devices = await getVideoDevices();
+                
+                if (devices.length === 0) {
+                    statusDiv.innerHTML = '<div class="error-message">No video devices found.</div>';
+                    startBtn.disabled = false;
+                    stopBtn.disabled = true;
+                    return;
+                }
+
+                statusDiv.innerHTML = `<div class="info-message">Found ${devices.length} video device(s). Opening all in 720p...</div>`;
+
+                const promises = devices.map(device => openVideoDevice(device));
+                await Promise.allSettled(promises);
+
+                if (streams.length > 0) {
+                    statusDiv.innerHTML = `<div class="info-message">Successfully opened ${streams.length} video device(s) in 720p.</div>`;
+                } else {
+                    statusDiv.innerHTML = '<div class="error-message">Failed to open any video devices.</div>';
+                    startBtn.disabled = false;
+                    stopBtn.disabled = true;
+                }
+
+            } catch (error) {
+                console.error('Error:', error);
+                statusDiv.innerHTML = `<div class="error-message">Error: ${error.message}</div>`;
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+            }
+        }
+
+        function stopAllDevices() {
+            streams.forEach(({ stream, container }) => {
+                stream.getTracks().forEach(track => track.stop());
+                container.remove();
+            });
+            streams = [];
+            videoGrid.innerHTML = '';
+            statusDiv.innerHTML = '<div class="info-message">All video devices stopped.</div>';
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+        }
+
+        // Event listeners
+        startBtn.addEventListener('click', openAllDevices);
+        stopBtn.addEventListener('click', stopAllDevices);
+
+        // Check if getUserMedia is supported
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            statusDiv.innerHTML = '<div class="error-message">Your browser does not support getUserMedia API.</div>';
+            startBtn.disabled = true;
+        }
+    </script>
+</body>
+</html>
