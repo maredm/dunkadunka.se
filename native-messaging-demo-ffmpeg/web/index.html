@@ -124,6 +124,35 @@
             });
         }
 
+        function checkBridgeAvailability() {
+            return new Promise((resolve, reject) => {
+                const id = `ffmpeg-bridge-${Date.now()}-${requestCounter++}`;
+
+                const timeout = setTimeout(() => {
+                    window.removeEventListener("message", onMessage);
+                    reject(new Error("No response from extension bridge"));
+                }, 1500);
+
+                function onMessage(event) {
+                    if (event.source !== window) {
+                        return;
+                    }
+
+                    const data = event.data;
+                    if (!data || data.type !== "ffmpeg-demo-bridge-pong" || data.id !== id) {
+                        return;
+                    }
+
+                    clearTimeout(timeout);
+                    window.removeEventListener("message", onMessage);
+                    resolve(true);
+                }
+
+                window.addEventListener("message", onMessage);
+                window.postMessage({ type: "ffmpeg-demo-bridge-ping", id }, "*");
+            });
+        }
+
         function fillDevices(videoDevices) {
             deviceSelect.innerHTML = "";
             if (!Array.isArray(videoDevices) || videoDevices.length === 0) {
@@ -177,6 +206,13 @@
 
         startCaptureButton.addEventListener("click", () => {
             startCapture().catch((err) => setStatus(err?.message || "Unexpected error", true));
+        });
+
+        checkBridgeAvailability().catch(() => {
+            setStatus(
+                "Extension bridge not detected. Reload extension, enable Allow access to file URLs, and open this page as /native-messaging-demo-ffmpeg/web/index.html or /native-messaging-demo-ffmpeg/web/.",
+                true
+            );
         });
     </script>
 </body>

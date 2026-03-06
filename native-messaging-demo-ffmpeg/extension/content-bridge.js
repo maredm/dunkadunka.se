@@ -1,5 +1,7 @@
 const PAGE_SUFFIXES = [
   "/native-messaging-demo-ffmpeg/web/index.html",
+  "/native-messaging-demo-ffmpeg/web/",
+  "/native-messaging-demo-ffmpeg/web",
   "/video/index.html",
   "/video/",
   "/video"
