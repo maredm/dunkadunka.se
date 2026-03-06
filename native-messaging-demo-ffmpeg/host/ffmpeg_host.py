@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 import json
+import os
 import platform
 import re
+import signal
 import struct
 import subprocess
 import sys
@@ -10,7 +12,9 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 
-HOST_NAME = "com.dunkadunka.ffmpeg_demo_host"
+HOST_NAME = "com.dunkadunka./opt/homebrew/bin/ffmpeg_demo_host"
+ACTIVE_PIDS_BY_DEVICE: Dict[int, int] = {}
+LAST_CAPTURE_PID: Optional[int] = None
 
 
 def _run(cmd):
@@ -23,6 +27,123 @@ def _project_root() -> Path:
 
 def _output_path(device_id: int) -> Path:
     return _project_root() / "video" / f"output_{device_id}.mp4"
+
+
+def _sanitize_positive_int(value: Any, field_name: str) -> int:
+    if isinstance(value, bool):
+        raise ValueError(f"{field_name} must be an integer")
+    if isinstance(value, int):
+        parsed = value
+    elif isinstance(value, str) and value.strip().isdigit():
+        parsed = int(value.strip())
+    else:
+        raise ValueError(f"{field_name} must be an integer")
+
+    if parsed <= 0:
+        raise ValueError(f"{field_name} must be > 0")
+    return parsed
+
+
+def _sanitize_non_negative_int(value: Any, field_name: str) -> int:
+    if isinstance(value, bool):
+        raise ValueError(f"{field_name} must be an integer")
+    if isinstance(value, int):
+        parsed = value
+    elif isinstance(value, str) and value.strip().isdigit():
+        parsed = int(value.strip())
+    else:
+        raise ValueError(f"{field_name} must be an integer")
+
+    if parsed < 0:
+        raise ValueError(f"{field_name} must be >= 0")
+    return parsed
+
+
+def _sanitize_pix_fmt(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("pix_fmt must be a string")
+    pix_fmt = value.strip()
+    if not pix_fmt:
+        return None
+    if not re.fullmatch(r"[A-Za-z0-9_]+", pix_fmt):
+        raise ValueError("pix_fmt contains invalid characters")
+    return pix_fmt
+
+
+def _sanitize_duration_seconds(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise ValueError("duration_seconds must be a number")
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as err:
+        raise ValueError("duration_seconds must be a number") from err
+    if parsed <= 0:
+        raise ValueError("duration_seconds must be > 0")
+    return parsed
+
+
+def _sanitize_filename(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("filename must be a string")
+
+    name = value.strip()
+    if not name:
+        return None
+
+    # Keep output filenames simple and safe under /video.
+    if "/" in name or "\\" in name:
+        raise ValueError("filename must not include path separators")
+
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", name):
+        raise ValueError("filename contains invalid characters")
+
+    if not name.lower().endswith(".mp4"):
+        name = f"{name}.mp4"
+
+    return name
+
+
+def _sanitize_options(raw_options: Any) -> Dict[str, Any]:
+    if raw_options is None:
+        raw_options = {}
+    if not isinstance(raw_options, dict):
+        raise ValueError("options must be an object")
+
+    width = _sanitize_positive_int(raw_options.get("width"), "width") if raw_options.get("width") is not None else None
+    height = _sanitize_positive_int(raw_options.get("height"), "height") if raw_options.get("height") is not None else None
+    if (width is None) != (height is None):
+        raise ValueError("width and height must be provided together")
+
+    crop = raw_options.get("crop")
+    crop_filter = None
+    if crop is not None:
+        if not isinstance(crop, dict):
+            raise ValueError("crop must be an object")
+        crop_w = _sanitize_positive_int(crop.get("w"), "crop.w")
+        crop_h = _sanitize_positive_int(crop.get("h"), "crop.h")
+        crop_x = _sanitize_non_negative_int(crop.get("x", 0), "crop.x")
+        crop_y = _sanitize_non_negative_int(crop.get("y", 0), "crop.y")
+        crop_filter = f"crop={crop_w}:{crop_h}:{crop_x}:{crop_y}"
+
+    return {
+        "filename": _sanitize_filename(raw_options.get("filename")),
+        "width": width,
+        "height": height,
+        "crop_filter": crop_filter,
+        "pix_fmt": _sanitize_pix_fmt(raw_options.get("pix_fmt")),
+        "duration_seconds": _sanitize_duration_seconds(raw_options.get("duration_seconds")),
+    }
+
+
+def _resolve_output_path(device_id: int, options: Dict[str, Any]) -> Path:
+    file_name = options.get("filename") or f"output_{device_id}.mp4"
+    return _project_root() / "video" / file_name
 
 
 def _sanitize_device_id(value: Any) -> int:
@@ -73,33 +194,42 @@ def list_devices() -> Dict[str, Any]:
     if platform.system() != "Darwin":
         raise RuntimeError("AVFoundation is supported on macOS only")
 
-    result = _run(["ffmpeg", "-f", "avfoundation", "-list_devices", "true", "-i", ""])
+    result = _run(["/opt/homebrew/bin/ffmpeg", "-f", "avfoundation", "-list_devices", "true", "-i", ""])
     combined = "\n".join(p for p in [result.stdout, result.stderr] if p)
-
-    if result.returncode not in (0, 1):
-        raise RuntimeError(combined.strip() or "ffmpeg failed")
 
     parsed = _parse_devices(combined)
     return parsed
 
 
-def start_capture(device_id: int) -> Dict[str, Any]:
+def start_capture(device_id: int, options: Dict[str, Any]) -> Dict[str, Any]:
     if platform.system() != "Darwin":
         raise RuntimeError("AVFoundation is supported on macOS only")
 
-    output_file = _output_path(device_id)
+    output_file = _resolve_output_path(device_id, options)
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
-    # Device-specific AVFoundation input based on selected id.
     cmd = [
-        "ffmpeg",
+        "/opt/homebrew/bin/ffmpeg",
         "-y",
         "-f",
         "avfoundation",
-        "-i",
-        f"{device_id}:",
-        str(output_file),
     ]
+
+    if options["width"] is not None and options["height"] is not None:
+        cmd.extend(["-video_size", f"{options['width']}x{options['height']}"])
+
+    cmd.extend(["-i", f"{device_id}:"])
+
+    if options["crop_filter"] is not None:
+        cmd.extend(["-vf", options["crop_filter"]])
+
+    if options["pix_fmt"] is not None:
+        cmd.extend(["-pix_fmt", options["pix_fmt"]])
+
+    if options["duration_seconds"] is not None:
+        cmd.extend(["-t", str(options["duration_seconds"])])
+
+    cmd.append(str(output_file))
 
     process = subprocess.Popen(
         cmd,
@@ -108,12 +238,39 @@ def start_capture(device_id: int) -> Dict[str, Any]:
         cwd=str(_project_root()),
     )
 
+    global LAST_CAPTURE_PID
+    ACTIVE_PIDS_BY_DEVICE[device_id] = process.pid
+    LAST_CAPTURE_PID = process.pid
+
     return {
         "device_id": device_id,
         "pid": process.pid,
         "output_file": str(output_file),
         "command": " ".join(cmd),
     }
+
+
+def stop_capture(command: Dict[str, Any]) -> Dict[str, Any]:
+    pid_value = command.get("pid")
+    if pid_value is not None:
+        pid = _sanitize_positive_int(pid_value, "pid")
+    else:
+        device_id_value = command.get("device_id")
+        if device_id_value is not None:
+            device_id = _sanitize_device_id(device_id_value)
+            pid = ACTIVE_PIDS_BY_DEVICE.get(device_id)
+        else:
+            pid = LAST_CAPTURE_PID
+
+    if pid is None:
+        return {"ok": False, "error": "No active capture process found"}
+
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return {"ok": False, "error": f"Process {pid} is not running"}
+
+    return {"ok": True, "pid": pid, "stopped": True}
 
 
 def read_message() -> Optional[Dict[str, Any]]:
@@ -154,7 +311,8 @@ def handle_command(command: Dict[str, Any]) -> Dict[str, Any]:
 
     if action == "start_capture":
         device_id = _sanitize_device_id(command.get("device_id"))
-        started = start_capture(device_id)
+        options = _sanitize_options(command.get("options"))
+        started = start_capture(device_id, options)
         return {
             "ok": True,
             "device_id": started["device_id"],
@@ -162,6 +320,9 @@ def handle_command(command: Dict[str, Any]) -> Dict[str, Any]:
             "output_file": started["output_file"],
             "command": started["command"],
         }
+
+    if action == "stop_capture":
+        return stop_capture(command)
 
     return {"ok": False, "error": f"Unknown action: {action}"}
 

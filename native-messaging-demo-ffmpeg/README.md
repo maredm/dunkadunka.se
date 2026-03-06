@@ -30,6 +30,18 @@ ffmpeg -f avfoundation -list_devices true -i ""
 ffmpeg -y -f avfoundation -i "<device_id>:" video/output_<device_id>.mp4
 ```
 
+Supported start options:
+
+- `filename` (e.g. `session_01.mp4`)
+- `width` + `height`
+- `crop` object: `w`, `h`, `x`, `y` (mapped to FFmpeg `-vf crop=...`)
+- `pix_fmt`
+- `duration_seconds`
+
+Stop action:
+
+- `stop_capture` with optional `pid` or `device_id`
+
 ## Setup
 
 1. Open `chrome://extensions`
