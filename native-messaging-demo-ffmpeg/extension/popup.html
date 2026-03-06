@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FFmpeg Demo</title>
+    <style>
+        body {
+            margin: 12px;
+            font-family: Arial, sans-serif;
+            min-width: 300px;
+        }
+
+        h1 {
+            margin: 0 0 10px;
+            font-size: 16px;
+        }
+
+        .row {
+            display: grid;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        button,
+        select {
+            width: 100%;
+            padding: 8px;
+        }
+
+        .status {
+            font-size: 12px;
+            min-height: 18px;
+            color: #444;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>FFmpeg Capture</h1>
+    <div class="row">
+        <button id="listDevices">List Devices</button>
+        <select id="deviceSelect"></select>
+        <button id="startCapture">Start Capture</button>
+    </div>
+    <div class="status" id="status">Waiting for command.</div>
+    <script src="popup.js"></script>
+</body>
+
+</html>
