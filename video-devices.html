@@ -57,6 +57,23 @@
             margin: 0 0 10px 0;
             font-size: 16px;
             color: var(--text-primary);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .fullscreen-btn {
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            cursor: pointer;
+            padding: 4px 8px;
+            font-size: 12px;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+        .fullscreen-btn:hover {
+            background: var(--bg-primary);
+            border-color: #2196f3;
         }
         .video-container video {
             width: 100%;
@@ -184,6 +201,49 @@
             opacity: 0.5;
             cursor: not-allowed;
         }
+        .resolution-selector {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: var(--text-primary);
+        }
+        .resolution-selector label {
+            font-weight: 500;
+        }
+        .resolution-selector select {
+            padding: 6px 10px;
+            border: 2px solid var(--border);
+            border-radius: 4px;
+            background-color: var(--bg-secondary);
+            color: var(--text-primary);
+            font-size: 13px;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        .resolution-selector select:focus {
+            outline: none;
+            border-color: #2196f3;
+        }
+        .button-custom-screen {
+            background-color: #7b1fa2;
+            color: white;
+            border-color: #7b1fa2;
+        }
+        .button-custom-screen:hover {
+            background-color: #6a1b9a;
+            border-color: #6a1b9a;
+        }
+        @media (prefers-color-scheme: light) {
+            .button-custom-screen {
+                background-color: white;
+                color: #7b1fa2;
+                border-color: #ce93d8;
+            }
+            .button-custom-screen:hover {
+                background-color: #f3e5f5;
+            }
+        }
     </style>
 </head>
 <body>
@@ -191,11 +251,23 @@
         <div style="display: flex; align-items: center; gap: 20px;">
             <span class="brand">Web Toolbox</span>
             <span class="separator">|</span>
-            <h1>Video Devices - 720p</h1>
+            <h1 id="pageTitle">Video Devices - 720p</h1>
         </div>
-        <div class="button-group">
-            <button id="startBtn" class="button-custom button-custom-primary">Open All Video Devices</button>
-            <button id="stopBtn" class="button-custom button-custom-secondary" disabled>Stop All</button>
+        <div style="display: flex; align-items: center; gap: 15px;">
+            <div class="resolution-selector">
+                <label for="resolutionSelect">Resolution:</label>
+                <select id="resolutionSelect">
+                    <option value="720">720p (1280x720)</option>
+                    <option value="1080">1080p (1920x1080)</option>
+                    <option value="1440">1440p (2560x1440)</option>
+                    <option value="2160">4K (3840x2160)</option>
+                </select>
+            </div>
+            <div class="button-group">
+                <button id="startBtn" class="button-custom button-custom-primary">Open All Cameras</button>
+                <button id="captureScreenBtn" class="button-custom button-custom-screen">🖥️ Capture Screen</button>
+                <button id="stopBtn" class="button-custom button-custom-secondary" disabled>Stop All</button>
+            </div>
         </div>
     </div>
 
@@ -208,6 +280,26 @@
         const statusDiv = document.getElementById('status');
         const startBtn = document.getElementById('startBtn');
         const stopBtn = document.getElementById('stopBtn');
+        const captureScreenBtn = document.getElementById('captureScreenBtn');
+        const resolutionSelect = document.getElementById('resolutionSelect');
+        const pageTitle = document.getElementById('pageTitle');
+
+        // Update title when resolution changes
+        resolutionSelect.addEventListener('change', () => {
+            const resText = resolutionSelect.options[resolutionSelect.selectedIndex].text;
+            pageTitle.textContent = `Video Devices - ${resText.split(' ')[0]}`;
+        });
+
+        function getResolutionConstraints() {
+            const resolution = resolutionSelect.value;
+            const resolutions = {
+                '720': { width: 1280, height: 720 },
+                '1080': { width: 1920, height: 1080 },
+                '1440': { width: 2560, height: 1440 },
+                '2160': { width: 3840, height: 2160 }
+            };
+            return resolutions[resolution];
+        }
 
         async function getVideoDevices() {
             try {
@@ -227,11 +319,12 @@
         }
 
         async function openVideoDevice(device) {
+            const res = getResolutionConstraints();
             const constraints = {
                 video: {
                     deviceId: { exact: device.deviceId },
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 }
+                    width: { ideal: res.width },
+                    height: { ideal: res.height }
                 }
             };
 
@@ -243,10 +336,16 @@
                 container.className = 'video-container';
                 container.dataset.deviceId = device.deviceId;
 
-                // Create title
-                const title = document.createElement('h3');
-                title.textContent = device.label || `Camera ${streams.length + 1}`;
-                container.appendChild(title);
+                // Create title with fullscreen button
+                const titleContainer = document.createElement('h3');
+                const titleText = document.createElement('span');
+                titleText.textContent = device.label || `Camera ${streams.length + 1}`;
+                const fullscreenBtn = document.createElement('button');
+                fullscreenBtn.className = 'fullscreen-btn';
+                fullscreenBtn.textContent = '⛶ Fullscreen';
+                titleContainer.appendChild(titleText);
+                titleContainer.appendChild(fullscreenBtn);
+                container.appendChild(titleContainer);
 
                 // Create video element
                 const video = document.createElement('video');
@@ -255,6 +354,19 @@
                 video.playsinline = true;
                 video.muted = true;
                 container.appendChild(video);
+
+                // Fullscreen click handler
+                fullscreenBtn.addEventListener('click', () => {
+                    if (video.requestFullscreen) {
+                        video.requestFullscreen();
+                    } else if (video.webkitRequestFullscreen) {
+                        video.webkitRequestFullscreen();
+                    } else if (video.mozRequestFullScreen) {
+                        video.mozRequestFullScreen();
+                    } else if (video.msRequestFullscreen) {
+                        video.msRequestFullscreen();
+                    }
+                });
 
                 // Get actual video settings
                 const videoTrack = stream.getVideoTracks()[0];
@@ -271,11 +383,92 @@
                 container.appendChild(info);
 
                 videoGrid.appendChild(container);
-                streams.push({ stream, container, device });
+                streams.push({ stream, container, device, type: 'camera' });
 
                 return stream;
             } catch (error) {
                 console.error(`Error opening device ${device.label}:`, error);
+                throw error;
+            }
+        }
+
+        async function openScreenCapture() {
+            const res = getResolutionConstraints();
+            try {
+                const stream = await navigator.mediaDevices.getDisplayMedia({
+                    video: {
+                        width: { ideal: res.width },
+                        height: { ideal: res.height }
+                    },
+                    audio: false
+                });
+
+                // Create container
+                const container = document.createElement('div');
+                container.className = 'video-container';
+                container.dataset.type = 'screen';
+
+                // Create title with fullscreen button
+                const titleContainer = document.createElement('h3');
+                const titleText = document.createElement('span');
+                titleText.textContent = '🖥️ Screen Capture';
+                const fullscreenBtn = document.createElement('button');
+                fullscreenBtn.className = 'fullscreen-btn';
+                fullscreenBtn.textContent = '⛶ Fullscreen';
+                titleContainer.appendChild(titleText);
+                titleContainer.appendChild(fullscreenBtn);
+                container.appendChild(titleContainer);
+
+                // Create video element
+                const video = document.createElement('video');
+                video.srcObject = stream;
+                video.autoplay = true;
+                video.playsinline = true;
+                video.muted = true;
+                container.appendChild(video);
+
+                // Fullscreen click handler
+                fullscreenBtn.addEventListener('click', () => {
+                    if (video.requestFullscreen) {
+                        video.requestFullscreen();
+                    } else if (video.webkitRequestFullscreen) {
+                        video.webkitRequestFullscreen();
+                    } else if (video.mozRequestFullScreen) {
+                        video.mozRequestFullScreen();
+                    } else if (video.msRequestFullscreen) {
+                        video.msRequestFullscreen();
+                    }
+                });
+
+                // Get actual video settings
+                const videoTrack = stream.getVideoTracks()[0];
+                const settings = videoTrack.getSettings();
+
+                // Create info div
+                const info = document.createElement('div');
+                info.className = 'video-info';
+                info.innerHTML = `
+                    Resolution: ${settings.width}x${settings.height}<br>
+                    Frame rate: ${settings.frameRate ? settings.frameRate.toFixed(1) : 'N/A'} fps<br>
+                    Type: Screen Capture
+                `;
+                container.appendChild(info);
+
+                videoGrid.appendChild(container);
+                streams.push({ stream, container, device: { label: 'Screen Capture' }, type: 'screen' });
+
+                // Handle stream ending (user stops sharing)
+                videoTrack.addEventListener('ended', () => {
+                    const index = streams.findIndex(s => s.stream === stream);
+                    if (index !== -1) {
+                        streams[index].container.remove();
+                        streams.splice(index, 1);
+                    }
+                });
+
+                return stream;
+            } catch (error) {
+                console.error('Error opening screen capture:', error);
                 throw error;
             }
         }
@@ -295,13 +488,17 @@
                     return;
                 }
 
-                statusDiv.innerHTML = `<div class="info-message">Found ${devices.length} video device(s). Opening all in 720p...</div>`;
+                const resText = resolutionSelect.options[resolutionSelect.selectedIndex].text;
+                statusDiv.innerHTML = `<div class="info-message">Found ${devices.length} video device(s). Opening all in ${resText.split(' ')[0]}...</div>`;
 
+                // Open all video devices
                 const promises = devices.map(device => openVideoDevice(device));
                 await Promise.allSettled(promises);
 
                 if (streams.length > 0) {
-                    statusDiv.innerHTML = `<div class="info-message">Successfully opened ${streams.length} video device(s) in 720p.</div>`;
+                    const cameraCount = streams.filter(s => s.type === 'camera').length;
+                    statusDiv.innerHTML = `<div class="info-message">Successfully opened ${cameraCount} camera(s).</div>`;
+                    // Keep start button disabled after successful capture to prevent duplicates
                 } else {
                     statusDiv.innerHTML = '<div class="error-message">Failed to open any video devices.</div>';
                     startBtn.disabled = false;
@@ -312,7 +509,42 @@
                 console.error('Error:', error);
                 statusDiv.innerHTML = `<div class="error-message">Error: ${error.message}</div>`;
                 startBtn.disabled = false;
-                stopBtn.disabled = true;
+                if (streams.length === 0) {
+                    stopBtn.disabled = true;
+                }
+            }
+        }
+
+        async function captureScreen() {
+            try {
+                captureScreenBtn.disabled = true;
+                stopBtn.disabled = false;
+                
+                await openScreenCapture();
+                
+                const screenCount = streams.filter(s => s.type === 'screen').length;
+                const cameraCount = streams.filter(s => s.type === 'camera').length;
+                
+                let message = 'Capturing ';
+                if (screenCount > 0) message += `${screenCount} screen(s)`;
+                if (cameraCount > 0) {
+                    if (screenCount > 0) message += ' and ';
+                    message += `${cameraCount} camera(s)`;
+                }
+                statusDiv.innerHTML = `<div class="info-message">${message}.</div>`;
+                
+                // Re-enable the capture button to allow multiple screens
+                captureScreenBtn.disabled = false;
+                
+            } catch (error) {
+                console.error('Screen capture error:', error);
+                statusDiv.innerHTML = `<div class="error-message">Screen capture failed: ${error.message}</div>`;
+                
+                // Re-enable buttons
+                captureScreenBtn.disabled = false;
+                if (streams.length === 0) {
+                    stopBtn.disabled = true;
+                }
             }
         }
 
@@ -323,13 +555,15 @@
             });
             streams = [];
             videoGrid.innerHTML = '';
-            statusDiv.innerHTML = '<div class="info-message">All video devices stopped.</div>';
+            statusDiv.innerHTML = '<div class="info-message">All devices stopped.</div>';
             startBtn.disabled = false;
+            captureScreenBtn.disabled = false;
             stopBtn.disabled = true;
         }
 
         // Event listeners
         startBtn.addEventListener('click', openAllDevices);
+        captureScreenBtn.addEventListener('click', captureScreen);
         stopBtn.addEventListener('click', stopAllDevices);
 
         // Check if getUserMedia is supported
