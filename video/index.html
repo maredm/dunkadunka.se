@@ -1,11 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="light dark">
     <title>Video Devices - 720p</title>
-    <link rel="stylesheet" href="static/styles.css">
     <style>
         :root {
             /* Dark mode (default) */
@@ -34,25 +34,28 @@
             color: var(--text-primary);
             font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         }
+
         .video-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(640px, 1fr));
             gap: 20px;
             padding: 20px;
         }
+
         .video-container {
             background: var(--bg-secondary);
             border-radius: 8px;
             padding: 15px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
             border: 1px solid var(--border);
         }
 
         @media (prefers-color-scheme: light) {
             .video-container {
-                box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
             }
         }
+
         .video-container h3 {
             margin: 0 0 10px 0;
             font-size: 16px;
@@ -61,6 +64,7 @@
             justify-content: space-between;
             align-items: center;
         }
+
         .fullscreen-btn {
             background: none;
             border: 1px solid var(--border);
@@ -71,21 +75,73 @@
             border-radius: 4px;
             transition: all 0.2s;
         }
+
         .fullscreen-btn:hover {
             background: var(--bg-primary);
             border-color: #2196f3;
         }
+
         .video-container video {
             width: 100%;
             height: auto;
             background: #000;
-            border-radius: 4px;
+            border-radius: 0px;
         }
+
+        .video-preview-stage {
+            position: relative;
+            overflow: hidden;
+            background: #000;
+        }
+
+        .video-preview-stage video {
+            display: block;
+        }
+
+        .recording-placeholder {
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+        }
+
+        .recording-placeholder.is-visible {
+            display: flex;
+        }
+
+        .video-preview-stage:has(.recording-placeholder.is-visible) video {
+            display: none;
+        }
+
+        .recording-placeholder img {
+            width: 100%;
+            height: 100%;
+            opacity: 0.65;
+        }
+
+        .recording-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 8px 14px;
+            border: 1px solid rgba(255, 255, 255, 0.65);
+            border-radius: 999px;
+            background: rgba(0, 0, 0, 0.6);
+            color: #ff6161;
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
         .video-info {
             margin-top: 8px;
             font-size: 12px;
             color: var(--text-secondary);
         }
+
         .error-message {
             color: #ff6b6b;
             padding: 15px;
@@ -129,23 +185,28 @@
             border-bottom: 2px solid var(--border);
             gap: 20px;
         }
+
         .controls h1 {
             margin: 0;
             font-size: 18px;
             color: var(--text-primary);
             font-weight: 500;
         }
+
         .controls .brand {
             color: var(--text-primary);
             font-weight: 600;
         }
+
         .controls .separator {
             color: var(--separator-color);
         }
+
         .button-group {
             display: flex;
             gap: 10px;
         }
+
         .button-custom {
             padding: 8px 16px;
             font-size: 13px;
@@ -155,11 +216,13 @@
             border: 2px solid;
             transition: all 0.2s;
         }
+
         .button-custom-primary {
             background-color: #2196f3;
             color: white;
             border-color: #2196f3;
         }
+
         .button-custom-primary:hover {
             background-color: #1976d2;
             border-color: #1976d2;
@@ -171,6 +234,7 @@
                 color: #1976d2;
                 border-color: #bbdefb;
             }
+
             .button-custom-primary:hover {
                 background-color: #e3f2fd;
             }
@@ -181,6 +245,7 @@
             color: white;
             border-color: #616161;
         }
+
         .button-custom-secondary:hover {
             background-color: #525252;
             border-color: #525252;
@@ -192,6 +257,7 @@
                 color: #757575;
                 border-color: #ddd;
             }
+
             .button-custom-secondary:hover {
                 background-color: #f5f5f5;
             }
@@ -201,6 +267,7 @@
             opacity: 0.5;
             cursor: not-allowed;
         }
+
         .resolution-selector {
             display: flex;
             align-items: center;
@@ -208,9 +275,11 @@
             font-size: 13px;
             color: var(--text-primary);
         }
+
         .resolution-selector label {
             font-weight: 500;
         }
+
         .resolution-selector select {
             padding: 6px 10px;
             border: 2px solid var(--border);
@@ -221,43 +290,119 @@
             cursor: pointer;
             font-family: inherit;
         }
+
         .resolution-selector select:focus {
             outline: none;
             border-color: #2196f3;
         }
+
         .button-custom-screen {
             background-color: #7b1fa2;
             color: white;
             border-color: #7b1fa2;
         }
+
         .button-custom-screen:hover {
             background-color: #6a1b9a;
             border-color: #6a1b9a;
         }
+
         @media (prefers-color-scheme: light) {
             .button-custom-screen {
                 background-color: white;
                 color: #7b1fa2;
                 border-color: #ce93d8;
             }
+
             .button-custom-screen:hover {
                 background-color: #f3e5f5;
             }
         }
+
+        .button-custom-record {
+            background-color: #d32f2f;
+            color: white;
+            border-color: #d32f2f;
+        }
+
+        .button-custom-record:hover {
+            background-color: #b71c1c;
+            border-color: #b71c1c;
+        }
+
+        @media (prefers-color-scheme: light) {
+            .button-custom-record {
+                background-color: white;
+                color: #c62828;
+                border-color: #ef9a9a;
+            }
+
+            .button-custom-record:hover {
+                background-color: #ffebee;
+            }
+        }
+
+        .record-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: var(--text-primary);
+        }
+
+        .record-controls input {
+            width: 90px;
+            padding: 6px 8px;
+            border: 2px solid var(--border);
+            border-radius: 4px;
+            background-color: var(--bg-secondary);
+            color: var(--text-primary);
+            font-size: 13px;
+        }
+
+        .record-controls input:focus {
+            outline: none;
+            border-color: #d32f2f;
+        }
+
+        .mapping-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 8px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .mapping-row label {
+            white-space: nowrap;
+        }
+
+        .mapping-row select {
+            flex: 1;
+            min-width: 0;
+            padding: 4px 6px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background-color: var(--bg-secondary);
+            color: var(--text-primary);
+            font-size: 12px;
+            font-family: inherit;
+        }
     </style>
 </head>
+
 <body>
     <div class="controls">
         <div style="display: flex; align-items: center; gap: 20px;">
             <span class="brand">Web Toolbox</span>
             <span class="separator">|</span>
-            <h1 id="pageTitle">Video Devices - 720p</h1>
+            <h1 id="pageTitle">Video Devices - 1080p</h1>
         </div>
         <div style="display: flex; align-items: center; gap: 15px;">
             <div class="resolution-selector">
                 <label for="resolutionSelect">Resolution:</label>
                 <select id="resolutionSelect">
-                    <option value="720">720p (1280x720)</option>
                     <option value="1080">1080p (1920x1080)</option>
                     <option value="1440">1440p (2560x1440)</option>
                     <option value="2160">4K (3840x2160)</option>
@@ -266,6 +411,11 @@
             <div class="button-group">
                 <button id="startBtn" class="button-custom button-custom-primary">Open All Cameras</button>
                 <button id="captureScreenBtn" class="button-custom button-custom-screen">🖥️ Capture Screen</button>
+                <div class="record-controls">
+                    <label for="recordDurationInput">Record (s):</label>
+                    <input id="recordDurationInput" type="number" min="1" step="1" value="5" />
+                </div>
+                <button id="recordAllBtn" class="button-custom button-custom-record">● Record All Mapped</button>
                 <button id="stopBtn" class="button-custom button-custom-secondary" disabled>Stop All</button>
             </div>
         </div>
@@ -281,8 +431,147 @@
         const startBtn = document.getElementById('startBtn');
         const stopBtn = document.getElementById('stopBtn');
         const captureScreenBtn = document.getElementById('captureScreenBtn');
+        const recordAllBtn = document.getElementById('recordAllBtn');
+        const recordDurationInput = document.getElementById('recordDurationInput');
         const resolutionSelect = document.getElementById('resolutionSelect');
         const pageTitle = document.getElementById('pageTitle');
+        const extensionRequestPrefix = 'ffmpeg_req_';
+        let extensionRequestCounter = 0;
+        const extensionPending = new Map();
+        let extensionVideoDevices = [];
+        let extensionRefreshInFlight = false;
+        let extensionRefreshRequested = false;
+
+        function showInfo(message) {
+            statusDiv.innerHTML = `<div class="info-message">${message}</div>`;
+        }
+
+        function showError(message) {
+            statusDiv.innerHTML = `<div class="error-message">${message}</div>`;
+        }
+
+        function sanitizeFilePart(value) {
+            return String(value || '')
+                .toLowerCase()
+                .replace(/[^a-z0-9._-]+/g, '-')
+                .replace(/^-+|-+$/g, '')
+                .slice(0, 40) || 'device';
+        }
+
+        function populateMappingSelect(selectElement, selectedValue = '') {
+            selectElement.innerHTML = '';
+
+            const noDeviceOption = document.createElement('option');
+            noDeviceOption.value = '-1';
+            noDeviceOption.textContent = 'No device';
+            noDeviceOption.selected = String(selectedValue) === '';
+            selectElement.appendChild(noDeviceOption);
+
+            if (!Array.isArray(extensionVideoDevices) || extensionVideoDevices.length === 0) {
+                return;
+            }
+
+            extensionVideoDevices.forEach((device) => {
+                const option = document.createElement('option');
+                const value = String(device.id);
+                option.value = value;
+                console.log('Adding mapping option:', { value, name: device.name, selected: value === String(selectedValue) });
+                option.textContent = `[${value}] ${device.name}`;
+                option.selected = value === String(selectedValue);
+                selectElement.appendChild(option);
+            });
+        }
+
+        function updateAllMappingDropdowns() {
+            const selects = videoGrid.querySelectorAll('.device-mapping-select');
+            selects.forEach((select) => {
+                const previous = select.value;
+                populateMappingSelect(select, previous);
+            });
+        }
+
+        function sendNativeCommand(payload, timeoutMs = 20000) {
+            return new Promise((resolve, reject) => {
+                extensionRequestCounter += 1;
+                const requestId = `${extensionRequestPrefix}${extensionRequestCounter}`;
+
+                const timeoutId = setTimeout(() => {
+                    extensionPending.delete(requestId);
+                    reject(new Error('Timed out waiting for extension response. Is the bridge extension installed on this page?'));
+                }, timeoutMs);
+
+                extensionPending.set(requestId, { resolve, reject, timeoutId });
+
+                window.postMessage(
+                    {
+                        source: 'ffmpeg-controller-web',
+                        type: 'native-command',
+                        requestId,
+                        payload
+                    },
+                    '*'
+                );
+            });
+        }
+
+        window.addEventListener('message', (event) => {
+            if (event.source !== window) {
+                return;
+            }
+
+            const data = event.data;
+            if (!data || data.source !== 'ffmpeg-controller-extension' || data.type !== 'native-response' || !data.requestId) {
+                return;
+            }
+
+            const pending = extensionPending.get(data.requestId);
+            if (!pending) {
+                return;
+            }
+
+            clearTimeout(pending.timeoutId);
+            extensionPending.delete(data.requestId);
+
+            pending.resolve(data.response || { ok: false, error: 'Empty extension response' });
+        });
+
+        async function loadExtensionVideoDevices() {
+            try {
+                const response = await sendNativeCommand({ action: 'list_devices' });
+                if (!response?.ok) {
+                    throw new Error(response?.error || 'Failed to list extension video devices');
+                }
+
+                extensionVideoDevices = Array.isArray(response.video_devices) ? response.video_devices : [];
+                updateAllMappingDropdowns();
+                return extensionVideoDevices;
+            } catch (error) {
+                extensionVideoDevices = [];
+                updateAllMappingDropdowns();
+                throw error;
+            }
+        }
+
+        async function refreshExtensionVideoDevices(reason = '') {
+            if (extensionRefreshInFlight) {
+                extensionRefreshRequested = true;
+                return;
+            }
+
+            extensionRefreshInFlight = true;
+            try {
+                do {
+                    extensionRefreshRequested = false;
+                    try {
+                        await loadExtensionVideoDevices();
+                    } catch (error) {
+                        console.warn(`Extension device refresh failed${reason ? ` (${reason})` : ''}:`, error);
+                    }
+                } while (extensionRefreshRequested);
+            } finally {
+                extensionRefreshInFlight = false;
+            }
+        }
 
         // Update title when resolution changes
         resolutionSelect.addEventListener('change', () => {
@@ -293,12 +582,132 @@
         function getResolutionConstraints() {
             const resolution = resolutionSelect.value;
             const resolutions = {
-                '720': { width: 1280, height: 720 },
                 '1080': { width: 1920, height: 1080 },
                 '1440': { width: 2560, height: 1440 },
                 '2160': { width: 3840, height: 2160 }
             };
             return resolutions[resolution];
+        }
+
+        function captureVideoFrame(videoEl) {
+            if (!videoEl || videoEl.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+                return null;
+            }
+
+            const width = videoEl.videoWidth;
+            const height = videoEl.videoHeight;
+            if (!width || !height) {
+                return null;
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+
+            const context = canvas.getContext('2d');
+            if (!context) {
+                return null;
+            }
+
+            context.drawImage(videoEl, 0, 0, width, height);
+            return canvas.toDataURL('image/jpeg', 0.85);
+        }
+
+        function ensureRecordingPlaceholder(container) {
+            const stage = container?.querySelector('.video-preview-stage');
+            if (!stage) {
+                return null;
+            }
+
+            let placeholder = stage.querySelector('.recording-placeholder');
+            if (!placeholder) {
+                placeholder = document.createElement('div');
+                placeholder.className = 'recording-placeholder';
+
+                const img = document.createElement('img');
+                img.alt = 'Last frame before recording';
+
+                const overlay = document.createElement('div');
+                overlay.className = 'recording-overlay';
+                overlay.textContent = 'Recording';
+
+                placeholder.appendChild(img);
+                placeholder.appendChild(overlay);
+                stage.appendChild(placeholder);
+            }
+
+            return placeholder;
+        }
+
+        function showRecordingPlaceholder(entry, frameDataUrl) {
+            const placeholder = ensureRecordingPlaceholder(entry?.container);
+            if (!placeholder) {
+                return;
+            }
+
+            const img = placeholder.querySelector('img');
+            if (img) {
+                if (frameDataUrl) {
+                    img.src = frameDataUrl;
+                } else {
+                    img.removeAttribute('src');
+                }
+            }
+
+            placeholder.classList.add('is-visible');
+        }
+
+        function hideRecordingPlaceholder(entry) {
+            const placeholder = entry?.container?.querySelector('.recording-placeholder');
+            if (!placeholder) {
+                return;
+            }
+            placeholder.classList.remove('is-visible');
+        }
+
+        function stopPreviewStream(entry) {
+            if (!entry?.stream) {
+                return;
+            }
+
+            const videoEl = entry.container?.querySelector('video');
+            const lastFrame = captureVideoFrame(videoEl);
+            showRecordingPlaceholder(entry, lastFrame);
+
+            entry.stream.getTracks().forEach(track => track.stop());
+            if (videoEl) {
+                videoEl.srcObject = null;
+            }
+            entry.stream = null;
+        }
+
+        async function resumeCameraPreview(entry) {
+            if (!entry || entry.type !== 'camera' || !entry.device?.deviceId) {
+                return;
+            }
+
+            const res = getResolutionConstraints();
+            const constraints = {
+                video: {
+                    deviceId: { exact: entry.device.deviceId },
+                    width: { ideal: res.width },
+                    height: { ideal: res.height }
+                }
+            };
+
+            const freshStream = await navigator.mediaDevices.getUserMedia(constraints);
+            const videoEl = entry.container?.querySelector('video');
+            if (videoEl) {
+                videoEl.srcObject = freshStream;
+                videoEl.autoplay = true;
+                videoEl.playsinline = true;
+                videoEl.muted = true;
+
+                videoEl.addEventListener('loadeddata', () => {
+                    hideRecordingPlaceholder(entry);
+                }, { once: true });
+            }
+            entry.stream = freshStream;
         }
 
         async function getVideoDevices() {
@@ -310,7 +719,7 @@
                 // Enumerate devices
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 const videoDevices = devices.filter(device => device.kind === 'videoinput');
-                
+
                 return videoDevices;
             } catch (error) {
                 console.error('Error getting video devices:', error);
@@ -330,7 +739,7 @@
 
             try {
                 const stream = await navigator.mediaDevices.getUserMedia(constraints);
-                
+
                 // Create container
                 const container = document.createElement('div');
                 container.className = 'video-container';
@@ -348,12 +757,35 @@
                 container.appendChild(titleContainer);
 
                 // Create video element
+                const previewStage = document.createElement('div');
+                previewStage.className = 'video-preview-stage';
                 const video = document.createElement('video');
                 video.srcObject = stream;
                 video.autoplay = true;
                 video.playsinline = true;
                 video.muted = true;
-                container.appendChild(video);
+                previewStage.appendChild(video);
+                container.appendChild(previewStage);
+
+                // Per-tile mapping for native extension recording
+                const mappingRow = document.createElement('div');
+                mappingRow.className = 'mapping-row';
+                const mappingLabel = document.createElement('label');
+                mappingLabel.textContent = 'Record as extension device:';
+                const mappingSelect = document.createElement('select');
+                mappingSelect.className = 'device-mapping-select';
+                populateMappingSelect(mappingSelect);
+                mappingSelect.dataset.localDeviceId = device.deviceId;
+
+                if (extensionVideoDevices.length > 0) {
+                    const idx = streams.filter(s => s.type === 'camera').length;
+                    const suggested = extensionVideoDevices[Math.min(idx, extensionVideoDevices.length - 1)];
+                    mappingSelect.value = String(suggested.id);
+                }
+
+                mappingRow.appendChild(mappingLabel);
+                mappingRow.appendChild(mappingSelect);
+                container.appendChild(mappingRow);
 
                 // Fullscreen click handler
                 fullscreenBtn.addEventListener('click', () => {
@@ -384,6 +816,7 @@
 
                 videoGrid.appendChild(container);
                 streams.push({ stream, container, device, type: 'camera' });
+                refreshExtensionVideoDevices('camera-opened');
 
                 return stream;
             } catch (error) {
@@ -420,12 +853,31 @@
                 container.appendChild(titleContainer);
 
                 // Create video element
+                const previewStage = document.createElement('div');
+                previewStage.className = 'video-preview-stage';
                 const video = document.createElement('video');
                 video.srcObject = stream;
                 video.autoplay = true;
                 video.playsinline = true;
                 video.muted = true;
-                container.appendChild(video);
+                previewStage.appendChild(video);
+                container.appendChild(previewStage);
+
+                // Per-tile mapping for native extension recording
+                const mappingRow = document.createElement('div');
+                mappingRow.className = 'mapping-row';
+                const mappingLabel = document.createElement('label');
+                mappingLabel.textContent = 'Record as extension device:';
+                const mappingSelect = document.createElement('select');
+                mappingSelect.className = 'device-mapping-select';
+                populateMappingSelect(mappingSelect);
+                mappingSelect.dataset.localDeviceId = 'screen';
+                if (extensionVideoDevices.length > 0) {
+                    mappingSelect.value = String(extensionVideoDevices[0].id);
+                }
+                mappingRow.appendChild(mappingLabel);
+                mappingRow.appendChild(mappingSelect);
+                container.appendChild(mappingRow);
 
                 // Fullscreen click handler
                 fullscreenBtn.addEventListener('click', () => {
@@ -456,6 +908,7 @@
 
                 videoGrid.appendChild(container);
                 streams.push({ stream, container, device: { label: 'Screen Capture' }, type: 'screen' });
+                refreshExtensionVideoDevices('screen-capture-opened');
 
                 // Handle stream ending (user stops sharing)
                 videoTrack.addEventListener('ended', () => {
@@ -477,19 +930,27 @@
             try {
                 startBtn.disabled = true;
                 stopBtn.disabled = false;
-                statusDiv.innerHTML = '<div class="info-message">Enumerating video devices...</div>';
-                
+                showInfo('Enumerating video devices...');
+
+                if (extensionVideoDevices.length === 0) {
+                    try {
+                        await loadExtensionVideoDevices();
+                    } catch (error) {
+                        showError(`Opened local cameras is still available, but extension device list failed: ${error.message}`);
+                    }
+                }
+
                 const devices = await getVideoDevices();
-                
+
                 if (devices.length === 0) {
-                    statusDiv.innerHTML = '<div class="error-message">No video devices found.</div>';
+                    showError('No video devices found.');
                     startBtn.disabled = false;
                     stopBtn.disabled = true;
                     return;
                 }
 
                 const resText = resolutionSelect.options[resolutionSelect.selectedIndex].text;
-                statusDiv.innerHTML = `<div class="info-message">Found ${devices.length} video device(s). Opening all in ${resText.split(' ')[0]}...</div>`;
+                showInfo(`Found ${devices.length} video device(s). Opening all in ${resText.split(' ')[0]}...`);
 
                 // Open all video devices
                 const promises = devices.map(device => openVideoDevice(device));
@@ -497,17 +958,17 @@
 
                 if (streams.length > 0) {
                     const cameraCount = streams.filter(s => s.type === 'camera').length;
-                    statusDiv.innerHTML = `<div class="info-message">Successfully opened ${cameraCount} camera(s).</div>`;
+                    showInfo(`Successfully opened ${cameraCount} camera(s).`);
                     // Keep start button disabled after successful capture to prevent duplicates
                 } else {
-                    statusDiv.innerHTML = '<div class="error-message">Failed to open any video devices.</div>';
+                    showError('Failed to open any video devices.');
                     startBtn.disabled = false;
                     stopBtn.disabled = true;
                 }
 
             } catch (error) {
                 console.error('Error:', error);
-                statusDiv.innerHTML = `<div class="error-message">Error: ${error.message}</div>`;
+                showError(`Error: ${error.message}`);
                 startBtn.disabled = false;
                 if (streams.length === 0) {
                     stopBtn.disabled = true;
@@ -519,33 +980,139 @@
             try {
                 captureScreenBtn.disabled = true;
                 stopBtn.disabled = false;
-                
+
                 await openScreenCapture();
-                
+
                 const screenCount = streams.filter(s => s.type === 'screen').length;
                 const cameraCount = streams.filter(s => s.type === 'camera').length;
-                
+
                 let message = 'Capturing ';
                 if (screenCount > 0) message += `${screenCount} screen(s)`;
                 if (cameraCount > 0) {
                     if (screenCount > 0) message += ' and ';
                     message += `${cameraCount} camera(s)`;
                 }
-                statusDiv.innerHTML = `<div class="info-message">${message}.</div>`;
-                
+                showInfo(`${message}.`);
+
                 // Re-enable the capture button to allow multiple screens
                 captureScreenBtn.disabled = false;
-                
+
             } catch (error) {
                 console.error('Screen capture error:', error);
-                statusDiv.innerHTML = `<div class="error-message">Screen capture failed: ${error.message}</div>`;
-                
+                showError(`Screen capture failed: ${error.message}`);
+
                 // Re-enable buttons
                 captureScreenBtn.disabled = false;
                 if (streams.length === 0) {
                     stopBtn.disabled = true;
                 }
             }
+        }
+
+        async function recordAllMappedDevices() {
+            const durationSeconds = Number(recordDurationInput.value);
+            if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+                showError('Record duration must be a positive number of seconds.');
+                return;
+            }
+
+            const mappedStreams = streams
+                .map((entry, index) => {
+                    const select = entry.container.querySelector('.device-mapping-select');
+                    const rawValue = select ? String(select.value).trim() : '';
+                    if (rawValue === '') {
+                        return null;
+                    }
+
+                    const selectedId = Number(rawValue);
+                    if (selectedId < 0) {
+                        return null;
+                    }
+                    return { entry, selectedId, index };
+                })
+                .filter(Boolean);
+
+            if (mappedStreams.length === 0) {
+                showError('No mapped devices selected. Open streams and choose extension device mappings first.');
+                return;
+            }
+
+            recordAllBtn.disabled = true;
+            showInfo(`Preparing ${mappedStreams.length} mapped device(s) for ${durationSeconds}s recording...`);
+
+            const previewsToResume = mappedStreams
+                .map(({ entry }) => entry)
+                .filter((entry) => entry.type === 'camera' && entry.device?.deviceId);
+
+            try {
+                // Release local camera streams so FFmpeg can take exclusive access where required.
+                previewsToResume.forEach((entry) => {
+                    stopPreviewStream(entry);
+                });
+
+                showInfo(`Recording ${mappedStreams.length} mapped device(s) for ${durationSeconds}s...`);
+                console.log('Starting recording with mappings:', mappedStreams.map(({ entry, selectedId }) => ({
+                    localLabel: entry.device?.label,
+                    localType: entry.type,
+                    mappedDeviceId: selectedId,
+                    mappedDeviceName: extensionVideoDevices.find(d => String(d.id) === String(selectedId))?.name
+                })));
+
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                const jobs = mappedStreams.map(({ entry, selectedId, index }) => {
+                    const labelPart = sanitizeFilePart(entry.device?.label || entry.type || `stream-${index + 1}`);
+                    const outputFile = `mapped-${selectedId}-${labelPart}-${timestamp}.mp4`;
+
+                    console.log(selectedId);
+                    return sendNativeCommand({
+                        action: 'record_for_duration',
+                        video_device_id: selectedId,
+                        duration_seconds: durationSeconds,
+                        output_file: outputFile
+                    });
+                });
+
+                const results = await Promise.allSettled(jobs);
+                const successCount = results.filter(r => r.status === 'fulfilled' && r.value?.ok).length;
+                const failures = results
+                    .map((result, idx) => {
+                        if (result.status === 'fulfilled' && result.value?.ok) {
+                            return null;
+                        }
+                        const mapped = mappedStreams[idx];
+                        const base = `Mapping ${mapped?.entry?.device?.label || mapped?.entry?.type || idx + 1} -> extension device ${mapped?.selectedId}`;
+                        if (result.status === 'rejected') {
+                            return `${base}: ${result.reason?.message || 'request failed'}`;
+                        }
+                        return `${base}: ${result.value?.error || 'recording failed'}`;
+                    })
+                    .filter(Boolean);
+
+                if (failures.length === 0) {
+                    showInfo(`Recording complete. ${successCount} file(s) created.`);
+                } else {
+                    showError(`Recording finished with ${failures.length} failure(s). ${failures.join(' | ')}`);
+                }
+            } catch (error) {
+                showError(`Recording failed: ${error.message}`);
+            } finally {
+                const resumeResults = await Promise.allSettled(
+                    previewsToResume
+                        .filter((entry) => streams.includes(entry) && entry.container?.isConnected)
+                        .map((entry) => resumeCameraPreview(entry))
+                );
+
+                const resumeFailures = resumeResults.filter(result => result.status === 'rejected');
+                if (resumeFailures.length > 0) {
+                    const failureMessage = resumeFailures
+                        .map((result) => result.reason?.message || 'unknown resume error')
+                        .join(' | ');
+                    showError(`Recording finished, but failed to restore ${resumeFailures.length} preview(s): ${failureMessage}`);
+                }
+
+                recordAllBtn.disabled = false;
+            }
+            refreshExtensionVideoDevices('screen-capture-opened');
         }
 
         function stopAllDevices() {
@@ -555,7 +1122,7 @@
             });
             streams = [];
             videoGrid.innerHTML = '';
-            statusDiv.innerHTML = '<div class="info-message">All devices stopped.</div>';
+            showInfo('All devices stopped.');
             startBtn.disabled = false;
             captureScreenBtn.disabled = false;
             stopBtn.disabled = true;
@@ -564,13 +1131,28 @@
         // Event listeners
         startBtn.addEventListener('click', openAllDevices);
         captureScreenBtn.addEventListener('click', captureScreen);
+        recordAllBtn.addEventListener('click', recordAllMappedDevices);
         stopBtn.addEventListener('click', stopAllDevices);
 
         // Check if getUserMedia is supported
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            statusDiv.innerHTML = '<div class="error-message">Your browser does not support getUserMedia API.</div>';
+            showError('Your browser does not support getUserMedia API.');
             startBtn.disabled = true;
         }
+
+        // Preload extension side device list for dropdown mapping.
+        loadExtensionVideoDevices()
+            .then((devices) => {
+                if (devices.length > 0) {
+                    showInfo(`Loaded ${devices.length} extension video device(s).`);
+                } else {
+                    showInfo('Extension responded with no FFmpeg video devices. You can leave mappings as No device.');
+                }
+            })
+            .catch((error) => {
+                showError(`Could not reach extension/native host: ${error.message}`);
+            });
     </script>
 </body>
+
 </html>

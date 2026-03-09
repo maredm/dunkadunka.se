@@ -1,0 +1,9 @@
+{
+    "name": "com.dunkadunka.ffmpeg_controller",
+    "description": "Native host for FFmpeg device controller (macOS and Linux)",
+    "path": "__HOST_SCRIPT_PATH__",
+    "type": "stdio",
+    "allowed_origins": [
+        "chrome-extension://__EXTENSION_ID__/"
+    ]
+}

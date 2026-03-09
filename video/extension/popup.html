@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FFmpeg Controller</title>
+    <style>
+        body {
+            margin: 12px;
+            min-width: 320px;
+            font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+            color: #1f2937;
+        }
+
+        h1 {
+            margin: 0 0 12px;
+            font-size: 16px;
+        }
+
+        .row {
+            display: grid;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .two {
+            grid-template-columns: 1fr 1fr;
+        }
+
+        input,
+        button,
+        select {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 8px;
+            font-size: 13px;
+        }
+
+        button {
+            cursor: pointer;
+        }
+
+        .status {
+            min-height: 18px;
+            font-size: 12px;
+            color: #374151;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>FFmpeg Device Capture</h1>
+
+    <div class="row">
+        <button id="listDevices">List Devices</button>
+        <select id="videoDevice"></select>
+    </div>
+
+    <div class="row two">
+        <input id="durationSeconds" type="number" min="0.1" step="0.1" placeholder="Duration (seconds)" />
+        <input id="outputFile" type="text" placeholder="recording.mp4" />
+    </div>
+
+    <div class="row">
+        <button id="recordForDuration">Record For Duration</button>
+    </div>
+
+    <div id="status" class="status">Ready.</div>
+
+    <script src="popup.js"></script>
+</body>
+
+</html>
