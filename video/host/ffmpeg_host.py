@@ -48,6 +48,7 @@ def output_dir() -> Path:
 def ffmpeg_binary() -> str:
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
+        return "/opt/homebrew/bin/ffmpeg"
         raise RuntimeError("ffmpeg not found on PATH")
     return ffmpeg
 
@@ -240,14 +241,25 @@ def record_for_duration(command: Dict[str, Any]) -> Dict[str, Any]:
         cmd = [
             ffmpeg_binary(),
             "-y",
+            "-r",
+            "30",
+            "-video_size",
+            "1920x1080",
             "-f",
             "avfoundation",
             "-i",
-            f"{video_device_id}:{audio_input}",
+            f"{video_device_id},0",
             "-t",
             str(duration_seconds),
+            "-c:v",
+            "libx264",
+            "-crf",
+            "0",
+            "-preset",
+            "ultrafast",
             str(output_path),
         ]
+        print(cmd)
     else:
         video_device_path = command.get("video_device_path")
         if video_device_path is None:
