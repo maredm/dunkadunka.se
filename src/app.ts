@@ -1545,6 +1545,36 @@ function saveWaveformsToStorage(waveforms: Map<string, Audio>): void {
     });
 }
 
+function getDownloadName(audioObject: Audio): string {
+    const rawName = `${audioObject.metadata?.filename || 'audio'}`.trim() || 'audio';
+    const safeStem = rawName
+        .replace(/[\\/]/g, '_')
+        .replace(/\.[^./\\]+$/, '')
+        .trim() || 'audio';
+
+    return `${safeStem}.wav`;
+}
+
+function downloadAudioObject(audioObject: Audio): void {
+    const channelCount = audioObject.numberOfChannels;
+    const frameCount = audioObject.length;
+    const samples = new Float32Array(frameCount);
+
+    if (channelCount <= 1) {
+        samples.set(audioObject.getChannelData(0));
+    } else {
+        for (let frame = 0; frame < frameCount; frame++) {
+            let mix = 0;
+            for (let channel = 0; channel < channelCount; channel++) {
+                mix += audioObject.getChannelData(channel)[frame] || 0;
+            }
+            samples[frame] = mix / channelCount;
+        }
+    }
+
+    download(samples, audioObject.sampleRate, getDownloadName(audioObject));
+}
+
 function createListItem(audioObject: Audio, id: string): HTMLLIElement {
     const li = document.createElement('li');
     li.dataset.id = id;
@@ -1561,6 +1591,7 @@ function createListItem(audioObject: Audio, id: string): HTMLLIElement {
         <div class="file-list-item-controls flex:1;min-width:0;">
             <div><label style="font-size:13px;"><input type="radio" name="selectedResponse" value="${id}"> Response</label></div>
             <div><label style="font-size:13px;"><input type="radio" name="selectedReference" value="${id}"> Reference</label></div>
+            <div><button type="button" data-action="download" style="margin-left:8px;">Download</button></div>
             <div><button type="button" data-action="remove" style="margin-left:8px;">Remove</button></div>
         </div>
     `;
@@ -1615,6 +1646,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const li = (e.target as HTMLElement).closest('li');
         if (!li) return;
         const id = li.dataset.id;
+        if ((e.target as HTMLElement).matches('button[data-action="download"]')) {
+            const audioObject = id ? fileMap.get(id) : null;
+            if (!audioObject) {
+                alert('Could not find the selected file to download.');
+                return;
+            }
+            downloadAudioObject(audioObject);
+            return;
+        }
         if ((e.target as HTMLElement).matches('button[data-action="remove"]')) {
             // remove
             // if removed file was chosen in underlying file inputs, clear radios

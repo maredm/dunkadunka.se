@@ -10,7 +10,7 @@
 </head>
 <body>
     <nav class="navbar">
-        <div class="navbar-container flex items-center justify-left bg-white">
+        <div class="navbar-container flex items-center justify-left">
                 <img src="https://norrmalms.se/favicon.ico" alt="Norrmalms logo" class="h-8 w-8">
                 <a href="https://norrmalms.se">
                 <span class="pl-1">dunkadunka.se</span>
@@ -21,7 +21,7 @@
     <div class="tabs" id="tabs-outer">
         <div id="tabs">
         <button class="tab active" data-tab="upload">
-            Upload
+            Files
         </button>
         <button class="tab" data-tab="acquisition">
             <span class="tab-icon-recording"></span>Acquisition
@@ -33,13 +33,13 @@
         <div class="tab-content active" data-content="upload">
             <div class="tab-inner-content">
                 <div class="loose-container">
-                    <h2>Upload waveforms/measurements to analyze</h2>
+                    <h2>Files</h2>
                     <p class="info">Upload an audio file to analyze its frequency content and optionally compare it to a reference/stimulus file.</p>
                     
                     <div class="upload-section">
                         <p>
                             <input type="file" id="responseFileUpload" accept="audio/*,.wav,.mp3,.flac,.ogg" multiple>
-                            <label for="responseFileUpload" style="display: inline-block; margin-top: 1rem;" class="button-custom button-custom-secondary">Select files to waveforms</label>
+                            <label for="responseFileUpload" style="display: inline-block; margin-top: 1rem;" class="button-custom button-custom-secondary">Select files to upload</label>
                         </p>
                         <p class="info">Select one or more audio files. Then pick which file is the Response and optionally which is the Reference.</p>
 
@@ -50,6 +50,7 @@
             </div>
         </div>
         <div class="tab-content" data-content="acquisition">
+
             <div class="tab-inner-content">
                 <div class="loose-container">
                     <h2>Audio Acquisition</h2>

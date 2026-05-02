@@ -134,11 +134,12 @@ input[type="file"] {
 @layer base {
     :root {
         /* Dark mode (default) */
-        --border: #3a3a3a;
-        --bg-primary: #1a1a1a;
+        --border: #1e1e1e;
+        --bg-primary: #1d1e1f;
         --bg-secondary: #2a2a2a;
+        --bg-hover: #2c2c2c;
         --text-primary: #e0e0e0;
-        --text-secondary: #a0a0a0;
+        --text-secondary: #c8c8c8;
     }
 
     /* Light mode */
@@ -147,6 +148,7 @@ input[type="file"] {
             --border: #ddd;
             --bg-primary: #f5f5f5;
             --bg-secondary: #ffffff;
+            --bg-hover: #e0e0e0;
             --text-primary: #24292e;
             --text-secondary: #586069;
         }
@@ -157,6 +159,7 @@ input[type="file"] {
         --border: #ddd;
         --bg-primary: #f5f5f5;
         --bg-secondary: #ffffff;
+        --bg-hover: #e0e0e0;
         --text-primary: #24292e;
         --text-secondary: #586069;
     }
@@ -165,6 +168,7 @@ input[type="file"] {
         --border: #3a3a3a;
         --bg-primary: #1a1a1a;
         --bg-secondary: #2a2a2a;
+        --bg-hover: #2c2c2c;
         --text-primary: #e0e0e0;
         --text-secondary: #a0a0a0;
     }
@@ -177,6 +181,15 @@ input[type="file"] {
 
 :root {
     color-scheme: light dark;
+}
+
+button {
+    transition: background-color 0.2s, border-color 0.2s;
+}
+
+h2 {
+    @apply text-lg mb-4;
+    color: var(--text-primary);
 }
 
 .section {
@@ -476,6 +489,7 @@ img {
     background: var(--bg-secondary);
     border-top: var(--border) solid 1px;
     border-bottom: var(--border) solid 1px;
+    color: var(--text-secondary);
 }
 
 #tabs {
@@ -501,6 +515,8 @@ img {
 
 .tab-icon-recording::before {
     @apply text-red-500 font-bold mr-2 inline-block;
+    font-size: 12px;
+    vertical-align: text-bottom;
     content: "⬤";
 }
 
@@ -527,7 +543,7 @@ img {
 }
 
 .tab {
-    @apply rounded-md px-4 py-1 m-1;
+    @apply rounded-md px-3 py-2 m-1;
     cursor: pointer;
     background: none;
     font-size: 14px;
@@ -551,7 +567,7 @@ img {
     position: relative;
     border-left: 1px solid var(--border);
     border-top: 1px solid transparent;
-    @apply rounded-none py-2 m-0;
+    @apply rounded-none py-3 m-0;
 }
 
 .tab-closable:last-child {
@@ -565,7 +581,7 @@ img {
 }
 
 .tab:hover {
-    background: var(--bg-primary);
+    background: var(--bg-hover);
 }
 
 .tab-close {
@@ -709,10 +725,7 @@ img {
 
 .file-list-item:nth-child(7) {
     background-color: #3a1f2f;
-}
-
-@media (prefers-color-scheme: light) {
-    .file-list-item:nth-child(7) {
+    @media (prefers-color-scheme: light) {
         background-color: #faf0f7;
     }
 }
@@ -847,7 +860,9 @@ input[type="file"]::after {
 }
 
 .button-custom-secondary:disabled {
-    @apply opacity-50 cursor-not-allowed;
+    @apply cursor-not-allowed;
+    color: var(--text-secondary);
+    background-color: var(--bg-hover);
 }
 
 .button-custom-secondary:disabled:hover {

@@ -3259,6 +3259,29 @@ function saveWaveformsToStorage(waveforms) {
     console.error("Failed to save waveforms to storage:", err);
   });
 }
+function getDownloadName(audioObject) {
+  var _a;
+  const rawName = `${((_a = audioObject.metadata) == null ? void 0 : _a.filename) || "audio"}`.trim() || "audio";
+  const safeStem = rawName.replace(/[\\/]/g, "_").replace(/\.[^./\\]+$/, "").trim() || "audio";
+  return `${safeStem}.wav`;
+}
+function downloadAudioObject(audioObject) {
+  const channelCount = audioObject.numberOfChannels;
+  const frameCount = audioObject.length;
+  const samples = new Float32Array(frameCount);
+  if (channelCount <= 1) {
+    samples.set(audioObject.getChannelData(0));
+  } else {
+    for (let frame = 0; frame < frameCount; frame++) {
+      let mix = 0;
+      for (let channel = 0; channel < channelCount; channel++) {
+        mix += audioObject.getChannelData(channel)[frame] || 0;
+      }
+      samples[frame] = mix / channelCount;
+    }
+  }
+  download(samples, audioObject.sampleRate, getDownloadName(audioObject));
+}
 function createListItem(audioObject, id) {
   var _a, _b, _c, _d, _e;
   const li = document.createElement("li");
@@ -3276,6 +3299,7 @@ function createListItem(audioObject, id) {
         <div class="file-list-item-controls flex:1;min-width:0;">
             <div><label style="font-size:13px;"><input type="radio" name="selectedResponse" value="${id}"> Response</label></div>
             <div><label style="font-size:13px;"><input type="radio" name="selectedReference" value="${id}"> Reference</label></div>
+            <div><button type="button" data-action="download" style="margin-left:8px;">Download</button></div>
             <div><button type="button" data-action="remove" style="margin-left:8px;">Remove</button></div>
         </div>
     `;
@@ -3328,6 +3352,15 @@ document.addEventListener("DOMContentLoaded", () => {
     const li = e.target.closest("li");
     if (!li) return;
     const id = li.dataset.id;
+    if (e.target.matches('button[data-action="download"]')) {
+      const audioObject = id ? fileMap.get(id) : null;
+      if (!audioObject) {
+        alert("Could not find the selected file to download.");
+        return;
+      }
+      downloadAudioObject(audioObject);
+      return;
+    }
     if (e.target.matches('button[data-action="remove"]')) {
       const responseRadio = document.querySelector(`input[name="selectedResponse"][value="${id}"]`);
       const referenceRadio = document.querySelector(`input[name="selectedReference"][value="${id}"]`);

@@ -1,4 +1,4 @@
-/*! tailwindcss v4.2.1 | MIT License | https://tailwindcss.com */
+/*! tailwindcss v4.2.4 | MIT License | https://tailwindcss.com */
 @layer properties;
 @layer theme, base, components, utilities;
 @layer theme {
@@ -19,6 +19,10 @@
     --text-xs--line-height: calc(1 / 0.75);
     --text-sm: 0.875rem;
     --text-sm--line-height: calc(1.25 / 0.875);
+    --text-lg: 1.125rem;
+    --text-lg--line-height: calc(1.75 / 1.125);
+    --text-xl: 1.25rem;
+    --text-xl--line-height: calc(1.75 / 1.25);
     --font-weight-light: 300;
     --font-weight-medium: 500;
     --font-weight-semibold: 600;
@@ -540,17 +544,19 @@ input[type="file"] {
 }
 @layer base {
   :root {
-    --border: #3a3a3a;
-    --bg-primary: #1a1a1a;
+    --border: #1e1e1e;
+    --bg-primary: #1d1e1f;
     --bg-secondary: #2a2a2a;
+    --bg-hover: #2c2c2c;
     --text-primary: #e0e0e0;
-    --text-secondary: #a0a0a0;
+    --text-secondary: #c8c8c8;
   }
   @media (prefers-color-scheme: light) {
     :root {
       --border: #ddd;
       --bg-primary: #f5f5f5;
       --bg-secondary: #ffffff;
+      --bg-hover: #e0e0e0;
       --text-primary: #24292e;
       --text-secondary: #586069;
     }
@@ -559,6 +565,7 @@ input[type="file"] {
     --border: #ddd;
     --bg-primary: #f5f5f5;
     --bg-secondary: #ffffff;
+    --bg-hover: #e0e0e0;
     --text-primary: #24292e;
     --text-secondary: #586069;
   }
@@ -566,12 +573,22 @@ input[type="file"] {
     --border: #3a3a3a;
     --bg-primary: #1a1a1a;
     --bg-secondary: #2a2a2a;
+    --bg-hover: #2c2c2c;
     --text-primary: #e0e0e0;
     --text-secondary: #a0a0a0;
   }
 }
 :root {
   color-scheme: light dark;
+}
+button {
+  transition: background-color 0.2s, border-color 0.2s;
+}
+h2 {
+  margin-bottom: calc(var(--spacing) * 4);
+  font-size: var(--text-lg);
+  line-height: var(--tw-leading, var(--text-lg--line-height));
+  color: var(--text-primary);
 }
 .section {
   .title {
@@ -871,6 +888,7 @@ img {
   background: var(--bg-secondary);
   border-top: var(--border) solid 1px;
   border-bottom: var(--border) solid 1px;
+  color: var(--text-secondary);
 }
 #tabs {
   overflow-x: auto;
@@ -901,6 +919,8 @@ img {
   --tw-font-weight: var(--font-weight-bold);
   font-weight: var(--font-weight-bold);
   color: var(--color-red-500);
+  font-size: 12px;
+  vertical-align: text-bottom;
   content: "⬤";
 }
 .tab-loading .tab-icon-recording::before {
@@ -931,8 +951,8 @@ img {
 .tab {
   margin: calc(var(--spacing) * 1);
   border-radius: var(--radius-md);
-  padding-inline: calc(var(--spacing) * 4);
-  padding-block: calc(var(--spacing) * 1);
+  padding-inline: calc(var(--spacing) * 3);
+  padding-block: calc(var(--spacing) * 2);
   cursor: pointer;
   background: none;
   font-size: 14px;
@@ -955,7 +975,7 @@ img {
   border-top: 1px solid transparent;
   margin: calc(var(--spacing) * 0);
   border-radius: 0;
-  padding-block: calc(var(--spacing) * 2);
+  padding-block: calc(var(--spacing) * 3);
 }
 .tab-closable:last-child {
   border-right: 1px solid var(--border);
@@ -966,7 +986,7 @@ img {
   overflow-y: visible;
 }
 .tab:hover {
-  background: var(--bg-primary);
+  background: var(--bg-hover);
 }
 .tab-close {
   margin-left: 8px;
@@ -1090,9 +1110,7 @@ img {
 }
 .file-list-item:nth-child(7) {
   background-color: #3a1f2f;
-}
-@media (prefers-color-scheme: light) {
-  .file-list-item:nth-child(7) {
+  @media (prefers-color-scheme: light) {
     background-color: #faf0f7;
   }
 }
@@ -1208,7 +1226,8 @@ input[type="file"]::after {
 }
 .button-custom-secondary:disabled {
   cursor: not-allowed;
-  opacity: 50%;
+  color: var(--text-secondary);
+  background-color: var(--bg-hover);
 }
 .button-custom-secondary:disabled:hover {
   background-color: #616161;
