@@ -2009,6 +2009,79 @@ var AudioRecorder = class {
 };
 
 // src/wave.ts
+function isInt16Channel(samples) {
+  return samples instanceof Int16Array;
+}
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+function buildChannelWaveBlob(samples, sampleRate) {
+  if (!samples.length) {
+    throw new Error("At least one channel is required to save a WAV file.");
+  }
+  const channels = samples.length;
+  const firstChannel = samples[0];
+  const isInt16 = isInt16Channel(firstChannel);
+  for (const channel of samples) {
+    if (isInt16 !== isInt16Channel(channel)) {
+      throw new TypeError("All channels must use the same sample type.");
+    }
+  }
+  const bytesPerSample = isInt16 ? 2 : 4;
+  const bitsPerSample = isInt16 ? 16 : 32;
+  const audioFormat = isInt16 ? 1 : 3;
+  const frames = samples.reduce((maxFrames, channel) => Math.max(maxFrames, channel.length), 0);
+  const blockAlign = channels * bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = frames * blockAlign;
+  const totalSize = 44 + dataSize;
+  const buffer = new ArrayBuffer(totalSize);
+  const view = new DataView(buffer);
+  function writeString(offset2, str) {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset2 + i, str.charCodeAt(i));
+  }
+  writeString(0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  writeString(8, "WAVE");
+  writeString(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, audioFormat, true);
+  view.setUint16(22, channels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitsPerSample, true);
+  writeString(36, "data");
+  view.setUint32(40, dataSize, true);
+  let offset = 44;
+  for (let frame = 0; frame < frames; frame++) {
+    for (let channel = 0; channel < channels; channel++) {
+      const channelSamples = samples[channel];
+      const sample = frame < channelSamples.length ? channelSamples[frame] : 0;
+      if (isInt16) {
+        view.setInt16(offset, sample, true);
+      } else {
+        view.setFloat32(offset, Number(sample), true);
+      }
+      offset += bytesPerSample;
+    }
+  }
+  return new Blob([buffer], { type: "audio/wav" });
+}
+function save(name, samples, sampleRate = 48e3, triggerDownload = true) {
+  const blob = buildChannelWaveBlob(samples, sampleRate);
+  if (triggerDownload) {
+    downloadBlob(blob, name);
+  }
+  return blob;
+}
 function download(samples, sampleRate = 48e3, name = "output", bext, ixml) {
   const channels = 1;
   const bytesPerSample = 4;
@@ -2118,12 +2191,12 @@ function download(samples, sampleRate = 48e3, name = "output", bext, ixml) {
   let ptr = 12;
   writeString(ptr, "fmt ");
   view.setUint32(ptr + 4, 16, true);
-  view.setUint16(ptr + 8, 1, true);
+  view.setUint16(ptr + 8, 3, true);
   view.setUint16(ptr + 10, channels, true);
   view.setUint32(ptr + 12, sampleRate, true);
   view.setUint32(ptr + 16, byteRate, true);
   view.setUint16(ptr + 20, blockAlign, true);
-  view.setUint16(ptr + 22, 16, true);
+  view.setUint16(ptr + 22, 32, true);
   ptr += 8 + 16;
   if (bextPayload) {
     writeString(ptr, "bext");
@@ -2155,9 +2228,8 @@ function download(samples, sampleRate = 48e3, name = "output", bext, ixml) {
   view.setUint32(ptr + 4, dataSize, true);
   ptr += 8;
   let off = ptr;
-  for (let i = 0; i < samples.length; i++, off += 2) {
-    const s = Math.max(-1, Math.min(1, Number(samples[i])));
-    view.setInt16(off, s < 0 ? s * 32768 : s * 32767, true);
+  for (let i = 0; i < samples.length; i++, off += 4) {
+    view.setFloat32(off, Number(samples[i]), true);
   }
   if (dataSize % 2 === 1) {
     view.setUint8(off, 0);
@@ -2484,23 +2556,7 @@ var measurementCommentInput = document.getElementById("measurementComment");
 var downloadRecordingBtn = document.getElementById("downloadRecordingBtn");
 downloadRecordingBtn == null ? void 0 : downloadRecordingBtn.addEventListener("click", () => {
   try {
-    download(
-      recorded[0],
-      48e3,
-      "recorded_audio.wav",
-      {},
-      convertToIXML(`
-        <ANGLE>${measurementAngleInput.value}</ANGLE>
-        <LOCATION>${measurementLocationInput.value}</LOCATION>
-        <COMMENT>${measurementCommentInput.value}</COMMENT>
-        <STIMULUS_TYPE>chirp</STIMULUS_TYPE>
-        <STIMULUS_START_FREQ>${sweepStartFreqInput.value}</STIMULUS_START_FREQ>
-        <STIMULUS_END_FREQ>${sweepEndFreqInput.value}</STIMULUS_END_FREQ>
-        <STIMULUS_DURATION>${sweepDurationInput.value}</STIMULUS_DURATION>
-        <STIMULUS_FADE>0.01</STIMULUS_FADE>
-        <STIMULUS_SAMPLE_RATE>48000</STIMULUS_SAMPLE_RATE>
-        <ORIGIN>Acquisition Module</ORIGIN>`)
-    );
+    save("recorded_audio.wav", recorded, 48e3, true);
   } catch (err) {
     console.error("Failed to create/download recording:", err);
     alert("Failed to download recording: " + err.message);
@@ -2510,22 +2566,7 @@ var downloadSweepBtn = document.getElementById("downloadSweepBtn");
 downloadSweepBtn == null ? void 0 : downloadSweepBtn.addEventListener("click", () => {
   try {
     const [sweepSignal, ,] = audio.chirp(parseFloat(sweepStartFreqInput.value), parseFloat(sweepEndFreqInput.value), parseFloat(sweepDurationInput.value));
-    download(
-      sweepSignal,
-      48e3,
-      "reference_audio.wav",
-      {},
-      convertToIXML(`
-        <STIMULUS>
-            <TYPE>chirp</TYPE>
-            <START>${sweepStartFreqInput.value}</START>
-            <END>${sweepEndFreqInput.value}</END>
-            <FADE>0.01</FADE>
-            <DURATION>${sweepDurationInput.value}</DURATION>
-            <SAMPLE_RATE>48000</SAMPLE_RATE>
-        </STIMULUS>
-        <ORIGIN>Acquisition Module</ORIGIN>`)
-    );
+    save("reference_audio.wav", [sweepSignal], 48e3, true);
   } catch (err) {
     console.error("Failed to create/download recording:", err);
     alert("Failed to download recording: " + err.message);

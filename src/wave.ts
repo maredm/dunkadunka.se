@@ -21,6 +21,100 @@ export interface WaveReadResult {
   ixml?: string | null;
 }
 
+type ChannelSamples = Float32Array | Int16Array;
+
+function isInt16Channel(samples: ChannelSamples): samples is Int16Array {
+  return samples instanceof Int16Array;
+}
+
+function downloadBlob(blob: Blob, name: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function buildChannelWaveBlob(samples: Float32Array[] | Int16Array[], sampleRate: number): Blob {
+  if (!samples.length) {
+    throw new Error('At least one channel is required to save a WAV file.');
+  }
+
+  const channels = samples.length;
+  const firstChannel = samples[0];
+  const isInt16 = isInt16Channel(firstChannel);
+
+  for (const channel of samples) {
+    if (isInt16 !== isInt16Channel(channel)) {
+      throw new TypeError('All channels must use the same sample type.');
+    }
+  }
+
+  const bytesPerSample = isInt16 ? 2 : 4;
+  const bitsPerSample = isInt16 ? 16 : 32;
+  const audioFormat = isInt16 ? 1 : 3;
+  const frames = samples.reduce((maxFrames, channel) => Math.max(maxFrames, channel.length), 0);
+  const blockAlign = channels * bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = frames * blockAlign;
+  const totalSize = 44 + dataSize;
+
+  const buffer = new ArrayBuffer(totalSize);
+  const view = new DataView(buffer);
+
+  function writeString(offset: number, str: string) {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+  }
+
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  writeString(8, 'WAVE');
+
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, audioFormat, true);
+  view.setUint16(22, channels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitsPerSample, true);
+
+  writeString(36, 'data');
+  view.setUint32(40, dataSize, true);
+
+  let offset = 44;
+  for (let frame = 0; frame < frames; frame++) {
+    for (let channel = 0; channel < channels; channel++) {
+      const channelSamples = samples[channel];
+      const sample = frame < channelSamples.length ? channelSamples[frame] : 0;
+      if (isInt16) {
+        view.setInt16(offset, sample as number, true);
+      } else {
+        view.setFloat32(offset, Number(sample), true);
+      }
+      offset += bytesPerSample;
+    }
+  }
+
+  return new Blob([buffer], { type: 'audio/wav' });
+}
+
+export function save(
+  name: string,
+  samples: Float32Array[] | Int16Array[],
+  sampleRate: number = 48000,
+  triggerDownload: boolean = true,
+): Blob {
+  const blob = buildChannelWaveBlob(samples, sampleRate);
+  if (triggerDownload) {
+    downloadBlob(blob, name);
+  }
+  return blob;
+}
+
 export function download(
   samples: Float32Array | number[],
   sampleRate = 48000,
@@ -167,12 +261,12 @@ export function download(
   let ptr = 12;
   writeString(ptr, 'fmt ');
   view.setUint32(ptr + 4, 16, true);
-  view.setUint16(ptr + 8, 1, true); // PCM
+  view.setUint16(ptr + 8, 3, true); // IEEE float
   view.setUint16(ptr + 10, channels, true);
   view.setUint32(ptr + 12, sampleRate, true);
   view.setUint32(ptr + 16, byteRate, true);
   view.setUint16(ptr + 20, blockAlign, true);
-  view.setUint16(ptr + 22, 16, true); // bits per sample
+  view.setUint16(ptr + 22, 32, true); // bits per sample
   ptr += 8 + 16;
 
   // bext chunk (optional)
@@ -212,11 +306,10 @@ export function download(
   view.setUint32(ptr + 4, dataSize, true);
   ptr += 8;
 
-  // PCM 16-bit samples
+  // IEEE float32 samples
   let off = ptr;
-  for (let i = 0; i < samples.length; i++, off += 2) {
-    const s = Math.max(-1, Math.min(1, Number(samples[i])));
-    view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  for (let i = 0; i < samples.length; i++, off += 4) {
+    view.setFloat32(off, Number(samples[i]), true);
   }
   if (dataSize % 2 === 1) {
     view.setUint8(off, 0);

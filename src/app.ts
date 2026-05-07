@@ -6,7 +6,7 @@ import "./device-settings";
 import { linspace, max, nextPow2, closest, abs } from "./math";
 import { COLORS, plot } from "./plotting";
 import { AudioRecorder } from "./recorder";
-import { download, convertToIXML } from "./wave";
+import { download, convertToIXML, save } from "./wave";
 import { BiquadCoefficients, firToMinPhase, generateTargetCurve, getFrequencyResponse, createBiquadCoefficients } from "./filter";
 
 console.debug("App module loaded");
@@ -299,6 +299,8 @@ const downloadRecordingBtn = document.getElementById('downloadRecordingBtn') as 
 
 downloadRecordingBtn?.addEventListener('click', () => {
     try {
+        save('recorded_audio.wav', recorded, 48000,  true);
+        /*
         download(recorded[0], 48000, 'recorded_audio.wav',
             {},
             convertToIXML(`
@@ -311,7 +313,7 @@ downloadRecordingBtn?.addEventListener('click', () => {
         <STIMULUS_DURATION>${sweepDurationInput.value}</STIMULUS_DURATION>
         <STIMULUS_FADE>0.01</STIMULUS_FADE>
         <STIMULUS_SAMPLE_RATE>48000</STIMULUS_SAMPLE_RATE>
-        <ORIGIN>Acquisition Module</ORIGIN>`));
+        <ORIGIN>Acquisition Module</ORIGIN>`));*/
     } catch (err) {
         console.error('Failed to create/download recording:', err);
         alert('Failed to download recording: ' + (err as Error).message);
@@ -323,7 +325,9 @@ const downloadSweepBtn = document.getElementById('downloadSweepBtn') as HTMLButt
 downloadSweepBtn?.addEventListener('click', () => {
     try {
         const [sweepSignal, ,] = audio.chirp(parseFloat(sweepStartFreqInput.value), parseFloat(sweepEndFreqInput.value), parseFloat(sweepDurationInput.value));
-        download(sweepSignal, 48000, 'reference_audio.wav',
+        
+        save('reference_audio.wav', [sweepSignal], 48000,  true);
+        /*download(sweepSignal, 48000, 'reference_audio.wav',
             {},
             convertToIXML(`
         <STIMULUS>
@@ -334,7 +338,7 @@ downloadSweepBtn?.addEventListener('click', () => {
             <DURATION>${sweepDurationInput.value}</DURATION>
             <SAMPLE_RATE>48000</SAMPLE_RATE>
         </STIMULUS>
-        <ORIGIN>Acquisition Module</ORIGIN>`));
+        <ORIGIN>Acquisition Module</ORIGIN>`));*/
     } catch (err) {
         console.error('Failed to create/download recording:', err);
         alert('Failed to download recording: ' + (err as Error).message);
