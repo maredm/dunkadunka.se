@@ -190,106 +190,43 @@ export class SpectrogramPlot {
 
 		const { startSample, stopSample } = this.getVisibleSampleWindow();
 		const visibleSampleCount = Math.max(0, stopSample - startSample);
-		if (visibleSampleCount < SPECTROGRAM_WINDOW_SIZE) {
+		if (visibleSampleCount <= 1) {
 			return;
-		}
-
-		const bins = SPECTROGRAM_WINDOW_SIZE / 2;
-		const hopSize = Math.floor(SPECTROGRAM_WINDOW_SIZE / 4);
-		const maxFramesAllowed = Math.max(1, width * 2);
-		const potentialFrames = Math.max(0, Math.floor((visibleSampleCount - SPECTROGRAM_WINDOW_SIZE) / hopSize) + 1);
-		if (potentialFrames <= 0) {
-			return;
-		}
-
-		const frameStep = potentialFrames > maxFramesAllowed
-			? Math.ceil(potentialFrames / maxFramesAllowed)
-			: 1;
-		const frames = Math.max(0, Math.floor((visibleSampleCount - SPECTROGRAM_WINDOW_SIZE) / (hopSize * frameStep)) + 1);
-		if (frames <= 0) {
-			return;
-		}
-
-		const windowFn = this.createHannWindow(SPECTROGRAM_WINDOW_SIZE);
-		const mags = new Array<Float32Array>(frames);
-		let globalMax = -Infinity;
-		let globalMin = Infinity;
-
-		for (let frameIndex = 0; frameIndex < frames; frameIndex += 1) {
-			const start = startSample + frameIndex * hopSize * frameStep;
-			const frame = new Array<number>(SPECTROGRAM_WINDOW_SIZE).fill(0);
-			for (let i = 0; i < SPECTROGRAM_WINDOW_SIZE; i += 1) {
-				frame[i] = (this.samples[start + i] ?? 0) * windowFn[i];
-			}
-
-			const [real, imag] = fft(frame);
-			const mag = new Float32Array(bins);
-			for (let bin = 0; bin < bins; bin += 1) {
-				const magnitude = Math.sqrt((real[bin] ?? 0) ** 2 + (imag[bin] ?? 0) ** 2);
-				mag[bin] = magnitude;
-				const dbValue = 20 * Math.log10(magnitude + 1e-12);
-				if (dbValue > globalMax) globalMax = dbValue;
-				if (dbValue < globalMin) globalMin = dbValue;
-			}
-			mags[frameIndex] = mag;
-		}
-
-		const dynamicRange = 80;
-		if (globalMax - globalMin > dynamicRange) {
-			globalMin = globalMax - dynamicRange;
 		}
 
 		const imageData = ctx.createImageData(width, height);
-		const data = imageData.data;
+		const pixels = imageData.data;
+		const halfWindow = SPECTROGRAM_WINDOW_SIZE / 2;
+		const maxX = Math.max(1, width - 1);
+		const window = this.createHannWindow(SPECTROGRAM_WINDOW_SIZE);
 		const cmap = waveformColormap;
-		const yScaleStep = Math.max(0, Math.min(20, Math.round(Number((globalThis as { yScaleStep?: number }).yScaleStep ?? 0))));
-		const yScaleStepsTotal = 21;
-
-		const getBinRangeForRow = (row: number): { startBin: number; endBin: number } => {
-			const pStart = row / Math.max(1, height);
-			const pEnd = (row + 1) / Math.max(1, height);
-			const startBinLin = Math.floor(pStart * bins);
-			const endBinLin = Math.floor(pEnd * bins);
-			const startBinLog = Math.floor(Math.max(0, Math.pow(bins, pStart) - 1));
-			const endBinLog = Math.floor(Math.max(0, Math.pow(bins, pEnd) - 1));
-
-			let startBin = Math.round(startBinLin * (1 - yScaleStep / (yScaleStepsTotal - 1)) + startBinLog * (yScaleStep / (yScaleStepsTotal - 1)));
-			let endBin = Math.round(endBinLin * (1 - yScaleStep / (yScaleStepsTotal - 1)) + endBinLog * (yScaleStep / (yScaleStepsTotal - 1)));
-			startBin = Math.max(0, Math.min(bins - 1, startBin));
-			endBin = Math.max(0, Math.min(bins - 1, endBin));
-			if (endBin < startBin) {
-				endBin = startBin;
-			}
-			return { startBin, endBin };
-		};
 
 		for (let x = 0; x < width; x += 1) {
-			const frameStart = Math.floor((x / Math.max(1, width)) * frames);
-			const frameStop = Math.min(frames, Math.ceil(((x + 1) / Math.max(1, width)) * frames));
-			for (let yBlock = 0; yBlock < height; yBlock += 1) {
-				const { startBin, endBin } = getBinRangeForRow(yBlock);
-				let sum = 0;
-				let count = 0;
-				for (let f = frameStart; f < Math.max(frameStart + 1, frameStop); f += 1) {
-					const mag = mags[Math.min(frames - 1, f)];
-					for (let bin = startBin; bin <= endBin; bin += 1) {
-						const dbValue = 20 * Math.log10((mag[bin] ?? 0) + 1e-12);
-						const clamped = Math.max(globalMin, Math.min(globalMax, dbValue));
-						sum += clamped;
-						count += 1;
-					}
+			const centerSample = Math.round(startSample + (x / maxX) * (visibleSampleCount - 1));
+			const frame = new Array<number>(SPECTROGRAM_WINDOW_SIZE).fill(0);
+			for (let i = 0; i < SPECTROGRAM_WINDOW_SIZE; i += 1) {
+				const sampleIndex = centerSample + i - halfWindow;
+				if (sampleIndex >= 0 && sampleIndex < this.samples.length) {
+					frame[i] = (this.samples[sampleIndex] ?? 0) * window[i];
 				}
+			}
 
-				const avgDb = sum / Math.max(1, count);
-				const norm = (avgDb - globalMin) / Math.max(1e-12, globalMax - globalMin);
-				const [r, g, b] = this.colorForNormalized(norm, cmap);
+			const [real, imag] = fft(frame);
+			const magnitudeBins = halfWindow;
 
-				const pixelY = height - 1 - yBlock;
-				const offset = (pixelY * width + x) * 4;
-				data[offset] = r;
-				data[offset + 1] = g;
-				data[offset + 2] = b;
-				data[offset + 3] = 255;
+			for (let y = 0; y < height; y += 1) {
+				const freqFraction = 1 - (y / Math.max(1, height - 1));
+				const bin = Math.max(0, Math.min(magnitudeBins - 1, Math.round(freqFraction * (magnitudeBins - 1))));
+				const magnitude = Math.sqrt((real[bin] ?? 0) ** 2 + (imag[bin] ?? 0) ** 2);
+				const dbValue = 20 * Math.log10(magnitude + 1e-12);
+				const normalized = Math.max(0, Math.min(1, (dbValue - SPECTROGRAM_MIN_DB) / (SPECTROGRAM_MAX_DB - SPECTROGRAM_MIN_DB)));
+
+				const [r, g, b] = this.colorForNormalized(normalized, cmap);
+				const pixelIndex = (y * width + x) * 4;
+				pixels[pixelIndex] = r;
+				pixels[pixelIndex + 1] = g;
+				pixels[pixelIndex + 2] = b;
+				pixels[pixelIndex + 3] = 255;
 			}
 		}
 
