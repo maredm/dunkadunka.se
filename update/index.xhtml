@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="{{ lang }}">
+	<head>
+		<meta charset="{{ charset }}" />
+		<meta name="viewport" content="{{ viewport }}" />
+		<title>{{ title }}</title>
+		<link rel="stylesheet" href="{{ stylesheetHref }}" />
+	</head>
+	<body>
+		<div class="split-view-container vertical">
+			<!--div class="split-view titlebar visible">
+				<p>dunkadunka.se - The open sound tool</p>
+			</div>
+			<div class="split-view toolbar main visible">
+				<a class="toolbar-button">
+					File
+				</a>
+			</div-->
+			<div class="split-view main visible">
+				{% include "templates/waveform.xhtml" %}
+			</div>
+			<div class="split-view footer visible">Footer</div>
+		</div>
+		<script src="dist/app.js"></script>
+	</body>
+</html>

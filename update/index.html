@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Update - Audio processing demo</title>
+		<link rel="stylesheet" href="dist/app.css" />
+	</head>
+	<body>
+		<div class="split-view-container vertical">
+			<!--div class="split-view titlebar visible">
+				<p>dunkadunka.se - The open sound tool</p>
+			</div>
+			<div class="split-view toolbar main visible">
+				<a class="toolbar-button">
+					File
+				</a>
+			</div-->
+			<div class="split-view main visible">
+				<div class="split-view-container window vertical">	
+    <div class="split-view titlebar smallcaps visible">
+        <p>Waveform editor</p>
+    </div>
+    <div class="split-view toolbar visible">
+        <div class="flex">
+        <div class="waveform-x-axis">
+                <span>1.0</span>
+                <span>0.5</span>
+                <span>0.0</span>
+                <span>-0.5</span>
+                <span>-1.0</span>
+        </div>
+        <div id="resetZoomBtn" title="Reset zoom" aria-label="Reset zoom" alt="Reset zoom" class="toolbar-button button">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style="margin: auto;" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <path d="M8 3H5a2 2 0 0 0-2 2v3" stroke="var(--color-tool)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+                <path d="M16 21h3a2 2 0 0 0 2-2v-3" stroke="var(--color-tool)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+                <path d="M21 8V5a2 2 0 0 0-2-2h-3" stroke="var(--color-tool)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+                <path d="M3 16v3a2 2 0 0 0 2 2h3" stroke="var(--color-tool)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+
+                <!-- Larger inner arrows pointing outwards -->
+                <!-- Up arrow -->
+                <polygon points="12,4 9,8 15,8" fill="var(--color-tool)"></polygon>
+                <!-- Right arrow -->
+                <polygon points="20,12 16,9 16,15" fill="var(--color-tool)"></polygon>
+                <!-- Down arrow -->
+                <polygon points="12,20 9,16 15,16" fill="var(--color-tool)"></polygon>
+                <!-- Left arrow -->
+                <polygon points="4,12 8,9 8,15" fill="var(--color-tool)"></polygon>
+            </svg>
+        </div>
+        </div>
+    </div>
+    <div class="split-view mainx visible">
+        <div class="waveform-main">
+            <div class="waveform-container">
+                <canvas id="waveformCanvas" class="waveform-canvas"></canvas>
+                <div class="waveform-y-axis">
+                </div>
+            </div>
+            <div class="divider"></div>
+            <div class="spectrogram-container">
+                <canvas id="spectrogramCanvas" class="spectrogram-canvas"></canvas>
+                <div class="spectrogram-y-axis">
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+			</div>
+			<div class="split-view footer visible">Footer</div>
+		</div>
+		<script src="dist/app.js"></script>
+	</body>
+</html>
