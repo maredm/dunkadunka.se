@@ -72,6 +72,7 @@ const bootstrapWaveformPlot = (): void => {
 
 	const waveformPlot = new WaveformPlot(canvas, { xAxis, yAxis });
 	const spectrogramPlot = new SpectrogramPlot(spectrogramCanvas, { yAxis: spectrogramYAxis });
+	const spectrogramScaleSteps = 20;
 	const playToggleButton = document.createElement("button");
 	playToggleButton.type = "button";
 	playToggleButton.className = "toolbar-button transport-play-button";
@@ -106,6 +107,7 @@ const bootstrapWaveformPlot = (): void => {
 	let playbackAnimation: number | null = null;
 	let playbackToken = 0;
 	let playheadInitialized = false;
+	let displayedChannelIndex: number | null = null;
 
 	const setPlayheadColor = (color: string): void => {
 		playhead.style.setProperty("--playhead-color", color);
@@ -244,6 +246,24 @@ const bootstrapWaveformPlot = (): void => {
 		return buffer;
 	};
 
+	const getDisplayedWaveformChannels = (): Float32Array[] => {
+		if (displayedChannelIndex === null) {
+			return currentChannels;
+		}
+
+		const selected = currentChannels[displayedChannelIndex];
+		return selected ? [selected] : [new Float32Array(0)];
+	};
+
+	const getDisplayedSpectrogramChannel = (): Float32Array => {
+		if (displayedChannelIndex === null) {
+			return mixMultichannelToMono(currentChannels);
+		}
+
+		const selected = currentChannels[displayedChannelIndex];
+		return selected ? Float32Array.from(selected) : new Float32Array(0);
+	};
+
 	const pausePlayback = (): void => {
 		if (!isPlaying) {
 			updatePlayToggleButton();
@@ -378,19 +398,116 @@ const bootstrapWaveformPlot = (): void => {
 	const contextMenu = document.createElement("div");
 	contextMenu.className = "app-context-menu";
 	contextMenu.hidden = true;
+	let isSpectrogramHovered = false;
 
 	const openFileButton = document.createElement("button");
 	openFileButton.type = "button";
 	openFileButton.className = "app-context-menu__item";
 	openFileButton.textContent = "Open file...";
 	contextMenu.append(openFileButton);
+
+	const contextMenuDivider = document.createElement("div");
+	contextMenuDivider.className = "app-context-menu__separator";
+	contextMenu.append(contextMenuDivider);
+
+	const spectrogramMenuLabel = document.createElement("div");
+	spectrogramMenuLabel.className = "app-context-menu__label";
+	spectrogramMenuLabel.textContent = "Spectrogram scale";
+	contextMenu.append(spectrogramMenuLabel);
+
+	const spectrogramMenuGroup = document.createElement("div");
+	spectrogramMenuGroup.className = "app-context-menu__group";
+	contextMenu.append(spectrogramMenuGroup);
+
+	const channelMenuLabel = document.createElement("div");
+	channelMenuLabel.className = "app-context-menu__label";
+	channelMenuLabel.textContent = "Displayed channel";
+	contextMenu.append(channelMenuLabel);
+
+	const channelMenuGroup = document.createElement("div");
+	channelMenuGroup.className = "app-context-menu__group";
+	contextMenu.append(channelMenuGroup);
 	document.body.append(contextMenu);
+
+	const applyDisplayedChannelSelection = (resetZoom = false): void => {
+		const waveformChannels = getDisplayedWaveformChannels();
+		const spectrogramSamples = getDisplayedSpectrogramChannel();
+		if (resetZoom) {
+			waveformPlot.setData(waveformChannels, currentSampleRate);
+			spectrogramPlot.setData(spectrogramSamples, currentSampleRate);
+		} else {
+			waveformPlot.rerenderPlotData(waveformChannels);
+			spectrogramPlot.rerenderPlotData(spectrogramSamples);
+		}
+		updatePlayheadVisual();
+	};
+
+	const renderSpectrogramScaleMenu = (): void => {
+		spectrogramMenuGroup.replaceChildren();
+
+		const createItem = (label: string, step: number): HTMLButtonElement => {
+			const button = document.createElement("button");
+			button.type = "button";
+			button.className = "app-context-menu__item";
+			if (spectrogramPlot.getFrequencyScaleStep() === step) {
+				button.classList.add("is-selected");
+			}
+			button.textContent = label;
+			button.addEventListener("click", () => {
+				spectrogramPlot.setFrequencyScaleStep(step);
+				renderSpectrogramScaleMenu();
+				hideContextMenu();
+			});
+			return button;
+		};
+
+		spectrogramMenuGroup.append(createItem("Linear", 0));
+		spectrogramMenuGroup.append(createItem("Mostly linear", 6));
+		spectrogramMenuGroup.append(createItem("Balanced", 10));
+		spectrogramMenuGroup.append(createItem("Mostly log", 14));
+		spectrogramMenuGroup.append(createItem("Logarithmic", spectrogramScaleSteps - 1));
+	};
+
+	const renderChannelMenu = (): void => {
+		channelMenuGroup.replaceChildren();
+
+		const createItem = (label: string, channelIndex: number | null): HTMLButtonElement => {
+			const button = document.createElement("button");
+			button.type = "button";
+			button.className = "app-context-menu__item";
+			if (displayedChannelIndex === channelIndex) {
+				button.classList.add("is-selected");
+			}
+			button.textContent = label;
+			button.addEventListener("click", () => {
+				displayedChannelIndex = channelIndex;
+				applyDisplayedChannelSelection(false);
+				renderChannelMenu();
+				hideContextMenu();
+			});
+			return button;
+		};
+
+		channelMenuGroup.append(createItem("All channels", null));
+		for (let channelIndex = 0; channelIndex < currentChannels.length; channelIndex += 1) {
+			channelMenuGroup.append(createItem(`Channel ${channelIndex + 1}`, channelIndex));
+		}
+	};
 
 	const hideContextMenu = (): void => {
 		contextMenu.hidden = true;
 	};
 
 	const showContextMenu = (clientX: number, clientY: number): void => {
+		contextMenuDivider.hidden = !isSpectrogramHovered;
+		spectrogramMenuLabel.hidden = !isSpectrogramHovered;
+		spectrogramMenuGroup.hidden = !isSpectrogramHovered;
+		if (isSpectrogramHovered) {
+			renderSpectrogramScaleMenu();
+		} else {
+			spectrogramMenuGroup.replaceChildren();
+		}
+		renderChannelMenu();
 		contextMenu.hidden = false;
 		const viewportPadding = 8;
 		const menuRect = contextMenu.getBoundingClientRect();
@@ -420,12 +537,12 @@ const bootstrapWaveformPlot = (): void => {
 			pausePlayback();
 			currentChannels = channels.map((channel) => Float32Array.from(channel));
 			currentSampleRate = sampleRate;
+			if (displayedChannelIndex !== null && displayedChannelIndex >= currentChannels.length) {
+				displayedChannelIndex = null;
+			}
 			playheadSample = 0;
 			playheadInitialized = false;
-			waveformPlot.setData(currentChannels, sampleRate);
-			const mono = mixMultichannelToMono(channels);
-			spectrogramPlot.setData(mono, sampleRate);
-			updatePlayheadVisual();
+			applyDisplayedChannelSelection(true);
 		} catch (error) {
 			console.error(error);
 			window.alert(error instanceof Error ? error.message : "Unable to open that file.");
@@ -476,6 +593,13 @@ const bootstrapWaveformPlot = (): void => {
 		});
 	}
 
+	spectrogramCanvas.addEventListener("pointerenter", () => {
+		isSpectrogramHovered = true;
+	});
+	spectrogramCanvas.addEventListener("pointerleave", () => {
+		isSpectrogramHovered = false;
+	});
+
 	if (timeDisplaySelect instanceof HTMLSelectElement) {
 		waveformPlot.setXAxisDisplayMode(timeDisplaySelect.value === "samples" ? "samples" : "time");
 		timeDisplaySelect.addEventListener("change", () => {
@@ -488,10 +612,10 @@ const bootstrapWaveformPlot = (): void => {
 	const waveformSamples = normalizeToRMS(chirpSamples);
 	currentChannels = [Float32Array.from(waveformSamples)];
 	currentSampleRate = sampleRate;
+	displayedChannelIndex = null;
 	playheadSample = 0;
 	playheadInitialized = false;
-	waveformPlot.setData(currentChannels, sampleRate);
-	spectrogramPlot.setData(waveformSamples, sampleRate);
+	applyDisplayedChannelSelection(true);
 	updatePlayToggleButton();
 	updatePlayheadVisual();
 

@@ -8,8 +8,31 @@ type SpectrogramPlotAxes = {
 };
 
 const SPECTROGRAM_WINDOW_SIZE = 2048;
-const SPECTROGRAM_MIN_DB = -100;
-const SPECTROGRAM_MAX_DB = 0;
+const SPECTROGRAM_DYNAMIC_RANGE_DB = 80;
+const SPECTROGRAM_SCALE_STEPS = 20;
+const SPECTROGRAM_MAX_SCALE_STEP = SPECTROGRAM_SCALE_STEPS - 1;
+const SPECTROGRAM_TICKS_BY_STEP: number[][] = [
+	[0, 2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000, 18000, 20000, 22000, 24000],
+	[0, 2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000, 18000, 20000, 22000, 24000],
+	[0, 2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000, 18000, 20000, 22000, 24000],
+	[0, 2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000, 18000, 20000, 24000],
+	[0, 2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000, 18000, 20000, 24000],
+	[0, 2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000, 18000, 20000, 24000],
+	[0, 2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000, 20000, 24000],
+	[0, 2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000, 20000, 24000],
+	[0, 500, 1000, 2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000, 20000, 24000],
+	[0, 500, 1000, 2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000, 20000, 24000],
+	[0, 500, 1000, 2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000, 20000, 24000],
+	[0, 500, 1000, 2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000, 20000, 24000],
+	[0, 200, 500, 1000, 2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000, 20000, 24000],
+	[0, 200, 500, 1000, 2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000, 20000, 24000],
+	[0, 200, 500, 1000, 2000, 4000, 6000, 8000, 10000, 16000, 20000, 24000],
+	[0, 200, 500, 1000, 2000, 4000, 6000, 8000, 10000, 16000, 20000, 24000],
+	[0, 200, 500, 1000, 2000, 5000, 8000, 10000, 16000, 20000, 24000],
+	[0, 100, 200, 500, 1000, 2000, 5000, 8000, 10000, 16000, 20000, 24000],
+	[0, 100, 200, 500, 1000, 2000, 5000, 8000, 10000, 16000, 20000, 24000],
+	[0, 20, 50, 100, 200, 500, 1000, 2000, 5000, 8000, 10000, 16000, 20000, 24000],
+];
 
 export class SpectrogramPlot {
 	private readonly canvas: HTMLCanvasElement;
@@ -20,6 +43,7 @@ export class SpectrogramPlot {
 	private sampleRate = 48000;
 	private visibleStartSample = 0;
 	private visibleStopSample = 0;
+	private frequencyScaleStep = SPECTROGRAM_MAX_SCALE_STEP;
 	private wheelRenderTimer: ReturnType<typeof setTimeout> | null = null;
 
 	constructor(canvas: HTMLCanvasElement, axes: SpectrogramPlotAxes = {}) {
@@ -37,6 +61,21 @@ export class SpectrogramPlot {
 		this.resetZoom();
 		this.rerenderAxis();
 		this.rerenderPlotData();
+	}
+
+	setFrequencyScaleStep(step: number): void {
+		const clampedStep = Math.max(0, Math.min(SPECTROGRAM_MAX_SCALE_STEP, Math.round(step)));
+		if (clampedStep === this.frequencyScaleStep) {
+			return;
+		}
+
+		this.frequencyScaleStep = clampedStep;
+		this.rerenderAxis();
+		this.rerenderPlotData();
+	}
+
+	getFrequencyScaleStep(): number {
+		return this.frequencyScaleStep;
 	}
 
 	zoom(startSeconds: number, stopSeconds: number): void {
@@ -118,11 +157,7 @@ export class SpectrogramPlot {
 			return;
 		}
 
-		const nyquist = this.sampleRate / 2;
-		const divisions = 6;
-		for (let index = 0; index <= divisions; index += 1) {
-			const freqHz = (index / divisions) * nyquist;
-			const y = Math.round(axisHeight - 1 - ((freqHz / nyquist) * (axisHeight - 1)));
+		for (const { value, y } of this.getFrequencyTickPositions(axisHeight)) {
 
 			const tick = document.createElement("div");
 			tick.className = "ytick";
@@ -135,7 +170,7 @@ export class SpectrogramPlot {
 			}
 
 			const label = document.createElement("div");
-			label.textContent = this.formatFrequency(freqHz);
+			label.textContent = this.formatFrequency(value);
 			label.style.top = `${labelTop}px`;
 			label.classList.add("tick-label");
 			this.yAxis.append(label);
@@ -159,15 +194,14 @@ export class SpectrogramPlot {
 		}
 
 		ctx.save();
-		ctx.strokeStyle = "rgba(181, 192, 224, 0.08)";
+		ctx.strokeStyle = "rgba(181, 192, 224, 0.10)";
 		ctx.lineWidth = 1;
 
-		const horizontalDivisions = 6;
-		for (let index = 0; index <= horizontalDivisions; index += 1) {
-			const y = Math.round((index / horizontalDivisions) * (height - 1));
+		for (const { y } of this.getFrequencyTickPositions(height)) {
+			const lineY = Math.round(Math.max(0, Math.min(height - 1, y)));
 			ctx.beginPath();
-			ctx.moveTo(0, y);
-			ctx.lineTo(width, y);
+			ctx.moveTo(0, lineY);
+			ctx.lineTo(width, lineY);
 			ctx.stroke();
 		}
 
@@ -200,6 +234,9 @@ export class SpectrogramPlot {
 		const maxX = Math.max(1, width - 1);
 		const window = this.createHannWindow(SPECTROGRAM_WINDOW_SIZE);
 		const cmap = waveformColormap;
+		const frameMagnitudes: Float32Array[] = new Array(width);
+		let globalMaxDb = -Infinity;
+		let globalMinDb = Infinity;
 
 		for (let x = 0; x < width; x += 1) {
 			const centerSample = Math.round(startSample + (x / maxX) * (visibleSampleCount - 1));
@@ -213,13 +250,50 @@ export class SpectrogramPlot {
 
 			const [real, imag] = fft(frame);
 			const magnitudeBins = halfWindow;
+			const magnitudes = new Float32Array(magnitudeBins);
+			frameMagnitudes[x] = magnitudes;
+
+			for (let bin = 0; bin < magnitudeBins; bin += 1) {
+				const magnitude = Math.sqrt((real[bin] ?? 0) ** 2 + (imag[bin] ?? 0) ** 2);
+				magnitudes[bin] = magnitude;
+				const dbValue = 20 * Math.log10(magnitude + 1e-12);
+				globalMaxDb = Math.max(globalMaxDb, dbValue);
+				globalMinDb = Math.min(globalMinDb, dbValue);
+			}
+		}
+
+		if (!Number.isFinite(globalMaxDb)) {
+			return;
+		}
+
+		if (!Number.isFinite(globalMinDb)) {
+			globalMinDb = globalMaxDb - SPECTROGRAM_DYNAMIC_RANGE_DB;
+		}
+
+		if (globalMaxDb - globalMinDb > SPECTROGRAM_DYNAMIC_RANGE_DB) {
+			globalMinDb = globalMaxDb - SPECTROGRAM_DYNAMIC_RANGE_DB;
+		}
+
+		const dbSpan = Math.max(1e-12, globalMaxDb - globalMinDb);
+
+		for (let x = 0; x < width; x += 1) {
+			const magnitudeBins = halfWindow;
+			const magnitudes = frameMagnitudes[x] ?? new Float32Array(magnitudeBins);
 
 			for (let y = 0; y < height; y += 1) {
-				const freqFraction = 1 - (y / Math.max(1, height - 1));
-				const bin = Math.max(0, Math.min(magnitudeBins - 1, Math.round(freqFraction * (magnitudeBins - 1))));
-				const magnitude = Math.sqrt((real[bin] ?? 0) ** 2 + (imag[bin] ?? 0) ** 2);
-				const dbValue = 20 * Math.log10(magnitude + 1e-12);
-				const normalized = Math.max(0, Math.min(1, (dbValue - SPECTROGRAM_MIN_DB) / (SPECTROGRAM_MAX_DB - SPECTROGRAM_MIN_DB)));
+				const rowIndexFromBottom = height - 1 - y;
+				const { startBin, endBin } = this.getFrequencyBinRange(rowIndexFromBottom, height, magnitudeBins);
+				let totalDb = 0;
+				let sampleCount = 0;
+				for (let bin = startBin; bin <= endBin; bin += 1) {
+					const magnitude = magnitudes[bin] ?? 0;
+					const dbValue = 20 * Math.log10(magnitude + 1e-12);
+					totalDb += dbValue;
+					sampleCount += 1;
+				}
+				const dbValue = totalDb / Math.max(1, sampleCount);
+				const clampedDb = Math.max(globalMinDb, Math.min(globalMaxDb, dbValue));
+				const normalized = Math.max(0, Math.min(1, (clampedDb - globalMinDb) / dbSpan));
 
 				const [r, g, b] = this.colorForNormalized(normalized, cmap);
 				const pixelIndex = (y * width + x) * 4;
@@ -231,6 +305,67 @@ export class SpectrogramPlot {
 		}
 
 		ctx.putImageData(imageData, 0, 0);
+	}
+
+	private getFrequencyTickPositions(axisHeight: number): Array<{ value: number; y: number }> {
+		if (axisHeight <= 0 || this.sampleRate <= 0) {
+			return [];
+		}
+
+		const tickValues = SPECTROGRAM_TICKS_BY_STEP[Math.max(0, Math.min(SPECTROGRAM_MAX_SCALE_STEP, this.frequencyScaleStep))] ?? SPECTROGRAM_TICKS_BY_STEP[0];
+		const positions: Array<{ value: number; y: number }> = [];
+		for (const value of tickValues) {
+			const y = this.frequencyToY(value, axisHeight);
+			if (positions.length > 0 && Math.abs(y - positions[positions.length - 1]!.y) < 10) {
+				continue;
+			}
+			positions.push({ value, y });
+		}
+
+		return positions;
+	}
+
+	private frequencyToY(frequencyHz: number, axisHeight: number): number {
+		const nyquist = this.sampleRate / 2;
+		if (axisHeight <= 1 || nyquist <= 0) {
+			return 0;
+		}
+
+		const targetBin = Math.max(0, Math.min(this.getMagnitudeBinCount() - 1, Math.round((frequencyHz / nyquist) * (this.getMagnitudeBinCount() - 1))));
+		for (let rowIndexFromBottom = 0; rowIndexFromBottom < axisHeight; rowIndexFromBottom += 1) {
+			const { startBin, endBin } = this.getFrequencyBinRange(rowIndexFromBottom, axisHeight, this.getMagnitudeBinCount());
+			if (targetBin >= startBin && targetBin <= endBin) {
+				return axisHeight - 1 - rowIndexFromBottom;
+			}
+		}
+
+		return 0;
+	}
+
+	private getMagnitudeBinCount(): number {
+		return SPECTROGRAM_WINDOW_SIZE / 2;
+	}
+
+	private getFrequencyBinRange(rowIndexFromBottom: number, axisHeight: number, binCount: number): { startBin: number; endBin: number } {
+		const scaleFraction = this.frequencyScaleStep / SPECTROGRAM_MAX_SCALE_STEP;
+		const normalizedStart = rowIndexFromBottom / Math.max(1, axisHeight);
+		const normalizedEnd = (rowIndexFromBottom + 1) / Math.max(1, axisHeight);
+
+		const linearStart = normalizedStart * binCount;
+		const linearEnd = normalizedEnd * binCount;
+		const logStart = Math.max(0, Math.pow(binCount, normalizedStart) - 1);
+		const logEnd = Math.max(0, Math.pow(binCount, normalizedEnd) - 1);
+
+		let startBin = Math.round((linearStart * (1 - scaleFraction)) + (logStart * scaleFraction));
+		let endBin = Math.round((linearEnd * (1 - scaleFraction)) + (logEnd * scaleFraction));
+
+		startBin = Math.max(0, Math.min(binCount - 1, startBin));
+		endBin = Math.max(0, Math.min(binCount - 1, endBin));
+		if (endBin < startBin) {
+			endBin = startBin;
+		}
+
+		return { startBin, endBin };
 	}
 
 	private colorForNormalized(value: number, cmap: typeof waveformColormap): [number, number, number] {
@@ -269,7 +404,7 @@ export class SpectrogramPlot {
 
 	private formatFrequency(valueHz: number): string {
 		if (valueHz >= 1000) {
-			return `${(valueHz / 1000).toFixed(1)} kHz`;
+			return `${Math.round(valueHz / 1000)} kHz`;
 		}
 		return `${Math.round(valueHz)} Hz`;
 	}

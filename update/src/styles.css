@@ -359,15 +359,15 @@ input[type="file"] {
 .app-context-menu {
 	position: fixed;
 	z-index: 200;
-	min-width: 180px;
-	padding: 6px;
+	min-width: 168px;
+	padding: 4px;
 	border: 1px solid color-mix(in lab, var(--color) 16%, var(--bg-color) 84%);
 	border-radius: 12px;
 	background: color-mix(in lab, var(--color) 8%, var(--bg-color) 92%);
 	box-shadow: 0 16px 32px rgba(0, 0, 0, 0.45);
 	backdrop-filter: blur(12px);
 	display: grid;
-	gap: 4px;
+	gap: 3px;
 }
 
 .app-context-menu[hidden] {
@@ -380,16 +380,44 @@ input[type="file"] {
 	background: transparent;
 	color: color-mix(in lab, var(--color) 92%, #ffffff 8%);
 	font: inherit;
-	padding: 10px 12px;
+	padding: 8px 10px;
 	border-radius: 8px;
 	text-align: left;
 	cursor: pointer;
+	font-size: 0.82rem;
+	font-weight: 500;
 }
 
 .app-context-menu__item:hover,
 .app-context-menu__item:focus-visible {
 	background: color-mix(in lab, var(--color) 18%, var(--bg-color) 82%);
 	outline: none;
+}
+
+.app-context-menu__item.is-selected {
+	background: color-mix(in lab, var(--color) 24%, var(--bg-color) 76%);
+	font-weight: 600;
+}
+
+.app-context-menu__separator {
+	height: 1px;
+	background: color-mix(in lab, var(--color) 20%, var(--bg-color) 80%);
+	margin: 2px 1px;
+}
+
+.app-context-menu__label {
+	padding: 2px 8px 0;
+	font-size: 0.64rem;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: color-mix(in lab, var(--color) 62%, #ffffff 38%);
+	user-select: none;
+}
+
+.app-context-menu__group {
+	display: grid;
+	gap: 1px;
 }
 
 .right {
