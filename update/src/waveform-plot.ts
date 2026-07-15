@@ -1,9 +1,11 @@
-import { db, type NumberArray } from "./signal";
+import { db, type MultichannelBuffer, type NumberArray } from "./signal";
 
 type WaveformPlotAxes = {
 	xAxis?: HTMLElement | null;
 	yAxis?: HTMLElement | null;
 };
+
+type XAxisDisplayMode = "time" | "samples";
 
 const lineColorOptions = [
     '#1F77B4', // steel blue
@@ -20,11 +22,12 @@ export class WaveformPlot {
 	private readonly canvas: HTMLCanvasElement;
 	private readonly xAxis: HTMLElement | null;
 	private readonly yAxis: HTMLElement | null;
-	private samples: Float32Array = new Float32Array(0);
+	private samples: Float32Array[] = [new Float32Array(0)];
 	private sampleRate = 48000;
 	private visibleStartSample = 0;
 	private visibleStopSample = 0;
 	private visibleAmplitudeScale = 1;
+	private xAxisDisplayMode: XAxisDisplayMode = "time";
 
 	constructor(canvas: HTMLCanvasElement, axes: WaveformPlotAxes = {}) {
 		this.canvas = canvas;
@@ -35,8 +38,8 @@ export class WaveformPlot {
 		this.yAxis?.addEventListener("dblclick", this.handleResetZoom);
 	}
 
-	setData(samples: NumberArray, sampleRate = this.sampleRate): void {
-		this.samples = Float32Array.from(samples);
+	setData(samples: NumberArray | MultichannelBuffer, sampleRate = this.sampleRate): void {
+		this.samples = this.normalizeSamples(samples);
 		this.sampleRate = sampleRate;
 		this.resetZoom();
 		this.rerenderAxis();
@@ -44,13 +47,14 @@ export class WaveformPlot {
 	}
 
 	zoom(startSeconds: number, stopSeconds: number): void {
-		if (!Number.isFinite(startSeconds) || !Number.isFinite(stopSeconds) || this.samples.length === 0 || this.sampleRate <= 0) {
+		if (!Number.isFinite(startSeconds) || !Number.isFinite(stopSeconds) || this.getSampleCount() === 0 || this.sampleRate <= 0) {
 			this.resetZoom();
 			return;
 		}
 
-		const startSample = Math.max(0, Math.min(this.samples.length, Math.min(startSeconds, stopSeconds) * this.sampleRate));
-		const stopSample = Math.max(startSample + 1, Math.min(this.samples.length, Math.max(startSeconds, stopSeconds) * this.sampleRate));
+		const sampleCount = this.getSampleCount();
+		const startSample = Math.max(0, Math.min(sampleCount, Math.min(startSeconds, stopSeconds) * this.sampleRate));
+		const stopSample = Math.max(startSample + 1, Math.min(sampleCount, Math.max(startSeconds, stopSeconds) * this.sampleRate));
 		this.setVisibleWindowSamples(startSample, stopSample);
 	}
 
@@ -76,9 +80,14 @@ export class WaveformPlot {
 		this.renderXAxis();
 	}
 
-	rerenderPlotData(samples: NumberArray | null = null): void {
+	setXAxisDisplayMode(mode: XAxisDisplayMode): void {
+		this.xAxisDisplayMode = mode;
+		this.renderXAxis();
+	}
+
+	rerenderPlotData(samples: NumberArray | MultichannelBuffer | null = null): void {
 		if (samples !== null) {
-			this.samples = Float32Array.from(samples);
+			this.samples = this.normalizeSamples(samples);
 		}
 
 		const context = this.prepareCanvas();
@@ -92,6 +101,22 @@ export class WaveformPlot {
 		this.drawBackground(ctx, width, height);
 		this.drawGrid(ctx, width, height);
 		this.drawWaveform(ctx, width, height);
+	}
+
+	private normalizeSamples(samples: NumberArray | MultichannelBuffer): Float32Array[] {
+		if (samples.length > 0 && ArrayBuffer.isView(samples[0])) {
+			return (samples as MultichannelBuffer).map((channel) => Float32Array.from(channel));
+		}
+
+		return [Float32Array.from(samples as NumberArray)];
+	}
+
+	private getSampleCount(): number {
+		if (this.samples.length === 0) {
+			return 0;
+		}
+
+		return this.samples.reduce((minimum, channel) => Math.min(minimum, channel.length), this.samples[0].length);
 	}
 
 	private renderYAxis(): void {
@@ -138,14 +163,17 @@ export class WaveformPlot {
 
 		const axisWidth = Math.max(
 			1,
-			Math.floor(this.xAxis.getBoundingClientRect().width || this.canvas.getBoundingClientRect().width || 0),
+			Math.floor(this.canvas.getBoundingClientRect().width || this.xAxis.getBoundingClientRect().width || 0),
 		);
 		const xTicks = this.getXAxisTicks(axisWidth);
+		const { startSeconds, stopSeconds } = this.getVisibleWindowSeconds();
+		const visibleSeconds = stopSeconds - startSeconds;
 
 		this.xAxis.replaceChildren();
 		this.xAxis.style.position = "relative";
 		this.xAxis.style.overflow = "hidden";
 		this.xAxis.style.display = "block";
+		this.xAxis.style.width = `${axisWidth}px`;
 		if (xTicks.length === 0) {
 			const tick = document.createElement("div");
 			tick.className = "xtick";
@@ -167,11 +195,11 @@ export class WaveformPlot {
 			}
 
 			const label = document.createElement("div");
-			label.textContent = this.formatSeconds(value);
+			label.textContent = this.formatXAxisLabel(value, visibleSeconds);
 			label.classList.add("tick-label");
 			label.style.left = `${Math.min(x - 24, axisWidth - 48)}px`;
 			label.style.top = "8px";
-			label.style.width = "60px";
+			label.style.width = "70px";
 			this.xAxis.append(label);
 		}
 	}
@@ -190,7 +218,7 @@ export class WaveformPlot {
 		const tickXs = this.getXAxisTicks(width).map(({ x }) => x);
 
 		ctx.save();
-		ctx.strokeStyle = "rgba(181, 192, 224, 0.12)";
+		ctx.strokeStyle = "rgba(181, 192, 224, 0.22)";
 		ctx.lineWidth = 1;
 		for (const y of tickYs) {
 			ctx.beginPath();
@@ -270,27 +298,46 @@ export class WaveformPlot {
 
 		const centerY = height / 2;
 		const amplitude = Math.max(1, height * 0.42 * this.visibleAmplitudeScale);
-		const sampleCount = this.samples.length;
+		const sampleCount = this.getSampleCount();
+		const channelCount = this.samples.length;
 		const { startSample, stopSample } = this.getVisibleSampleWindow();
 		const { startSeconds, stopSeconds } = this.getVisibleWindowSeconds();
 		const visibleSampleCount = Math.max(0, stopSample - startSample);
 
 		const useInterpolation = visibleSampleCount > 0 && visibleSampleCount < 2000;
+		if (sampleCount === 0 || width <= 1 || visibleSampleCount <= 0) {
+			ctx.save();
+			ctx.strokeStyle = lineColorOptions[0];
+			ctx.lineWidth = 1;
+			ctx.beginPath();
+			ctx.lineTo(width, centerY);
+			ctx.stroke();
+			ctx.restore();
+			return;
+		}
 
-		ctx.save();
-		ctx.strokeStyle = lineColorOptions[0];
-		ctx.lineWidth = 1;
-
-		ctx.beginPath();
-		if (sampleCount > 0 && width > 1 && visibleSampleCount > 0) {
-			if (visibleSampleCount < 2000) {
-				this.drawSampleMarkers(ctx, startSeconds, stopSeconds, centerY, amplitude);
+		for (let channelIndex = channelCount - 1; channelIndex >= 0; channelIndex -= 1) {
+			const channel = this.samples[channelIndex];
+			if (!channel || channel.length === 0) {
+				continue;
 			}
+
+			const lineColor = lineColorOptions[channelIndex % lineColorOptions.length];
+			ctx.save();
+			ctx.strokeStyle = lineColor;
+			ctx.fillStyle = lineColor;
+			ctx.lineWidth = 1;
+			ctx.beginPath();
+
+			if (channelCount === 1 && visibleSampleCount < 2000) {
+				this.drawSampleMarkers(ctx, channel, startSeconds, stopSeconds, centerY, amplitude, lineColor);
+			}
+
 			if (useInterpolation) {
 				const maxX = Math.max(1, width - 1);
 				for (let x = 0; x < width; x += 1) {
 					const samplePosition = startSample + (x / maxX) * (visibleSampleCount - 1);
-					const sample = this.interpolateLanczosSample(samplePosition);
+					const sample = this.interpolateLanczosSample(samplePosition, channel);
 					const normalized = Math.max(-1, Math.min(1, sample));
 					const y = centerY - normalized * amplitude;
 
@@ -302,25 +349,57 @@ export class WaveformPlot {
 				ctx.stroke();
 				ctx.beginPath();
 			} else {
-				const lastIndex = startSample + visibleSampleCount - 1;
-				const maxX = width - 1;
-				for (let x = 0; x < width; x += 0.01) {
-					const sampleIndex = Math.round(startSample + (x / maxX) * (lastIndex - startSample));
-					const sample = this.samples[sampleIndex] ?? 0;
-					const normalized = Math.max(-1, Math.min(1, sample));
-					const y = centerY - normalized * amplitude;
-					ctx.lineTo(x, y);
+				const samplesPerPixel = visibleSampleCount / width;
+				if (samplesPerPixel > 10) {
+					const envelopePoints: Array<{ x: number; yMax: number; yMin: number }> = [];
+					for (let x = 0; x < width; x += 1) {
+						const blockStart = Math.floor(startSample + (x * visibleSampleCount) / width);
+						const blockEnd = Math.max(blockStart + 1, Math.floor(startSample + ((x + 1) * visibleSampleCount) / width));
+						let blockMax = -Infinity;
+						let blockMin = Infinity;
+						for (let sampleIndex = blockStart; sampleIndex < blockEnd; sampleIndex += 1) {
+							const sample = channel[sampleIndex] ?? 0;
+							blockMax = Math.max(blockMax, sample);
+							blockMin = Math.min(blockMin, sample);
+						}
+						envelopePoints.push({
+							x,
+							yMax: centerY - (Math.max(-1, Math.min(1, blockMax === -Infinity ? 0 : blockMax)) * amplitude),
+							yMin: centerY - (Math.max(-1, Math.min(1, blockMin === Infinity ? 0 : blockMin)) * amplitude),
+						});
+					}
+					if (envelopePoints.length > 0) {
+						ctx.beginPath();
+						ctx.moveTo(envelopePoints[0].x, envelopePoints[0].yMax);
+						for (let index = 1; index < envelopePoints.length; index += 1) {
+							ctx.lineTo(envelopePoints[index].x, envelopePoints[index].yMax);
+						}
+						for (let index = envelopePoints.length - 1; index >= 0; index -= 1) {
+							ctx.lineTo(envelopePoints[index].x, envelopePoints[index].yMin);
+						}
+						ctx.closePath();
+						ctx.fill();
+						ctx.stroke();
+					}
+				} else {
+					const lastIndex = startSample + visibleSampleCount - 1;
+					const maxX = width - 1;
+					for (let x = 0; x < width; x += 0.01) {
+						const sampleIndex = Math.round(startSample + (x / maxX) * (lastIndex - startSample));
+						const sample = channel[sampleIndex] ?? 0;
+						const normalized = Math.max(-1, Math.min(1, sample));
+						const y = centerY - normalized * amplitude;
+						ctx.lineTo(x, y);
+					}
 				}
 				ctx.stroke();
 			}
-		} else {
-			ctx.lineTo(width, centerY);
-			ctx.stroke();
+
+			ctx.restore();
 		}
-		ctx.restore();
 	}
 
-	private drawSampleMarkers(ctx: CanvasRenderingContext2D, startSeconds: number, stopSeconds: number, centerY: number, amplitude: number): void {
+	private drawSampleMarkers(ctx: CanvasRenderingContext2D, channel: Float32Array, startSeconds: number, stopSeconds: number, centerY: number, amplitude: number, lineColor: string): void {
 		// TODO: FIX THIS FUNCTION SO THAT IT DOES START DRAWING AT x = 0, even if the sample is not at 0 (due to rounding). Right now, it will skip the first sample if it is not at 0, which is not correct.
 		// Round seconds to nearest sample boundary
 
@@ -338,11 +417,11 @@ export class WaveformPlot {
 		const sampleSpacing = visibleSampleCount > 1 ? (maxX / (visibleSampleCount - 1)) : 0;
 
 		ctx.save();
-		ctx.fillStyle = lineColorOptions[0];
+		ctx.fillStyle = lineColor;
 		
 		for (let i = 0; i < visibleSampleCount; i += 1) {
 			// Map sample index position to x coordinate using same logic as waveform drawing
-			const sample = this.samples[startSample + i] ?? 0;
+			const sample = channel[startSample + i] ?? 0;
 
 			const x = (i - roundingOffset) * sampleSpacing;
 			const normalized = Math.max(-1, Math.min(1, sample));
@@ -355,14 +434,14 @@ export class WaveformPlot {
 		ctx.restore();
 	}
 
-	private interpolateLanczosSample(samplePosition: number): number {
-		if (this.samples.length === 0) {
+	private interpolateLanczosSample(samplePosition: number, channel: Float32Array): number {
+		if (channel.length === 0) {
 			return 0;
 		}
 
 		const a = 3; // Lanczos kernel parameter
 		const startIndex = Math.max(0, Math.floor(samplePosition - a));
-		const endIndex = Math.min(this.samples.length - 1, Math.ceil(samplePosition + a));
+		const endIndex = Math.min(channel.length - 1, Math.ceil(samplePosition + a));
 		let sum = 0;
 		let normalization = 0;
 
@@ -373,12 +452,12 @@ export class WaveformPlot {
 				continue;
 			}
 
-			sum += (this.samples[sampleIndex] ?? 0) * weight;
+			sum += (channel[sampleIndex] ?? 0) * weight;
 			normalization += weight;
 		}
 
 		if (normalization === 0) {
-			return this.samples[Math.max(0, Math.min(this.samples.length - 1, Math.round(samplePosition)))] ?? 0;
+			return channel[Math.max(0, Math.min(channel.length - 1, Math.round(samplePosition)))] ?? 0;
 		}
 
 		return sum / normalization;
@@ -423,32 +502,68 @@ export class WaveformPlot {
 		return { ctx: context, width, height };
 	}
 
-	private formatSeconds(value: number): string {
-		if (!Number.isFinite(value)) {
-			return "0.0s";
+	private formatXAxisLabel(value: number, visibleSeconds: number): string {
+		if (this.xAxisDisplayMode === "samples") {
+			return Math.round(value * this.sampleRate).toLocaleString("en-US");
 		}
 
-		const precision = value >= 10 ? 1 : 2;
-		return `${value.toFixed(precision)}s`;
+		return this.formatSeconds(value, visibleSeconds);
+	}
+
+	private formatSeconds(value: number, visibleSeconds: number): string {
+		if (!Number.isFinite(value)) {
+			return "0.0 s";
+		}
+
+		const showMillis = visibleSeconds < 10;
+		const digits = Math.max(0, 1 - Math.floor(Math.log10(Math.max(visibleSeconds, 1e-12))));
+
+		if (value >= 60) {
+			const totalSeconds = Math.floor(value);
+			const seconds = (totalSeconds % 60).toString().padStart(2, "0");
+			const minutesTotal = Math.floor(totalSeconds / 60);
+			const hours = Math.floor(minutesTotal / 60);
+			const minutes = (minutesTotal % 60).toString().padStart(2, "0");
+			if (showMillis) {
+				const fraction = value - Math.floor(value);
+				const milliseconds = Math.round(fraction * 10 ** digits).toString().padStart(digits, "0");
+				return hours >= 1 ? `${hours}:${minutes}:${seconds}.${milliseconds}` : `${minutes}:${seconds}.${milliseconds}`;
+			}
+			return hours >= 1 ? `${hours}:${minutes}:${seconds}` : `${minutes}:${seconds}`;
+		}
+
+		if (value >= 1) {
+			if (showMillis) {
+				const seconds = Math.floor(value);
+				const fraction = value - seconds;
+				const milliseconds = Math.round(fraction * 10 ** digits).toString().padStart(digits, "0");
+				return `${seconds}.${milliseconds} s`;
+			}
+
+			return `${Math.floor(value)} s`;
+		}
+
+		return `${Math.round(value * 1000)} ms`;
 	}
 
 	private resetZoom(): void {
 		this.visibleStartSample = 0;
-		this.visibleStopSample = this.samples.length;
+		this.visibleStopSample = this.getSampleCount();
 		this.visibleAmplitudeScale = 1;
 	}
 
 	applyWheelZoom(pointerFraction: number, deltaY: number): void {
 		const { startSample, stopSample } = this.getVisibleSampleWindow();
 		const visibleSamples = stopSample - startSample;
-		if (visibleSamples <= 0 || this.samples.length === 0 || this.sampleRate <= 0) {
+		if (visibleSamples <= 0 || this.getSampleCount() === 0 || this.sampleRate <= 0) {
 			return;
 		}
 
 		const focusFraction = Math.max(0, Math.min(1, pointerFraction));
 		const zoomFactor = Math.pow(1.003, deltaY);
 		const minimumVisibleSamples = 1;
-		const nextVisibleSamples = Math.max(minimumVisibleSamples, Math.min(this.samples.length, visibleSamples * zoomFactor));
+		const sampleCount = this.getSampleCount();
+		const nextVisibleSamples = Math.max(minimumVisibleSamples, Math.min(sampleCount, visibleSamples * zoomFactor));
 		const focalSample = startSample + (focusFraction * visibleSamples);
 
 		let nextStartSample = focalSample - (focusFraction * nextVisibleSamples);
@@ -459,10 +574,10 @@ export class WaveformPlot {
 			nextStartSample = 0;
 		}
 
-		if (nextStopSample > this.samples.length) {
-			const overshoot = nextStopSample - this.samples.length;
+		if (nextStopSample > sampleCount) {
+			const overshoot = nextStopSample - sampleCount;
 			nextStartSample = Math.max(0, nextStartSample - overshoot);
-			nextStopSample = this.samples.length;
+			nextStopSample = sampleCount;
 		}
 
 		this.setVisibleWindowSamples(nextStartSample, nextStopSample);
@@ -471,7 +586,7 @@ export class WaveformPlot {
 	panByFraction(panFraction: number): void {
 		const { startSample, stopSample } = this.getVisibleSampleWindow();
 		const visibleSamples = stopSample - startSample;
-		if (visibleSamples <= 0 || this.samples.length === 0) {
+		if (visibleSamples <= 0 || this.getSampleCount() === 0) {
 			return;
 		}
 
@@ -484,10 +599,11 @@ export class WaveformPlot {
 			nextStartSample = 0;
 		}
 
-		if (nextStopSample > this.samples.length) {
-			const overshoot = nextStopSample - this.samples.length;
+		const sampleCount = this.getSampleCount();
+		if (nextStopSample > sampleCount) {
+			const overshoot = nextStopSample - sampleCount;
 			nextStartSample = Math.max(0, nextStartSample - overshoot);
-			nextStopSample = this.samples.length;
+			nextStopSample = sampleCount;
 		}
 
 		this.setVisibleWindowSamples(nextStartSample, nextStopSample);
@@ -508,7 +624,7 @@ export class WaveformPlot {
 	};
 
 	private setVisibleWindowSamples(startSample: number, stopSample: number): void {
-		const sampleCount = this.samples.length;
+		const sampleCount = this.getSampleCount();
 		if (sampleCount === 0 || this.sampleRate <= 0) {
 			this.resetZoom();
 			this.rerenderAxis();
@@ -525,30 +641,33 @@ export class WaveformPlot {
 	}
 
 	private getTotalDurationSeconds(): number {
-		return this.samples.length > 0 && this.sampleRate > 0
-			? this.samples.length / this.sampleRate
+		const sampleCount = this.getSampleCount();
+		return sampleCount > 0 && this.sampleRate > 0
+			? sampleCount / this.sampleRate
 			: 0;
 	}
 
 	getVisibleWindowSeconds(): { startSeconds: number; stopSeconds: number } {
-		if (this.samples.length === 0 || this.sampleRate <= 0) {
+		const sampleCount = this.getSampleCount();
+		if (sampleCount === 0 || this.sampleRate <= 0) {
 			return { startSeconds: 0, stopSeconds: 0 };
 		}
 
-		const startSeconds = Math.max(0, Math.min(this.samples.length / this.sampleRate, this.visibleStartSample / this.sampleRate));
-		const stopSeconds = Math.max(startSeconds + (1 / this.sampleRate), Math.min(this.samples.length / this.sampleRate, this.visibleStopSample / this.sampleRate));
+		const startSeconds = Math.max(0, Math.min(sampleCount / this.sampleRate, this.visibleStartSample / this.sampleRate));
+		const stopSeconds = Math.max(startSeconds + (1 / this.sampleRate), Math.min(sampleCount / this.sampleRate, this.visibleStopSample / this.sampleRate));
 
 		return { startSeconds, stopSeconds };
 	}
 
 	private getVisibleSampleWindow(): { startSample: number; stopSample: number } {
-		if (this.samples.length === 0 || this.sampleRate <= 0) {
+		const sampleCount = this.getSampleCount();
+		if (sampleCount === 0 || this.sampleRate <= 0) {
 			return { startSample: 0, stopSample: 0 };
 		}
 
 		return {
-			startSample: Math.max(0, Math.min(this.samples.length, this.visibleStartSample)),
-			stopSample: Math.max(0, Math.min(this.samples.length, this.visibleStopSample)),
+			startSample: Math.max(0, Math.min(sampleCount, this.visibleStartSample)),
+			stopSample: Math.max(0, Math.min(sampleCount, this.visibleStopSample)),
 		};
 	}
 }

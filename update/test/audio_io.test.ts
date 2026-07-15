@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 
 import { createSilenceStereo, concatStereoBuffers, numberArrayToStereoBuffer } from "../src/signal";
 import { planAudioProcessingWorklet } from "../src/audio_io";
-import { createStereoWavBlob, encodeStereoWav } from "../src/wavfile";
+import { createStereoWavBlob, encodeMultichannelWav, encodeStereoWav, readMultichannelWavFile, readStereoWavFile } from "../src/wavfile";
 
 test("plans playback-only processing", () => {
 	const playback = createSilenceStereo(128);
@@ -88,4 +88,31 @@ test("createStereoWavBlob returns an audio wav blob", async () => {
 	expect(blob.size).toBe(48);
 	const arrayBuffer = await blob.arrayBuffer();
 	expect(arrayBuffer.byteLength).toBe(48);
+});
+
+test("readStereoWavFile decodes a stereo pcm wav file", async () => {
+	const left = new Float32Array([0, 1, -1]);
+	const right = new Float32Array([0.5, -0.5, 0.25]);
+	const file = new File([encodeStereoWav([left, right], 48000)], "test.wav", { type: "audio/wav" });
+	const decoded = await readStereoWavFile(file);
+
+	expect(decoded.sampleRate).toBe(48000);
+	expect(Array.from(decoded.stereo[0])).toEqual([0, 1, -1]);
+	expect(Array.from(decoded.stereo[1])).toEqual([0.5, -0.5, 0.25]);
+});
+
+test("readMultichannelWavFile decodes up to 32 channels", async () => {
+	const channels = [
+		new Float32Array([0, 1]),
+		new Float32Array([0.25, -0.25]),
+		new Float32Array([-0.5, 0.5]),
+		new Float32Array([1, -1]),
+	];
+	const file = new File([encodeMultichannelWav(channels, 44100)], "test.wav", { type: "audio/wav" });
+	const decoded = await readMultichannelWavFile(file);
+
+	expect(decoded.sampleRate).toBe(44100);
+	expect(decoded.channels.length).toBe(4);
+	expect(Array.from(decoded.channels[0])).toEqual([0, 1]);
+	expect(Array.from(decoded.channels[3])).toEqual([1, -1]);
 });

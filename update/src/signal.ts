@@ -9,6 +9,7 @@ export type NumberArray = FloatArray | IntegerArray;
 export type MultichannelFloatArray = FloatArray[];
 export type MultichannelIntegerArray = IntegerArray[];
 export type MultichannelNumberArray = NumberArray[];
+export type MultichannelBuffer = readonly Float32Array[];
 
 export type StereoBuffer = readonly [Float32Array, Float32Array];
 
@@ -189,7 +190,7 @@ export function chirp(fStart: number, fStop: number, duration: number | null = n
     // compact phi: pre-fade (fade_in samples), main sweep, post-fade (fade_out samples)
     const pre = Math.max(0, fade_in);
     const post = Math.max(0, fade_out);
-    const phi = Float32Array.from({ length: pre + samples_count + post }, () => 0);
+    const phi = Float64Array.from({ length: pre + samples_count + post }, () => 0);
 
     // offset matches original phi_fade_in last value: f_start * ((fade_in+1)/fs)
     const offset = fStart * ((fade_in + 1) / fs);
@@ -201,7 +202,7 @@ export function chirp(fStart: number, fStop: number, duration: number | null = n
     const baseIdx = pre;
     for (let i = 0; i < samples_count; i++) {
         let t = i / fs;
-        phi[baseIdx + i] = L * fStart * (Math.exp(t / L) - 1) + offset;
+        phi[baseIdx + i] = 2 * Math.PI * L * fStart * (Math.pow(Math.E, t / L) - 1) + offset;
     }
 
     // post-fade linear ramp starting from last sweep value
@@ -211,8 +212,8 @@ export function chirp(fStart: number, fStop: number, duration: number | null = n
     }
 
     // sweep = sin(2 * PI * phi)
-    const sweep = Float32Array.from({ length: phi.length }, () => 0);
-    for (let i = 0; i < phi.length; i++) sweep[i] = Math.sin(2 * Math.PI * phi[i]);
+    const sweep = Float64Array.from({ length: phi.length }, () => 0);
+    for (let i = 0; i < phi.length; i++) sweep[i] = Math.sin(phi[i]);
 
     // compute time vector t for sweep length
     const t = Float32Array.from({ length: sweep.length }, () => 0);
@@ -233,7 +234,7 @@ export function chirp(fStart: number, fStop: number, duration: number | null = n
     }
 
     // window: simple linear fade in/out over fade_in / fade_out samples
-    const window = Float32Array.from({ length: sweep.length }, () => 0);
+    const window = Float64Array.from({ length: sweep.length }, () => 0);
     for (let i = 0; i < sweep.length; i++) {
         let w = 1.0;
         if (fade_in > 0 && i < fade_in) {
