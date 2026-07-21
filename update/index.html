@@ -204,6 +204,16 @@
 									<p class="info">Log-frequency view with selectable weighting, exponential averaging, and fractional-octave smoothing.</p>
 									<canvas id="liveSpectrumCanvas" class="live-plot-canvas"></canvas>
 								</section>
+								<section class="live-plot-card">
+									<h2>Impulse response (live)</h2>
+									<p class="info">Computed from the current mic/reference two-channel window.</p>
+									<canvas id="liveImpulseCanvas" class="live-plot-canvas"></canvas>
+								</section>
+								<section class="live-plot-card">
+									<h2>Phase response (live)</h2>
+									<p class="info">Phase of H(f)=Y(f)/X(f), updated continuously.</p>
+									<canvas id="livePhaseCanvas" class="live-plot-canvas"></canvas>
+								</section>
 							</div>
 						</div>
 					</div>
