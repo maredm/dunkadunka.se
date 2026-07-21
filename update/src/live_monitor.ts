@@ -44,11 +44,14 @@ export interface LiveMonitorController {
 const HISTORY_SECONDS = 60;
 const MIN_DB = -96;
 const MAX_DB = 6;
+const SPECTRUM_MIN_DB = -50;
+const SPECTRUM_MAX_DB = 10;
 const DEFAULT_SMOOTHING_FRACTION = 1 / 6;
 const LOG_FREQUENCY_MIN = 20;
 const DEFAULT_AVERAGING_SECONDS = 1;
 const SPECTRUM_GRID_FREQUENCIES = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
 const LEVEL_GRID_VALUES = [-90, -80, -70, -60, -50, -40, -30, -20, -10, 0];
+const SPECTRUM_LEVEL_GRID_VALUES = [-50, -40, -30, -20, -10, 0, 10];
 
 export function computeWaveformDecibels(samples: Float32Array): number {
 	if (samples.length === 0) {
@@ -313,7 +316,7 @@ function drawSpectrum(
 		const clamped = clamp(frequency, LOG_FREQUENCY_MIN, maxFrequency);
 		return ((Math.log10(clamped) - logMin) / Math.max(1e-12, logMax - logMin)) * (width - 1);
 	};
-	const projectY = (valueDb: number): number => (1 - ((valueDb - MIN_DB) / (MAX_DB - MIN_DB))) * (height - 1);
+	const projectY = (valueDb: number): number => (1 - ((valueDb - SPECTRUM_MIN_DB) / (SPECTRUM_MAX_DB - SPECTRUM_MIN_DB))) * (height - 1);
 
 	ctx.font = "11px sans-serif";
 	ctx.fillStyle = "#9aa4b2";
@@ -329,7 +332,7 @@ function drawSpectrum(
 		ctx.stroke();
 		ctx.fillText(formatFrequencyLabel(frequency), Math.max(2, x - 14), height - 6);
 	}
-	for (const value of LEVEL_GRID_VALUES) {
+	for (const value of SPECTRUM_LEVEL_GRID_VALUES) {
 		const y = Math.round(projectY(value));
 		ctx.strokeStyle = "rgba(181, 192, 224, 0.12)";
 		ctx.beginPath();
@@ -339,6 +342,25 @@ function drawSpectrum(
 		ctx.fillText(`${value}`, 6, Math.max(12, y - 2));
 	}
 
+	// Draw a -1 dB/decade target with 0 dB at 1 kHz.
+	ctx.beginPath();
+	for (let index = 0; index < width; index += 1) {
+		const ratio = index / Math.max(1, width - 1);
+		const frequency = Math.pow(10, logMin + ratio * (logMax - logMin));
+		const targetDb = -Math.log10(Math.max(1e-9, frequency) / 1000);
+		const y = projectY(targetDb);
+		if (index === 0) {
+			ctx.moveTo(index, y);
+		} else {
+			ctx.lineTo(index, y);
+		}
+	}
+	ctx.strokeStyle = "#ef4444";
+	ctx.lineWidth = 1.5;
+	ctx.setLineDash([6, 4]);
+	ctx.stroke();
+	ctx.setLineDash([]);
+
 	const drawSeries = (series: LiveSpectrumSeries | null, color: string): void => {
 		if (!series || series.frequencies.length === 0) {
 			return;
@@ -346,7 +368,7 @@ function drawSpectrum(
 		ctx.beginPath();
 		for (let index = 0; index < series.frequencies.length; index += 1) {
 			const x = projectX(series.frequencies[index] ?? LOG_FREQUENCY_MIN);
-			const y = projectY(series.valuesDb[index] ?? MIN_DB);
+			const y = projectY(series.valuesDb[index] ?? SPECTRUM_MIN_DB);
 			if (index === 0) {
 				ctx.moveTo(x, y);
 			} else {
