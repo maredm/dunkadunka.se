@@ -24,6 +24,7 @@ const acquisitionInputDeviceSelect = document.getElementById("acquisitionInputDe
 const acquisitionInputChannelSelect = document.getElementById("acquisitionInputChannelSelect") as HTMLSelectElement | null;
 const acquisitionOutputDeviceSelect = document.getElementById("acquisitionOutputDeviceSelect") as HTMLSelectElement | null;
 const acquisitionOutputChannelSelect = document.getElementById("acquisitionOutputChannelSelect") as HTMLSelectElement | null;
+const acquisitionCommentInput = document.getElementById("acquisitionCommentInput") as HTMLInputElement | null;
 const acquisitionStatusText = document.getElementById("acquisitionStatusText") as HTMLParagraphElement | null;
 const acquisitionRecordBtn = document.getElementById("acquisitionRecordBtn") as HTMLButtonElement | null;
 const acquisitionStopBtn = document.getElementById("acquisitionStopBtn") as HTMLButtonElement | null;
@@ -53,6 +54,7 @@ if (
 	!acquisitionInputChannelSelect ||
 	!acquisitionOutputDeviceSelect ||
 	!acquisitionOutputChannelSelect ||
+	!acquisitionCommentInput ||
 	!acquisitionStatusText ||
 	!acquisitionRecordBtn ||
 	!acquisitionStopBtn
@@ -139,6 +141,10 @@ function createAnalysisMarkup(tabId: string, fileName: string, sampleRate: numbe
 					<option value="right">R</option>
 				</select>
 			</div>
+			<div class="acquisition-toolbar-group">
+				<label for="analysisCommentInput-${tabId}" class="acquisition-toolbar-label">Comment</label>
+				<input id="analysisCommentInput-${tabId}" class="toolbar-select" type="text" maxlength="80" placeholder="optional" aria-label="Recording comment" />
+			</div>
 			<p id="analysisStatusText-${tabId}" class="acquisition-status" data-state="idle" aria-live="polite">Ready</p>
 			<button id="analysisRecordBtn-${tabId}" type="button" class="toolbar-button button acquisition-action-button">Record</button>
 			<button id="analysisStopBtn-${tabId}" type="button" class="toolbar-button button acquisition-action-button" disabled>Stop</button>
@@ -190,6 +196,7 @@ async function openAnalysisTab(file: File): Promise<void> {
 		const outputChannelSelect = document.getElementById(`analysisOutputChannelSelect-${tabId}`) as HTMLSelectElement | null;
 		const inputDeviceSelect = document.getElementById(`analysisInputDeviceSelect-${tabId}`) as HTMLSelectElement | null;
 		const inputChannelSelect = document.getElementById(`analysisInputChannelSelect-${tabId}`) as HTMLSelectElement | null;
+		const commentInput = document.getElementById(`analysisCommentInput-${tabId}`) as HTMLInputElement | null;
 		const statusText = document.getElementById(`analysisStatusText-${tabId}`) as HTMLParagraphElement | null;
 		const recordButton = document.getElementById(`analysisRecordBtn-${tabId}`) as HTMLButtonElement | null;
 		const stopButton = document.getElementById(`analysisStopBtn-${tabId}`) as HTMLButtonElement | null;
@@ -203,6 +210,7 @@ async function openAnalysisTab(file: File): Promise<void> {
 			!outputChannelSelect ||
 			!inputDeviceSelect ||
 			!inputChannelSelect ||
+			!commentInput ||
 			!statusText ||
 			!recordButton ||
 			!stopButton
@@ -217,6 +225,7 @@ async function openAnalysisTab(file: File): Promise<void> {
 			inputChannelSelect,
 			outputDeviceSelect,
 			outputChannelSelect,
+			commentInput,
 			statusText,
 			recordButton,
 			stopButton,
@@ -303,6 +312,7 @@ acquisitionMeasurementController = createMeasurementController({
 	inputChannelSelect: acquisitionInputChannelSelect,
 	outputDeviceSelect: acquisitionOutputDeviceSelect,
 	outputChannelSelect: acquisitionOutputChannelSelect,
+	commentInput: acquisitionCommentInput,
 	statusText: acquisitionStatusText,
 	recordButton: acquisitionRecordBtn,
 	stopButton: acquisitionStopBtn,

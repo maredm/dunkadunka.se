@@ -22,6 +22,7 @@ export interface MeasurementControllerOptions {
 	inputChannelSelect: HTMLSelectElement;
 	outputDeviceSelect: HTMLSelectElement;
 	outputChannelSelect: HTMLSelectElement;
+	commentInput?: HTMLInputElement | null;
 	statusText: HTMLElement;
 	recordButton: HTMLButtonElement;
 	stopButton: HTMLButtonElement;
@@ -36,9 +37,33 @@ export interface MeasurementController {
 	isRunning(): boolean;
 }
 
-function buildAcquisitionFileName(): string {
+function sanitizeFilePart(value: string): string {
+	return value
+		.trim()
+		.replace(/\s+/g, "-")
+		.replace(/[^a-zA-Z0-9._-]/g, "_")
+		.replace(/_+/g, "_")
+		.replace(/-+/g, "-")
+		.slice(0, 48);
+}
+
+function buildAcquisitionFileName(comment?: string): string {
 	const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
-	return `acquisition-${stamp}.wav`;
+	const commentPart = comment ? sanitizeFilePart(comment) : "";
+	return commentPart ? `acquisition-${commentPart}-${stamp}.wav` : `acquisition-${stamp}.wav`;
+}
+
+function triggerFileDownload(file: File): void {
+	const url = URL.createObjectURL(file);
+	const anchor = document.createElement("a");
+	anchor.href = url;
+	anchor.download = file.name;
+	anchor.rel = "noopener";
+	anchor.style.display = "none";
+	document.body.append(anchor);
+	anchor.click();
+	anchor.remove();
+	queueMicrotask(() => URL.revokeObjectURL(url));
 }
 
 function normalizeChannelSelection(value: string): AudioChannelSelection {
@@ -56,6 +81,7 @@ export function createMeasurementController(options: MeasurementControllerOption
 		inputChannelSelect,
 		outputDeviceSelect,
 		outputChannelSelect,
+		commentInput,
 		statusText,
 		recordButton,
 		stopButton,
@@ -141,14 +167,23 @@ export function createMeasurementController(options: MeasurementControllerOption
 			});
 			await refreshDeviceLists();
 			const recorded = await activeSession.recorded;
-			const trimmedRecorded: [Float32Array, Float32Array] = [
-				recorded[0].subarray(Math.min(ACQUISITION_PREROLL_FRAMES, recorded[0].length)),
-				recorded[1].subarray(Math.min(ACQUISITION_PREROLL_FRAMES, recorded[1].length)),
-			];
-			const file = new File([createStereoWavBlob(trimmedRecorded, SAMPLE_RATE)], buildAcquisitionFileName(), { type: "audio/wav" });
+			const captureChannel = recorded[0].subarray(Math.min(ACQUISITION_PREROLL_FRAMES, recorded[0].length));
+
+			// Export stereo acquisition as: ch1=measured input, ch2=reference sweep.
+			const measured = new Float32Array(captureChannel);
+			const reference = new Float32Array(measured.length);
+			reference.set(normalizedStimulus.subarray(0, Math.min(normalizedStimulus.length, reference.length)), 0);
+
+			const comment = commentInput?.value?.trim() ?? "";
+			const file = new File(
+				[createStereoWavBlob([measured, reference], SAMPLE_RATE)],
+				buildAcquisitionFileName(comment),
+				{ type: "audio/wav" },
+			);
+			triggerFileDownload(file);
 			onRecordedFile(file);
 			onRecordingComplete?.();
-			setStatus("Recording complete. WAV added to Files.", "success");
+			setStatus("Recording complete. WAV downloaded and added to Files.", "success");
 		} catch (error) {
 			const message = error instanceof Error ? error.message : "Unknown error";
 			setStatus(`Recording failed: ${message}`, "error");
