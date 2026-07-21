@@ -3,7 +3,7 @@ import { startLiveMonitor, type LiveMonitorSession, type AudioChannelSelection }
 import { fft } from "./fft";
 import { fractionalOctaveSmoothing, getFractionalOctaveFrequencies } from "./fractional_octave_smoothing";
 import { nextPow2 } from "./math";
-import { A_WEIGHTING_COEFFICIENTS, applyAWeightingToBuffer, calculateTwoChannelImpulseResponse } from "./signal";
+import { A_WEIGHTING_COEFFICIENTS, applyAWeightingToBuffer, calculateTwoChannelImpulseResponse, estimateDelay } from "./signal";
 
 type LiveSpectrumSeries = {
 	frequencies: Float32Array;
@@ -55,6 +55,8 @@ const SPECTRUM_GRID_FREQUENCIES = [20, 50, 100, 200, 500, 1000, 2000, 5000, 1000
 const LEVEL_GRID_VALUES = [-90, -80, -70, -60, -50, -40, -30, -20, -10, 0];
 const SPECTRUM_LEVEL_GRID_VALUES = [-50, -40, -30, -20, -10, 0, 10];
 const DERIVED_PLOT_MIN_UPDATE_MS = 250;
+const DERIVED_AVERAGING_SECONDS = 15;
+const DELAY_ALIGNMENT_SECONDS = 25;
 
 type PhaseResponse = {
 	frequencies: Float32Array;
@@ -64,6 +66,12 @@ type PhaseResponse = {
 type ImpulseResponseWindow = {
 	timeMs: Float32Array;
 	amplitude: Float32Array;
+};
+
+type TransferComplexResponse = {
+	frequencies: Float32Array;
+	re: Float32Array;
+	im: Float32Array;
 };
 
 export function computeWaveformDecibels(samples: Float32Array): number {
@@ -408,7 +416,12 @@ function drawLinePlot(
 	ctx.restore();
 }
 
-function computeTransferPhaseResponse(recorded: Float32Array, stimulus: Float32Array, sampleRate: number): PhaseResponse | null {
+function computeTransferComplexResponse(
+	recorded: Float32Array,
+	stimulus: Float32Array,
+	sampleRate: number,
+	delayCompensationSamples = 0,
+): TransferComplexResponse | null {
 	const n = Math.min(recorded.length, stimulus.length);
 	if (n < 8 || sampleRate <= 0) {
 		return null;
@@ -429,10 +442,10 @@ function computeTransferPhaseResponse(recorded: Float32Array, stimulus: Float32A
 	const minHz = 20;
 	const maxHz = Math.min(20000, nyquist);
 	const freqs: number[] = [];
-	const phases: number[] = [];
+	const re: number[] = [];
+	const im: number[] = [];
+	const delaySeconds = delayCompensationSamples / sampleRate;
 
-	let prev = 0;
-	let first = true;
 	for (let k = 1; k < nfft / 2; k += 1) {
 		const freq = (k * sampleRate) / nfft;
 		if (freq < minHz || freq > maxHz) {
@@ -444,8 +457,36 @@ function computeTransferPhaseResponse(recorded: Float32Array, stimulus: Float32A
 		}
 		const hRe = ((yRe[k] * xRe[k]) + (yIm[k] * xIm[k])) / denom;
 		const hIm = ((yIm[k] * xRe[k]) - (yRe[k] * xIm[k])) / denom;
-		let phase = Math.atan2(hIm, hRe) * (180 / Math.PI);
 
+		// Delay compensation: multiply by exp(j*2*pi*f*delay).
+		const phaseComp = 2 * Math.PI * freq * delaySeconds;
+		const c = Math.cos(phaseComp);
+		const s = Math.sin(phaseComp);
+		const compRe = (hRe * c) - (hIm * s);
+		const compIm = (hRe * s) + (hIm * c);
+
+		freqs.push(freq);
+		re.push(compRe);
+		im.push(compIm);
+	}
+
+	if (freqs.length === 0) {
+		return null;
+	}
+
+	return {
+		frequencies: Float32Array.from(freqs),
+		re: Float32Array.from(re),
+		im: Float32Array.from(im),
+	};
+}
+
+function computeUnwrappedPhaseFromComplex(re: Float32Array, im: Float32Array): Float32Array {
+	const phases = new Float32Array(re.length);
+	let prev = 0;
+	let first = true;
+	for (let i = 0; i < re.length; i += 1) {
+		let phase = Math.atan2(im[i] ?? 0, re[i] ?? 0) * (180 / Math.PI);
 		if (!first) {
 			let delta = phase - prev;
 			while (delta > 180) {
@@ -459,19 +500,9 @@ function computeTransferPhaseResponse(recorded: Float32Array, stimulus: Float32A
 		}
 		first = false;
 		prev = phase;
-
-		freqs.push(freq);
-		phases.push(phase);
+		phases[i] = phase;
 	}
-
-	if (freqs.length === 0) {
-		return null;
-	}
-
-	return {
-		frequencies: Float32Array.from(freqs),
-		phasesDeg: Float32Array.from(phases),
-	};
+	return phases;
 }
 
 function computeImpulseResponseWindowed(recorded: Float32Array, stimulus: Float32Array, sampleRate: number): ImpulseResponseWindow | null {
@@ -516,6 +547,47 @@ function computeImpulseResponseWindowed(recorded: Float32Array, stimulus: Float3
 		const idx = start + i;
 		timeMs[i] = ((idx - peakIndex) / sampleRate) * 1000;
 		amplitude[i] = ir[idx] ?? 0;
+	}
+
+	return { timeMs, amplitude };
+}
+
+function computeImpulseResponseAlignedWindow(
+	recorded: Float32Array,
+	stimulus: Float32Array,
+	sampleRate: number,
+	delaySamples: number,
+): ImpulseResponseWindow | null {
+	const n = Math.min(recorded.length, stimulus.length);
+	if (n < 8 || sampleRate <= 0) {
+		return null;
+	}
+
+	const nfft = nextPow2(n);
+	const rec = new Float32Array(nfft);
+	const stim = new Float32Array(nfft);
+	rec.set(recorded.subarray(0, n), 0);
+	stim.set(stimulus.subarray(0, n), 0);
+
+	const ir = calculateTwoChannelImpulseResponse(rec, stim) as Float32Array;
+	if (!ir || ir.length === 0) {
+		return null;
+	}
+
+	const center = Math.floor(ir.length / 2) + Math.round(delaySamples);
+	const before = Math.round(0.08 * sampleRate);
+	const after = Math.round(0.45 * sampleRate);
+	const length = before + after;
+	if (length <= 4) {
+		return null;
+	}
+
+	const timeMs = new Float32Array(length);
+	const amplitude = new Float32Array(length);
+	for (let i = 0; i < length; i += 1) {
+		const idx = center - before + i;
+		timeMs[i] = ((i - before) / sampleRate) * 1000;
+		amplitude[i] = (idx >= 0 && idx < ir.length) ? (ir[idx] ?? 0) : 0;
 	}
 
 	return { timeMs, amplitude };
@@ -734,6 +806,12 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 	let micWeightingState = createAWeightingState();
 	let referenceWeightingState = createAWeightingState();
 	let lastDerivedPlotUpdateMs = 0;
+	let smoothedDelaySamples: number | null = null;
+	let averagedPhaseRe: Float32Array | null = null;
+	let averagedPhaseIm: Float32Array | null = null;
+	let phaseFrequencies: Float32Array | null = null;
+	let averagedImpulse: Float32Array | null = null;
+	let impulseTimeMs: Float32Array | null = null;
 
 	const setStatus = (message: string, state: "idle" | "busy" | "success" | "error" = "idle"): void => {
 		statusText.textContent = message;
@@ -751,47 +829,86 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 
 	const renderDerivedPlots = (mic: Float32Array | null, reference: Float32Array | null, sampleRate: number): void => {
 		if (!mic || !reference) {
+			averagedPhaseRe = null;
+			averagedPhaseIm = null;
+			phaseFrequencies = null;
+			averagedImpulse = null;
+			impulseTimeMs = null;
+			smoothedDelaySamples = null;
 			drawEmptyPlot(impulseCanvas, "Impulse response (live)", "Select a reference input device.");
 			drawEmptyPlot(phaseCanvas, "Phase response (live)", "Select a reference input device.");
 			return;
 		}
 
-		const impulse = computeImpulseResponseWindowed(mic, reference, sampleRate);
-		if (!impulse) {
-			drawEmptyPlot(impulseCanvas, "Impulse response (live)", "Unable to compute impulse response.");
+		const delaySecondsInst = estimateDelay(reference, mic, sampleRate);
+		const delaySamplesInst = delaySecondsInst * sampleRate;
+		if (smoothedDelaySamples === null || !Number.isFinite(smoothedDelaySamples)) {
+			smoothedDelaySamples = delaySamplesInst;
 		} else {
-			drawLinePlot(
-				impulseCanvas,
-				"Impulse response (live)",
-				"Time (ms)",
-				"Amplitude",
-				impulse.timeMs,
-				impulse.amplitude,
-				"#f97316",
-			);
+			const elapsedSeconds = Math.max(1 / 120, (lastDerivedPlotUpdateMs <= 0 ? DERIVED_PLOT_MIN_UPDATE_MS : DERIVED_PLOT_MIN_UPDATE_MS) / 1000);
+			const alphaDelay = computeExponentialAverageAlpha(elapsedSeconds, DELAY_ALIGNMENT_SECONDS);
+			smoothedDelaySamples = (1 - alphaDelay) * smoothedDelaySamples + alphaDelay * delaySamplesInst;
 		}
 
-		const phase = computeTransferPhaseResponse(mic, reference, sampleRate);
-		if (!phase) {
+		const alphaLong = computeExponentialAverageAlpha(Math.max(1 / 120, DERIVED_PLOT_MIN_UPDATE_MS / 1000), DERIVED_AVERAGING_SECONDS);
+
+		const transferComplex = computeTransferComplexResponse(mic, reference, sampleRate, smoothedDelaySamples ?? 0);
+		if (!transferComplex) {
 			drawEmptyPlot(phaseCanvas, "Phase response (live)", "Unable to compute phase response.");
 		} else {
+			if (!averagedPhaseRe || !averagedPhaseIm || !phaseFrequencies || averagedPhaseRe.length !== transferComplex.re.length) {
+				averagedPhaseRe = Float32Array.from(transferComplex.re);
+				averagedPhaseIm = Float32Array.from(transferComplex.im);
+				phaseFrequencies = Float32Array.from(transferComplex.frequencies);
+			} else {
+				for (let i = 0; i < averagedPhaseRe.length; i += 1) {
+					averagedPhaseRe[i] = (1 - alphaLong) * averagedPhaseRe[i] + alphaLong * (transferComplex.re[i] ?? 0);
+					averagedPhaseIm[i] = (1 - alphaLong) * averagedPhaseIm[i] + alphaLong * (transferComplex.im[i] ?? 0);
+				}
+			}
+
+			const phaseUnwrapped = computeUnwrappedPhaseFromComplex(averagedPhaseRe, averagedPhaseIm);
 			let phaseMin = Number.POSITIVE_INFINITY;
 			let phaseMax = Number.NEGATIVE_INFINITY;
-			for (let i = 0; i < phase.phasesDeg.length; i += 1) {
-				const v = phase.phasesDeg[i] ?? 0;
+			for (let i = 0; i < phaseUnwrapped.length; i += 1) {
+				const v = phaseUnwrapped[i] ?? 0;
 				phaseMin = Math.min(phaseMin, v);
 				phaseMax = Math.max(phaseMax, v);
 			}
 			const padding = 15;
 			drawLinePlot(
 				phaseCanvas,
-				"Phase response (live)",
+				"Phase response (live, long average)",
 				"Frequency (Hz)",
 				"Phase (deg)",
-				phase.frequencies,
-				phase.phasesDeg,
+				phaseFrequencies,
+				phaseUnwrapped,
 				"#38bdf8",
 				{ logX: true, yMin: phaseMin - padding, yMax: phaseMax + padding },
+			);
+		}
+
+		const impulse = computeImpulseResponseAlignedWindow(mic, reference, sampleRate, smoothedDelaySamples ?? 0);
+		if (!impulse || impulse.amplitude.length === 0) {
+			drawEmptyPlot(impulseCanvas, "Impulse response (live)", "Unable to compute impulse response.");
+		} else {
+			if (!averagedImpulse || !impulseTimeMs || averagedImpulse.length !== impulse.amplitude.length) {
+				averagedImpulse = Float32Array.from(impulse.amplitude);
+				impulseTimeMs = Float32Array.from(impulse.timeMs);
+			} else {
+				for (let i = 0; i < averagedImpulse.length; i += 1) {
+					averagedImpulse[i] = (1 - alphaLong) * averagedImpulse[i] + alphaLong * (impulse.amplitude[i] ?? 0);
+				}
+			}
+
+			drawLinePlot(
+				impulseCanvas,
+				"Impulse response (live, long average)",
+				"Time (ms)",
+				"Amplitude",
+				impulseTimeMs,
+				averagedImpulse,
+				"#f97316",
 			);
 		}
 	};
@@ -917,6 +1034,12 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 		averagedReferenceSpectrum = null;
 		lastFrameTime = 0;
 		lastDerivedPlotUpdateMs = 0;
+		smoothedDelaySamples = null;
+		averagedPhaseRe = null;
+		averagedPhaseIm = null;
+		phaseFrequencies = null;
+		averagedImpulse = null;
+		impulseTimeMs = null;
 		micWeightingState = createAWeightingState();
 		referenceWeightingState = createAWeightingState();
 
