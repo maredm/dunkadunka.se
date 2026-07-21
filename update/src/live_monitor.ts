@@ -420,7 +420,6 @@ function computeTransferComplexResponse(
 	recorded: Float32Array,
 	stimulus: Float32Array,
 	sampleRate: number,
-	delayCompensationSamples = 0,
 ): TransferComplexResponse | null {
 	const n = Math.min(recorded.length, stimulus.length);
 	if (n < 8 || sampleRate <= 0) {
@@ -444,7 +443,6 @@ function computeTransferComplexResponse(
 	const freqs: number[] = [];
 	const re: number[] = [];
 	const im: number[] = [];
-	const delaySeconds = delayCompensationSamples / sampleRate;
 
 	for (let k = 1; k < nfft / 2; k += 1) {
 		const freq = (k * sampleRate) / nfft;
@@ -458,16 +456,9 @@ function computeTransferComplexResponse(
 		const hRe = ((yRe[k] * xRe[k]) + (yIm[k] * xIm[k])) / denom;
 		const hIm = ((yIm[k] * xRe[k]) - (yRe[k] * xIm[k])) / denom;
 
-		// Delay compensation: multiply by exp(j*2*pi*f*delay).
-		const phaseComp = 2 * Math.PI * freq * delaySeconds;
-		const c = Math.cos(phaseComp);
-		const s = Math.sin(phaseComp);
-		const compRe = (hRe * c) - (hIm * s);
-		const compIm = (hRe * s) + (hIm * c);
-
 		freqs.push(freq);
-		re.push(compRe);
-		im.push(compIm);
+		re.push(hRe);
+		im.push(hIm);
 	}
 
 	if (freqs.length === 0) {
@@ -478,6 +469,40 @@ function computeTransferComplexResponse(
 		frequencies: Float32Array.from(freqs),
 		re: Float32Array.from(re),
 		im: Float32Array.from(im),
+	};
+}
+
+function alignSignalsByDelay(
+	recorded: Float32Array,
+	stimulus: Float32Array,
+	delaySamples: number,
+): { recorded: Float32Array; stimulus: Float32Array } | null {
+	if (recorded.length === 0 || stimulus.length === 0) {
+		return null;
+	}
+
+	const shift = Math.round(delaySamples);
+	let recordedStart = 0;
+	let stimulusStart = 0;
+
+	if (shift >= 0) {
+		recordedStart = shift;
+	} else {
+		stimulusStart = -shift;
+	}
+
+	const length = Math.min(
+		recorded.length - recordedStart,
+		stimulus.length - stimulusStart,
+	);
+
+	if (!Number.isFinite(length) || length < 8) {
+		return null;
+	}
+
+	return {
+		recorded: recorded.subarray(recordedStart, recordedStart + length),
+		stimulus: stimulus.subarray(stimulusStart, stimulusStart + length),
 	};
 }
 
@@ -852,7 +877,10 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 
 		const alphaLong = computeExponentialAverageAlpha(Math.max(1 / 120, DERIVED_PLOT_MIN_UPDATE_MS / 1000), DERIVED_AVERAGING_SECONDS);
 
-		const transferComplex = computeTransferComplexResponse(mic, reference, sampleRate, smoothedDelaySamples ?? 0);
+		const aligned = alignSignalsByDelay(mic, reference, smoothedDelaySamples ?? 0);
+		const transferComplex = aligned
+			? computeTransferComplexResponse(aligned.recorded, aligned.stimulus, sampleRate)
+			: null;
 		if (!transferComplex) {
 			drawEmptyPlot(phaseCanvas, "Phase response (live)", "Unable to compute phase response.");
 		} else {
