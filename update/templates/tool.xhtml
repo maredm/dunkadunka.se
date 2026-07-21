@@ -1,0 +1,44 @@
+<div id="tab-contents">
+	<div class="tab-content active" data-content="upload">
+		<div class="tab-inner-content">
+			<div class="loose-container">
+				<h2>Files</h2>
+				<p class="info">Upload one or more WAV files and open a new analysis tab with waveform and spectrogram plots.</p>
+				<p>
+					<input type="file" id="responseFileUpload" accept="audio/wav,.wav" multiple>
+					<label for="responseFileUpload" style="display: inline-block; margin-top: 1rem;" class="button-custom button-custom-secondary">Select files to upload</label>
+				</p>
+				<table class="file-table" id="fileTable">
+					<thead>
+						<tr>
+							<th>File</th>
+							<th>Size</th>
+							<th>Action</th>
+						</tr>
+					</thead>
+					<tbody id="fileTableBody"></tbody>
+				</table>
+			</div>
+		</div>
+	</div>
+	<div class="tab-content" data-content="acquisition">
+		<div class="tab-inner-content">
+			<div class="acquisition-surface">
+				<div class="acquisition-toolbar" role="toolbar" aria-label="Acquisition controls">
+					<label for="acquisitionStimulusSelect" class="acquisition-toolbar-label">Stimulus</label>
+					<select id="acquisitionStimulusSelect" class="toolbar-select" aria-label="Stimulus selection">
+						<option value="swept-20-24000" selected>20-24000 Hz swept-sine</option>
+						<option value="swept-20-20000">20-20000 Hz swept-sine</option>
+					</select>
+					<p id="acquisitionStatusText" class="acquisition-status" data-state="idle" aria-live="polite">Ready</p>
+					<button id="acquisitionRecordBtn" type="button" class="toolbar-button button acquisition-action-button">Record</button>
+					<button id="acquisitionStopBtn" type="button" class="toolbar-button button acquisition-action-button" disabled>Stop</button>
+				</div>
+				<div class="loose-container acquisition-content">
+					<h2>Acquisition</h2>
+					<p class="info">Use Record to play the selected stimulus and capture the response from your audio input. The recording is saved as a WAV file and added to Files.</p>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>

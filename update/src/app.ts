@@ -1,724 +1,364 @@
-/// <reference path="./plotly.d.ts" />
-
 import "./styles.css";
-import { play, record, playAndRecord } from "./audio_io";
-import { calculateTwoChannelImpulseResponse, estimateDelay, type NumberArray, type MultichannelBuffer, chirp, normalizeToRMS } from "./signal";
-import { downloadStereoWav, readMultichannelWavFile } from "./wavfile";
-import { WaveformPlot } from "./waveform-plot";
-import { SpectrogramPlot } from "./spectrogram-plot";
+import { createLiveMonitorController, type LiveMonitorController } from "./live_monitor";
+import { mountWaveformTool, type WaveformToolHandle } from "./waveform";
+import { createMeasurementController, type MeasurementController } from "./measurement";
+import { readMultichannelWavFile } from "./wavfile";
 
-function formatPlayheadSeconds(value: number): string {
-	if (!Number.isFinite(value) || value < 0) {
-		return "0.000 s";
-	}
+type LoadedAudioFile = {
+	id: string;
+	file: File;
+};
 
-	if (value >= 60) {
-		const totalSeconds = Math.floor(value);
-		const seconds = (totalSeconds % 60).toString().padStart(2, "0");
-		const minutesTotal = Math.floor(totalSeconds / 60);
-		const hours = Math.floor(minutesTotal / 60);
-		const minutes = (minutesTotal % 60).toString().padStart(2, "0");
-		const fraction = Math.floor((value - totalSeconds) * 1000).toString().padStart(3, "0");
-		return hours >= 1
-			? `${hours}:${minutes}:${seconds}.${fraction}`
-			: `${minutes}:${seconds}.${fraction}`;
-	}
+type PlotSession = {
+	tool: WaveformToolHandle;
+	measurement: MeasurementController | null;
+};
 
-	if (value >= 1) {
-		return `${value.toFixed(3)} s`;
-	}
+const tabsOuter = document.getElementById("tabs-outer") as HTMLElement | null;
+const tabsInner = document.getElementById("tabs") as HTMLElement | null;
+const tabContents = document.getElementById("tab-contents") as HTMLElement | null;
+const uploadInput = document.getElementById("responseFileUpload") as HTMLInputElement | null;
+const fileTableBody = document.getElementById("fileTableBody") as HTMLTableSectionElement | null;
+const acquisitionStimulusSelect = document.getElementById("acquisitionStimulusSelect") as HTMLSelectElement | null;
+const acquisitionInputDeviceSelect = document.getElementById("acquisitionInputDeviceSelect") as HTMLSelectElement | null;
+const acquisitionInputChannelSelect = document.getElementById("acquisitionInputChannelSelect") as HTMLSelectElement | null;
+const acquisitionOutputDeviceSelect = document.getElementById("acquisitionOutputDeviceSelect") as HTMLSelectElement | null;
+const acquisitionOutputChannelSelect = document.getElementById("acquisitionOutputChannelSelect") as HTMLSelectElement | null;
+const acquisitionStatusText = document.getElementById("acquisitionStatusText") as HTMLParagraphElement | null;
+const acquisitionRecordBtn = document.getElementById("acquisitionRecordBtn") as HTMLButtonElement | null;
+const acquisitionStopBtn = document.getElementById("acquisitionStopBtn") as HTMLButtonElement | null;
+const liveMicDeviceSelect = document.getElementById("liveMicDeviceSelect") as HTMLSelectElement | null;
+const liveMicChannelSelect = document.getElementById("liveMicChannelSelect") as HTMLSelectElement | null;
+const liveReferenceDeviceSelect = document.getElementById("liveReferenceDeviceSelect") as HTMLSelectElement | null;
+const liveReferenceChannelSelect = document.getElementById("liveReferenceChannelSelect") as HTMLSelectElement | null;
+const liveAverageTimeConstantSelect = document.getElementById("liveAverageTimeConstantSelect") as HTMLSelectElement | null;
+const liveSmoothingSelect = document.getElementById("liveSmoothingSelect") as HTMLSelectElement | null;
+const liveWeightingSelect = document.getElementById("liveWeightingSelect") as HTMLSelectElement | null;
+const liveStatusText = document.getElementById("liveStatusText") as HTMLParagraphElement | null;
+const liveStartBtn = document.getElementById("liveStartBtn") as HTMLButtonElement | null;
+const liveStopBtn = document.getElementById("liveStopBtn") as HTMLButtonElement | null;
+const liveMicSplValue = document.getElementById("liveMicSplValue") as HTMLElement | null;
+const liveReferenceSplValue = document.getElementById("liveReferenceSplValue") as HTMLElement | null;
+const liveDifferenceSplValue = document.getElementById("liveDifferenceSplValue") as HTMLElement | null;
+const liveSplHistoryCanvas = document.getElementById("liveSplHistoryCanvas") as HTMLCanvasElement | null;
+const liveSpectrumCanvas = document.getElementById("liveSpectrumCanvas") as HTMLCanvasElement | null;
 
-	return `${Math.round(value * 1000)} ms`;
+if (!tabsOuter || !tabsInner || !tabContents || !uploadInput || !fileTableBody) {
+	throw new Error("Missing required tab UI elements.");
 }
 
-function mixMultichannelToMono(channels: MultichannelBuffer): Float32Array {
-	if (channels.length === 0) {
-		return new Float32Array(0);
-	}
-
-	const frameCount = Math.min(...channels.map((channel) => channel.length));
-	const mono = new Float32Array(frameCount);
-	for (let frame = 0; frame < frameCount; frame += 1) {
-		let sum = 0;
-		for (const channel of channels) {
-			sum += channel[frame] ?? 0;
-		}
-		mono[frame] = sum / channels.length;
-	}
-	return mono;
+if (
+	!acquisitionStimulusSelect ||
+	!acquisitionInputDeviceSelect ||
+	!acquisitionInputChannelSelect ||
+	!acquisitionOutputDeviceSelect ||
+	!acquisitionOutputChannelSelect ||
+	!acquisitionStatusText ||
+	!acquisitionRecordBtn ||
+	!acquisitionStopBtn
+) {
+	throw new Error("Missing required acquisition toolbar elements.");
 }
 
-const bootstrapWaveformPlot = (): void => {
-	const canvas = document.getElementById("waveformCanvas");
-	const spectrogramCanvas = document.getElementById("spectrogramCanvas");
-	const xAxis = document.querySelector(".waveform-x-axis");
-	const yAxis = document.querySelector(".waveform-y-axis");
-	const spectrogramYAxis = document.querySelector(".spectrogram-y-axis");
-	const timeDisplaySelect = document.getElementById("timeDisplaySelect");
-	const toolbarControls = document.querySelector(".split-view.toolbar .flex");
-	const waveformContainer = canvas instanceof HTMLCanvasElement ? canvas.closest(".waveform-container") : null;
+const tabsInnerEl: HTMLElement = tabsInner;
+const tabContentsEl: HTMLElement = tabContents;
+const fileTableBodyEl: HTMLTableSectionElement = fileTableBody;
 
-	if (
-		!(canvas instanceof HTMLCanvasElement)
-		|| !(spectrogramCanvas instanceof HTMLCanvasElement)
-		|| !(xAxis instanceof HTMLElement)
-		|| !(yAxis instanceof HTMLElement)
-		|| !(spectrogramYAxis instanceof HTMLElement)
-		|| !(toolbarControls instanceof HTMLElement)
-		|| !(waveformContainer instanceof HTMLElement)
-	) {
+const files = new Map<string, LoadedAudioFile>();
+const plotSessions = new Map<string, PlotSession>();
+let tabCounter = 0;
+let acquisitionMeasurementController: MeasurementController | null = null;
+let liveMonitorController: LiveMonitorController | null = null;
+
+function formatBytes(bytes: number): string {
+	if (!Number.isFinite(bytes) || bytes <= 0) {
+		return "0 B";
+	}
+
+	const units = ["B", "KB", "MB", "GB"];
+	const exponent = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+	const value = bytes / (1024 ** exponent);
+	return `${value.toFixed(exponent === 0 ? 0 : 1)} ${units[exponent]}`;
+}
+
+function switchTab(tabId: string): void {
+	document.querySelectorAll(".tab").forEach((tab) => tab.classList.remove("active"));
+	document.querySelectorAll(".tab-content").forEach((content) => content.classList.remove("active"));
+	document.querySelector(`[data-tab="${tabId}"]`)?.classList.add("active");
+	document.querySelector(`[data-content="${tabId}"]`)?.classList.add("active");
+
+	requestAnimationFrame(() => {
+		window.dispatchEvent(new Event("resize"));
+	});
+}
+
+function closeDynamicTab(tabId: string): void {
+	if (tabId === "upload" || tabId === "acquisition" || tabId === "live") {
 		return;
 	}
 
-	const waveformPlot = new WaveformPlot(canvas, { xAxis, yAxis });
-	const spectrogramPlot = new SpectrogramPlot(spectrogramCanvas, { yAxis: spectrogramYAxis });
-	const spectrogramScaleSteps = 20;
-	const playToggleButton = document.createElement("button");
-	playToggleButton.type = "button";
-	playToggleButton.className = "toolbar-button transport-play-button";
-	playToggleButton.title = "Play or pause (Space)";
-	playToggleButton.ariaLabel = "Play or pause";
-	playToggleButton.textContent = "Play";
-	const resetZoomButton = document.getElementById("resetZoomBtn");
-	if (resetZoomButton instanceof HTMLElement && resetZoomButton.parentElement === toolbarControls) {
-		toolbarControls.insertBefore(playToggleButton, resetZoomButton);
-	} else {
-		toolbarControls.append(playToggleButton);
-	}
-
-	const playhead = document.createElement("div");
-	playhead.className = "waveform-playhead";
-	const playheadLabel = document.createElement("div");
-	playheadLabel.className = "waveform-playhead-label";
-	playhead.append(playheadLabel);
-	waveformContainer.append(playhead);
-	const playheadAxisMarker = document.createElement("div");
-	playheadAxisMarker.className = "waveform-playhead-axis-marker";
-	xAxis.append(playheadAxisMarker);
-
-	let currentChannels: Float32Array[] = [new Float32Array(0)];
-	let currentSampleRate = 48000;
-	let playheadSample = 0;
-	let isPlaying = false;
-	let playbackAudioContext: AudioContext | null = null;
-	let playbackSource: AudioBufferSourceNode | null = null;
-	let playbackStartedAt = 0;
-	let playbackStartSample = 0;
-	let playbackAnimation: number | null = null;
-	let playbackToken = 0;
-	let playheadInitialized = false;
-	let displayedChannelIndex: number | null = null;
-
-	const setPlayheadColor = (color: string): void => {
-		playhead.style.setProperty("--playhead-color", color);
-		playheadAxisMarker.style.setProperty("--playhead-color", color);
-	};
-
-	const updatePlayheadColor = (): void => {
-		setPlayheadColor(isPlaying ? "#72cc1e" : "color-mix(in lab, var(--color) 82%, #ffffff 18%)");
-	};
-
-	const getFrameCount = (): number => {
-		if (currentChannels.length === 0) {
-			return 0;
-		}
-
-		return currentChannels.reduce((minimum, channel) => Math.min(minimum, channel.length), currentChannels[0].length);
-	};
-
-	const clampSample = (value: number): number => {
-		const frameCount = getFrameCount();
-		if (!Number.isFinite(value)) {
-			return 0;
-		}
-		return Math.max(0, Math.min(frameCount, Math.round(value)));
-	};
-
-	const updatePlayToggleButton = (): void => {
-		playToggleButton.textContent = isPlaying ? "Pause" : "Play";
-		playToggleButton.classList.toggle("is-playing", isPlaying);
-		updatePlayheadColor();
-	};
-
-	const hidePlayheadVisual = (): void => {
-		playhead.classList.remove("visible");
-		playheadAxisMarker.classList.remove("visible");
-	};
-
-	const updatePlayheadVisual = (): void => {
-		if (playheadAxisMarker.parentElement !== xAxis) {
-			xAxis.append(playheadAxisMarker);
-		}
-
-		if (!playheadInitialized && !isPlaying) {
-			hidePlayheadVisual();
-			return;
-		}
-
-		const frameCount = getFrameCount();
-		if (frameCount <= 0 || currentSampleRate <= 0) {
-			hidePlayheadVisual();
-			return;
-		}
-
-		if (!isPlaying && playheadSample >= frameCount) {
-			hidePlayheadVisual();
-			return;
-		}
-
-		const rect = canvas.getBoundingClientRect();
-		if (rect.width <= 0) {
-			hidePlayheadVisual();
-			return;
-		}
-		const axisRect = xAxis.getBoundingClientRect();
-		if (axisRect.width <= 0) {
-			hidePlayheadVisual();
-			return;
-		}
-
-		const { startSeconds, stopSeconds } = waveformPlot.getVisibleWindowSeconds();
-		if (!Number.isFinite(startSeconds) || !Number.isFinite(stopSeconds) || stopSeconds <= startSeconds) {
-			hidePlayheadVisual();
-			return;
-		}
-
-		const playheadSeconds = playheadSample / currentSampleRate;
-		if (playheadSeconds < startSeconds || playheadSeconds > stopSeconds) {
-			hidePlayheadVisual();
-			return;
-		}
-
-		const fraction = (playheadSeconds - startSeconds) / (stopSeconds - startSeconds);
-		const clampedFraction = Math.max(0, Math.min(1, fraction));
-		const x = Math.round(clampedFraction * Math.max(0, rect.width - 1));
-		const canvasViewportX = rect.left + x;
-		const axisX = Math.round(Math.max(0, Math.min(axisRect.width - 1, canvasViewportX - axisRect.left)));
-		playhead.style.left = `${x}px`;
-		playheadAxisMarker.style.left = `${axisX}px`;
-		playhead.classList.toggle("is-playing", isPlaying);
-		if (isPlaying) {
-			playheadLabel.textContent = formatPlayheadSeconds(playheadSeconds);
-		} else {
-			playheadLabel.textContent = "";
-		}
-		playhead.classList.add("visible");
-		playheadAxisMarker.classList.add("visible");
-	};
-
-	const stopPlayheadAnimation = (): void => {
-		if (playbackAnimation !== null) {
-			cancelAnimationFrame(playbackAnimation);
-			playbackAnimation = null;
-		}
-	};
-
-	const animatePlayhead = (): void => {
-		if (!isPlaying || !playbackAudioContext) {
-			stopPlayheadAnimation();
-			return;
-		}
-
-		const elapsedSamples = (playbackAudioContext.currentTime - playbackStartedAt) * currentSampleRate;
-		playheadSample = clampSample(playbackStartSample + elapsedSamples);
-		updatePlayheadVisual();
-		playbackAnimation = requestAnimationFrame(animatePlayhead);
-	};
-
-	const ensureAudioContext = async (): Promise<AudioContext> => {
-		if (!playbackAudioContext) {
-			playbackAudioContext = new AudioContext();
-		}
-		if (playbackAudioContext.state === "suspended") {
-			await playbackAudioContext.resume();
-		}
-		return playbackAudioContext;
-	};
-
-	const buildPlaybackBuffer = (context: AudioContext): AudioBuffer => {
-		const frameCount = getFrameCount();
-		const channelCount = Math.max(1, Math.min(32, currentChannels.length));
-		const buffer = context.createBuffer(channelCount, frameCount, currentSampleRate);
-		for (let channelIndex = 0; channelIndex < channelCount; channelIndex += 1) {
-			const channel = currentChannels[channelIndex] ?? currentChannels[0] ?? new Float32Array(frameCount);
-			buffer.copyToChannel(Float32Array.from(channel.subarray(0, frameCount)), channelIndex);
-		}
-		return buffer;
-	};
-
-	const getDisplayedWaveformChannels = (): Float32Array[] => {
-		if (displayedChannelIndex === null) {
-			return currentChannels;
-		}
-
-		const selected = currentChannels[displayedChannelIndex];
-		return selected ? [selected] : [new Float32Array(0)];
-	};
-
-	const getDisplayedSpectrogramChannel = (): Float32Array => {
-		if (displayedChannelIndex === null) {
-			return mixMultichannelToMono(currentChannels);
-		}
-
-		const selected = currentChannels[displayedChannelIndex];
-		return selected ? Float32Array.from(selected) : new Float32Array(0);
-	};
-
-	const pausePlayback = (): void => {
-		if (!isPlaying) {
-			updatePlayToggleButton();
-			return;
-		}
-
-		if (playbackAudioContext) {
-			const elapsedSamples = (playbackAudioContext.currentTime - playbackStartedAt) * currentSampleRate;
-			playheadSample = clampSample(playbackStartSample + elapsedSamples);
-		}
-
-		isPlaying = false;
-		playbackToken += 1;
-		if (playbackSource) {
-			playbackSource.onended = null;
-			try {
-				playbackSource.stop();
-			} catch {
-				// Ignore stop races when the source already ended.
-			}
-			playbackSource.disconnect();
-			playbackSource = null;
-		}
-
-		stopPlayheadAnimation();
-		updatePlayheadVisual();
-		updatePlayToggleButton();
-	};
-
-	const startPlayback = async (startSample = playheadSample): Promise<void> => {
-		const frameCount = getFrameCount();
-		if (frameCount <= 0 || currentSampleRate <= 0) {
-			return;
-		}
-
-		const clampedStart = clampSample(startSample);
-		if (clampedStart >= frameCount) {
-			playheadSample = frameCount;
-			updatePlayheadVisual();
-			return;
-		}
-
-		pausePlayback();
-
-		const context = await ensureAudioContext();
-		const source = context.createBufferSource();
-		source.buffer = buildPlaybackBuffer(context);
-		source.connect(context.destination);
-
-		const token = playbackToken + 1;
-		playbackToken = token;
-		source.onended = () => {
-			if (token !== playbackToken || !isPlaying) {
-				return;
-			}
-			isPlaying = false;
-			playbackSource = null;
-			playheadSample = frameCount;
-			playheadInitialized = false;
-			stopPlayheadAnimation();
-			updatePlayheadVisual();
-			updatePlayToggleButton();
-		};
-
-		playbackStartedAt = context.currentTime;
-		playbackStartSample = clampedStart;
-		playheadSample = clampedStart;
-		playheadInitialized = true;
-		isPlaying = true;
-		playbackSource = source;
-		source.start(0, clampedStart / currentSampleRate);
-
-		updatePlayToggleButton();
-		updatePlayheadVisual();
-		stopPlayheadAnimation();
-		playbackAnimation = requestAnimationFrame(animatePlayhead);
-	};
-
-	const togglePlayback = (): void => {
-		if (isPlaying) {
-			pausePlayback();
-			return;
-		}
-
-		void startPlayback(playheadSample >= getFrameCount() ? 0 : playheadSample);
-	};
-
-	const getSampleAtPointer = (event: MouseEvent): number | null => {
-		const { startSeconds, stopSeconds } = waveformPlot.getVisibleWindowSeconds();
-		if (!Number.isFinite(startSeconds) || !Number.isFinite(stopSeconds) || stopSeconds <= startSeconds || currentSampleRate <= 0) {
-			return null;
-		}
-
-		const rect = canvas.getBoundingClientRect();
-		const width = Math.max(1, rect.width || 0);
-		const pointerX = Math.max(0, Math.min(width, event.clientX - rect.left));
-		const seconds = startSeconds + ((pointerX / width) * (stopSeconds - startSeconds));
-		return clampSample(seconds * currentSampleRate);
-	};
-
-	canvas.addEventListener("click", (event) => {
-		const sample = getSampleAtPointer(event);
-		if (sample === null) {
-			return;
-		}
-
-		if (isPlaying) {
-			const nearCurrent = Math.abs(playheadSample - sample) <= 2;
-			if (nearCurrent) {
-				pausePlayback();
-				return;
-			}
-			void startPlayback(sample);
-			return;
-		}
-
-		playheadSample = sample;
-		playheadInitialized = true;
-		updatePlayheadVisual();
-	});
-
-	playToggleButton.addEventListener("click", () => {
-		togglePlayback();
-	});
-	const fileInput = document.createElement("input");
-	fileInput.type = "file";
-	fileInput.accept = ".wav,audio/wav";
-	fileInput.hidden = true;
-	fileInput.tabIndex = -1;
-	document.body.append(fileInput);
-
-	const contextMenu = document.createElement("div");
-	contextMenu.className = "app-context-menu";
-	contextMenu.hidden = true;
-	let isSpectrogramHovered = false;
-
-	const openFileButton = document.createElement("button");
-	openFileButton.type = "button";
-	openFileButton.className = "app-context-menu__item";
-	openFileButton.textContent = "Open file...";
-	contextMenu.append(openFileButton);
-
-	const contextMenuDivider = document.createElement("div");
-	contextMenuDivider.className = "app-context-menu__separator";
-	contextMenu.append(contextMenuDivider);
-
-	const spectrogramMenuLabel = document.createElement("div");
-	spectrogramMenuLabel.className = "app-context-menu__label";
-	spectrogramMenuLabel.textContent = "Spectrogram scale";
-	contextMenu.append(spectrogramMenuLabel);
-
-	const spectrogramMenuGroup = document.createElement("div");
-	spectrogramMenuGroup.className = "app-context-menu__group";
-	contextMenu.append(spectrogramMenuGroup);
-
-	const channelMenuLabel = document.createElement("div");
-	channelMenuLabel.className = "app-context-menu__label";
-	channelMenuLabel.textContent = "Displayed channel";
-	contextMenu.append(channelMenuLabel);
-
-	const channelMenuGroup = document.createElement("div");
-	channelMenuGroup.className = "app-context-menu__group";
-	contextMenu.append(channelMenuGroup);
-	document.body.append(contextMenu);
-
-	const applyDisplayedChannelSelection = (resetZoom = false): void => {
-		const waveformChannels = getDisplayedWaveformChannels();
-		const spectrogramSamples = getDisplayedSpectrogramChannel();
-		if (resetZoom) {
-			waveformPlot.setData(waveformChannels, currentSampleRate);
-			spectrogramPlot.setData(spectrogramSamples, currentSampleRate);
-		} else {
-			waveformPlot.rerenderPlotData(waveformChannels);
-			spectrogramPlot.rerenderPlotData(spectrogramSamples);
-		}
-		updatePlayheadVisual();
-	};
-
-	const renderSpectrogramScaleMenu = (): void => {
-		spectrogramMenuGroup.replaceChildren();
-
-		const createItem = (label: string, step: number): HTMLButtonElement => {
-			const button = document.createElement("button");
-			button.type = "button";
-			button.className = "app-context-menu__item";
-			if (spectrogramPlot.getFrequencyScaleStep() === step) {
-				button.classList.add("is-selected");
-			}
-			button.textContent = label;
-			button.addEventListener("click", () => {
-				spectrogramPlot.setFrequencyScaleStep(step);
-				renderSpectrogramScaleMenu();
-				hideContextMenu();
-			});
-			return button;
-		};
-
-		spectrogramMenuGroup.append(createItem("Linear", 0));
-		spectrogramMenuGroup.append(createItem("Mostly linear", 6));
-		spectrogramMenuGroup.append(createItem("Balanced", 10));
-		spectrogramMenuGroup.append(createItem("Mostly log", 14));
-		spectrogramMenuGroup.append(createItem("Logarithmic", spectrogramScaleSteps - 1));
-	};
-
-	const renderChannelMenu = (): void => {
-		channelMenuGroup.replaceChildren();
-
-		const createItem = (label: string, channelIndex: number | null): HTMLButtonElement => {
-			const button = document.createElement("button");
-			button.type = "button";
-			button.className = "app-context-menu__item";
-			if (displayedChannelIndex === channelIndex) {
-				button.classList.add("is-selected");
-			}
-			button.textContent = label;
-			button.addEventListener("click", () => {
-				displayedChannelIndex = channelIndex;
-				applyDisplayedChannelSelection(false);
-				renderChannelMenu();
-				hideContextMenu();
-			});
-			return button;
-		};
-
-		channelMenuGroup.append(createItem("All channels", null));
-		for (let channelIndex = 0; channelIndex < currentChannels.length; channelIndex += 1) {
-			channelMenuGroup.append(createItem(`Channel ${channelIndex + 1}`, channelIndex));
-		}
-	};
-
-	const hideContextMenu = (): void => {
-		contextMenu.hidden = true;
-	};
-
-	const showContextMenu = (clientX: number, clientY: number): void => {
-		contextMenuDivider.hidden = !isSpectrogramHovered;
-		spectrogramMenuLabel.hidden = !isSpectrogramHovered;
-		spectrogramMenuGroup.hidden = !isSpectrogramHovered;
-		if (isSpectrogramHovered) {
-			renderSpectrogramScaleMenu();
-		} else {
-			spectrogramMenuGroup.replaceChildren();
-		}
-		renderChannelMenu();
-		contextMenu.hidden = false;
-		const viewportPadding = 8;
-		const menuRect = contextMenu.getBoundingClientRect();
-		const left = Math.max(viewportPadding, Math.min(clientX, window.innerWidth - menuRect.width - viewportPadding));
-		const top = Math.max(viewportPadding, Math.min(clientY, window.innerHeight - menuRect.height - viewportPadding));
-		contextMenu.style.left = `${left}px`;
-		contextMenu.style.top = `${top}px`;
-	};
-
-	const openFilePicker = (): void => {
-		hideContextMenu();
-		fileInput.value = "";
-		fileInput.click();
-	};
-
-	openFileButton.addEventListener("click", openFilePicker);
-
-	fileInput.addEventListener("change", async () => {
-		const file = fileInput.files?.[0];
-		fileInput.value = "";
-		if (!file) {
-			return;
-		}
-
-		try {
-			const { sampleRate, channels } = await readMultichannelWavFile(file);
-			pausePlayback();
-			currentChannels = channels.map((channel) => Float32Array.from(channel));
-			currentSampleRate = sampleRate;
-			if (displayedChannelIndex !== null && displayedChannelIndex >= currentChannels.length) {
-				displayedChannelIndex = null;
-			}
-			playheadSample = 0;
-			playheadInitialized = false;
-			applyDisplayedChannelSelection(true);
-		} catch (error) {
-			console.error(error);
-			window.alert(error instanceof Error ? error.message : "Unable to open that file.");
-		}
-	});
-
-	window.addEventListener("click", (event) => {
-		if (event.target instanceof Node && !contextMenu.contains(event.target)) {
-			hideContextMenu();
-		}
-	});
-
-	window.addEventListener("blur", hideContextMenu);
-	window.addEventListener("beforeunload", () => {
-		pausePlayback();
-		if (playbackAudioContext) {
-			void playbackAudioContext.close();
-			playbackAudioContext = null;
-		}
-	});
-
-	document.addEventListener("keydown", (event) => {
-		const target = event.target as HTMLElement | null;
-		const typingTarget = target && (
-			target.tagName === "INPUT"
-			|| target.tagName === "TEXTAREA"
-			|| target.tagName === "SELECT"
-			|| target.tagName === "BUTTON"
-			|| target.isContentEditable
-		);
-
-		if (event.code === "Space" && !typingTarget) {
-			event.preventDefault();
-			togglePlayback();
-			return;
-		}
-
-		if (event.key === "Escape") {
-			hideContextMenu();
-		}
-	});
-
-	const contextMenuTarget = document.querySelector(".window");
-	if (contextMenuTarget instanceof HTMLElement) {
-		contextMenuTarget.addEventListener("contextmenu", (event) => {
-			event.preventDefault();
-			showContextMenu(event.clientX, event.clientY);
-		});
-	}
-
-	spectrogramCanvas.addEventListener("pointerenter", () => {
-		isSpectrogramHovered = true;
-	});
-	spectrogramCanvas.addEventListener("pointerleave", () => {
-		isSpectrogramHovered = false;
-	});
-
-	if (timeDisplaySelect instanceof HTMLSelectElement) {
-		waveformPlot.setXAxisDisplayMode(timeDisplaySelect.value === "samples" ? "samples" : "time");
-		timeDisplaySelect.addEventListener("change", () => {
-			waveformPlot.setXAxisDisplayMode(timeDisplaySelect.value === "samples" ? "samples" : "time");
-			updatePlayheadVisual();
-		});
-	}
-	const sampleRate = 48000;
-	const [chirpSamples] = chirp(20, 24000, undefined, 2);
-	const waveformSamples = normalizeToRMS(chirpSamples);
-	currentChannels = [Float32Array.from(waveformSamples)];
-	currentSampleRate = sampleRate;
-	displayedChannelIndex = null;
-	playheadSample = 0;
-	playheadInitialized = false;
-	applyDisplayedChannelSelection(true);
-	updatePlayToggleButton();
-	updatePlayheadVisual();
-
-	const getPointerFraction = (event: WheelEvent, target: HTMLCanvasElement): number => {
-		const rect = target.getBoundingClientRect();
-		const width = Math.max(1, rect.width || 0);
-		const pointerX = Math.max(0, Math.min(width, event.clientX - rect.left));
-		return pointerX / width;
-	};
-
-	const handleSharedWheel = (event: WheelEvent, target: HTMLCanvasElement): void => {
-		event.preventDefault();
-
-		let deltaX = event.deltaX;
-		let deltaY = event.deltaY;
-		if (event.shiftKey && Math.abs(deltaX) < Math.abs(deltaY)) {
-			deltaX = event.deltaY;
-			deltaY = 0;
-		}
-
-		const absDeltaX = Math.abs(deltaX);
-		const absDeltaY = Math.abs(deltaY);
-		const dominantAxis: "x" | "y" | null = absDeltaY > absDeltaX ? "y" : absDeltaX > absDeltaY ? "x" : null;
-		if (dominantAxis !== null) {
-			if (wheelAxisLock === null) {
-				wheelAxisLock = dominantAxis;
-			} else if (wheelAxisLock !== dominantAxis) {
-				return;
-			}
-		}
-
-		if (wheelAxisResetTimer !== null) {
-			clearTimeout(wheelAxisResetTimer);
-		}
-		wheelAxisResetTimer = setTimeout(() => {
-			wheelAxisLock = null;
-			wheelAxisResetTimer = null;
-		}, 120);
-
-		const pointerFraction = getPointerFraction(event, target);
-		if (absDeltaY >= absDeltaX && absDeltaY > 0) {
-			waveformPlot.applyWheelZoom(pointerFraction, deltaY);
-			spectrogramPlot.applyWheelZoom(pointerFraction, deltaY);
-		} else if (absDeltaX > 0) {
-			const rect = target.getBoundingClientRect();
-			const width = Math.max(1, rect.width || 0);
-			const panFraction = (deltaX / width) * 0.5;
-			waveformPlot.panByFraction(panFraction);
-			spectrogramPlot.panByFraction(panFraction, true);
-		}
-
-		updatePlayheadVisual();
-	};
-
-	canvas.addEventListener("wheel", (event) => {
-		handleSharedWheel(event, canvas);
-	}, { passive: false });
-
-	spectrogramCanvas.addEventListener("wheel", (event) => {
-		handleSharedWheel(event, spectrogramCanvas);
-	}, { passive: false });
-
-	let wheelAxisLock: "x" | "y" | null = null;
-	let wheelAxisResetTimer: ReturnType<typeof setTimeout> | null = null;
-
-	let resizeAnimation: number | null = null;
-	let resizeDoneTimer: any;
-
-	const startResizeAnimation = (callback: () => void): void => {
-		if (resizeAnimation !== null) {
-			return;
-		}
-
-		resizeAnimation = requestAnimationFrame(() => {
-			resizeAnimation = null;
-			callback();
-		});
-	};
-
-	const stopResizeAnimation = (): void => {
-		if (resizeAnimation !== null) {
-			cancelAnimationFrame(resizeAnimation);
-			resizeAnimation = null;
-		}
-	}
-	window.addEventListener("resize", () => {
-		if (!resizeAnimation) startResizeAnimation(() => {
-			waveformPlot.rerenderAxis();
-			waveformPlot.rerenderPlotData();
-			spectrogramPlot.rerenderAxis();
-			spectrogramPlot.rerenderPlotData();
-			updatePlayheadVisual();
-		});
-		clearTimeout(resizeDoneTimer);
-		resizeDoneTimer = setTimeout(function() {
-			resizeDoneTimer = null;
-			stopResizeAnimation();
-		}, 200);
-	});
-};
-
-if (document.readyState === "loading") {
-	document.addEventListener("DOMContentLoaded", bootstrapWaveformPlot, { once: true });
-} else {
-	bootstrapWaveformPlot();
+	const session = plotSessions.get(tabId);
+	session?.measurement?.destroy();
+	session?.tool.destroy();
+
+	document.querySelector(`[data-tab="${tabId}"]`)?.remove();
+	document.querySelector(`[data-content="${tabId}"]`)?.remove();
+	plotSessions.delete(tabId);
 }
+
+function createAnalysisMarkup(tabId: string, fileName: string, sampleRate: number, channelCount: number, frameCount: number): string {
+	const durationSeconds = sampleRate > 0 ? frameCount / sampleRate : 0;
+	return `
+		<div class="acquisition-toolbar" role="toolbar" aria-label="Acquisition controls">
+			<div class="acquisition-toolbar-group">
+				<label for="analysisStimulusSelect-${tabId}" class="acquisition-toolbar-label">Stimulus</label>
+				<select id="analysisStimulusSelect-${tabId}" class="toolbar-select" aria-label="Stimulus selection">
+				<option value="swept-20-24000" selected>20-24000 Hz swept-sine</option>
+				<option value="swept-20-20000">20-20000 Hz swept-sine</option>
+				</select>
+			</div>
+			<div class="acquisition-toolbar-group">
+				<label for="analysisOutputDeviceSelect-${tabId}" class="acquisition-toolbar-label">Output</label>
+				<select id="analysisOutputDeviceSelect-${tabId}" class="toolbar-select" aria-label="Output device selection"></select>
+			</div>
+			<div class="acquisition-toolbar-group acquisition-toolbar-group--compact">
+				<label for="analysisOutputChannelSelect-${tabId}" class="acquisition-toolbar-label">Out ch</label>
+				<select id="analysisOutputChannelSelect-${tabId}" class="toolbar-select" aria-label="Output channel selection">
+					<option value="left" selected>L</option>
+					<option value="right">R</option>
+				</select>
+			</div>
+			<div class="acquisition-toolbar-group">
+				<label for="analysisInputDeviceSelect-${tabId}" class="acquisition-toolbar-label">Input</label>
+				<select id="analysisInputDeviceSelect-${tabId}" class="toolbar-select" aria-label="Input device selection"></select>
+			</div>
+			<div class="acquisition-toolbar-group acquisition-toolbar-group--compact">
+				<label for="analysisInputChannelSelect-${tabId}" class="acquisition-toolbar-label">In ch</label>
+				<select id="analysisInputChannelSelect-${tabId}" class="toolbar-select" aria-label="Input channel selection">
+					<option value="left" selected>L</option>
+					<option value="right">R</option>
+				</select>
+			</div>
+			<p id="analysisStatusText-${tabId}" class="acquisition-status" data-state="idle" aria-live="polite">Ready</p>
+			<button id="analysisRecordBtn-${tabId}" type="button" class="toolbar-button button acquisition-action-button">Record</button>
+			<button id="analysisStopBtn-${tabId}" type="button" class="toolbar-button button acquisition-action-button" disabled>Stop</button>
+		</div>
+		<div id="waveform-tool-${tabId}" class="waveform-tool-host"></div>
+	`;
+}
+
+function registerRecordedFile(file: File): LoadedAudioFile {
+	const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+	const entry: LoadedAudioFile = { id, file };
+	files.set(id, entry);
+	appendFileRow(entry);
+	return entry;
+}
+
+function rerenderAllPlots(): void {
+	plotSessions.forEach((session) => {
+		session.tool.rerender();
+	});
+}
+
+async function openAnalysisTab(file: File): Promise<void> {
+	const tabId = `analysis-${++tabCounter}`;
+	const shortName = file.name.length > 30 ? `${file.name.slice(0, 27)}...` : file.name;
+
+	const tabButton = document.createElement("button");
+	tabButton.className = "tab tab-closable tab-loading";
+	tabButton.dataset.tab = tabId;
+	tabButton.innerHTML = `<span class="tab-icon-waveform"></span>${shortName} <span class="tab-close" title="Close">x</span>`;
+	tabsInnerEl.append(tabButton);
+
+	const content = document.createElement("div");
+	content.className = "tab-content";
+	content.dataset.content = tabId;
+	tabContentsEl.append(content);
+
+	try {
+		const parsed = await readMultichannelWavFile(file);
+		const sampleRate = parsed.sampleRate;
+		const frameCount = parsed.channels[0]?.length ?? 0;
+		const channelCount = parsed.channels.length;
+
+		content.innerHTML = createAnalysisMarkup(tabId, file.name, sampleRate, channelCount, frameCount);
+
+		const mountHost = document.getElementById(`waveform-tool-${tabId}`) as HTMLElement | null;
+		const stimulusSelect = document.getElementById(`analysisStimulusSelect-${tabId}`) as HTMLSelectElement | null;
+		const outputDeviceSelect = document.getElementById(`analysisOutputDeviceSelect-${tabId}`) as HTMLSelectElement | null;
+		const outputChannelSelect = document.getElementById(`analysisOutputChannelSelect-${tabId}`) as HTMLSelectElement | null;
+		const inputDeviceSelect = document.getElementById(`analysisInputDeviceSelect-${tabId}`) as HTMLSelectElement | null;
+		const inputChannelSelect = document.getElementById(`analysisInputChannelSelect-${tabId}`) as HTMLSelectElement | null;
+		const statusText = document.getElementById(`analysisStatusText-${tabId}`) as HTMLParagraphElement | null;
+		const recordButton = document.getElementById(`analysisRecordBtn-${tabId}`) as HTMLButtonElement | null;
+		const stopButton = document.getElementById(`analysisStopBtn-${tabId}`) as HTMLButtonElement | null;
+
+		if (!mountHost) {
+			throw new Error("Failed to create waveform tool host.");
+		}
+		if (
+			!stimulusSelect ||
+			!outputDeviceSelect ||
+			!outputChannelSelect ||
+			!inputDeviceSelect ||
+			!inputChannelSelect ||
+			!statusText ||
+			!recordButton ||
+			!stopButton
+		) {
+			throw new Error("Failed to create analysis acquisition toolbar.");
+		}
+
+		const tool = mountWaveformTool(mountHost);
+		const measurement = createMeasurementController({
+			stimulusSelect,
+			inputDeviceSelect,
+			inputChannelSelect,
+			outputDeviceSelect,
+			outputChannelSelect,
+			statusText,
+			recordButton,
+			stopButton,
+			onRecordedFile: (recordedFile) => {
+				registerRecordedFile(recordedFile);
+				void openAnalysisTab(recordedFile);
+			},
+		});
+		await tool.openFile(file);
+		plotSessions.set(tabId, { tool, measurement });
+		tabButton.classList.remove("tab-loading");
+		switchTab(tabId);
+		rerenderAllPlots();
+	} catch (error) {
+		content.innerHTML = `<div class="tab-inner-content"><div class="loose-container"><p class="info">Failed to open ${file.name}: ${error instanceof Error ? error.message : "unknown error"}</p></div></div>`;
+		tabButton.classList.remove("tab-loading");
+		tabButton.classList.add("tab-error");
+		switchTab(tabId);
+	}
+}
+
+function appendFileRow(entry: LoadedAudioFile): void {
+	const row = document.createElement("tr");
+	row.dataset.fileId = entry.id;
+
+	const nameCell = document.createElement("td");
+	nameCell.textContent = entry.file.name;
+	row.append(nameCell);
+
+	const sizeCell = document.createElement("td");
+	sizeCell.textContent = formatBytes(entry.file.size);
+	row.append(sizeCell);
+
+	const actionCell = document.createElement("td");
+	const openButton = document.createElement("button");
+	openButton.type = "button";
+	openButton.className = "button-custom button-custom-secondary file-open-btn";
+	openButton.textContent = "Open tab";
+	openButton.addEventListener("click", () => {
+		void openAnalysisTab(entry.file);
+	});
+	actionCell.append(openButton);
+	row.append(actionCell);
+
+	fileTableBodyEl.append(row);
+}
+
+tabsOuter.addEventListener("click", (event: MouseEvent) => {
+	const target = event.target as HTMLElement;
+	const tab = target.closest(".tab") as HTMLElement | null;
+	if (!tab) {
+		return;
+	}
+
+	const tabId = tab.dataset.tab;
+	if (!tabId) {
+		return;
+	}
+
+	if (target.classList.contains("tab-close")) {
+		const wasActive = tab.classList.contains("active");
+		closeDynamicTab(tabId);
+		if (wasActive) {
+			switchTab("upload");
+		}
+		event.stopPropagation();
+		return;
+	}
+
+	switchTab(tabId);
+});
+
+uploadInput.addEventListener("change", () => {
+	const fileList = Array.from(uploadInput.files ?? []);
+	for (const file of fileList) {
+		registerRecordedFile(file);
+	}
+	uploadInput.value = "";
+});
+
+acquisitionMeasurementController = createMeasurementController({
+	stimulusSelect: acquisitionStimulusSelect,
+	inputDeviceSelect: acquisitionInputDeviceSelect,
+	inputChannelSelect: acquisitionInputChannelSelect,
+	outputDeviceSelect: acquisitionOutputDeviceSelect,
+	outputChannelSelect: acquisitionOutputChannelSelect,
+	statusText: acquisitionStatusText,
+	recordButton: acquisitionRecordBtn,
+	stopButton: acquisitionStopBtn,
+	onRecordedFile: (file) => {
+		registerRecordedFile(file);
+		void openAnalysisTab(file);
+	},
+});
+
+if (
+	liveMicDeviceSelect &&
+	liveMicChannelSelect &&
+	liveReferenceDeviceSelect &&
+	liveReferenceChannelSelect &&
+	liveAverageTimeConstantSelect &&
+	liveSmoothingSelect &&
+	liveWeightingSelect &&
+	liveStatusText &&
+	liveStartBtn &&
+	liveStopBtn &&
+	liveMicSplValue &&
+	liveReferenceSplValue &&
+	liveDifferenceSplValue &&
+	liveSplHistoryCanvas &&
+	liveSpectrumCanvas
+) {
+	liveMonitorController = createLiveMonitorController({
+		micDeviceSelect: liveMicDeviceSelect,
+		micChannelSelect: liveMicChannelSelect,
+		referenceDeviceSelect: liveReferenceDeviceSelect,
+		referenceChannelSelect: liveReferenceChannelSelect,
+		averageTimeConstantSelect: liveAverageTimeConstantSelect,
+		smoothingSelect: liveSmoothingSelect,
+		weightingSelect: liveWeightingSelect,
+		statusText: liveStatusText,
+		startButton: liveStartBtn,
+		stopButton: liveStopBtn,
+		micSplValue: liveMicSplValue,
+		referenceSplValue: liveReferenceSplValue,
+		differenceSplValue: liveDifferenceSplValue,
+		splHistoryCanvas: liveSplHistoryCanvas,
+		spectrumCanvas: liveSpectrumCanvas,
+	});
+}
+
+window.addEventListener("resize", () => {
+	rerenderAllPlots();
+});
+
+window.addEventListener("beforeunload", () => {
+	acquisitionMeasurementController?.destroy();
+	liveMonitorController?.destroy();
+	plotSessions.forEach((session) => {
+		session.measurement?.destroy();
+		session.tool.destroy();
+	});
+});
+
+switchTab("upload");

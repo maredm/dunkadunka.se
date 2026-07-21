@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 
 import { createSilenceStereo, concatStereoBuffers, numberArrayToStereoBuffer } from "../src/signal";
-import { planAudioProcessingWorklet } from "../src/audio_io";
+import { planAudioProcessingWorklet, routePlaybackToChannel, selectRecordedChannel } from "../src/audio_io";
 import { createStereoWavBlob, encodeMultichannelWav, encodeStereoWav, readMultichannelWavFile, readStereoWavFile } from "../src/wavfile";
 
 test("plans playback-only processing", () => {
@@ -61,6 +61,27 @@ test("numberArrayToStereoBuffer duplicates a mono signal to both channels", () =
 	expect(Array.from(stereo[0])).toEqual([1, 0.5, -0.25]);
 	expect(Array.from(stereo[1])).toEqual([1, 0.5, -0.25]);
 	expect(stereo[0]).not.toBe(stereo[1]);
+});
+
+test("routePlaybackToChannel mutes the opposite playback channel", () => {
+	const left = routePlaybackToChannel([1, 2], "left");
+	const right = routePlaybackToChannel([1, 2], "right");
+
+	expect(Array.from(left[0])).toEqual([1, 2]);
+	expect(Array.from(left[1])).toEqual([0, 0]);
+	expect(Array.from(right[0])).toEqual([0, 0]);
+	expect(Array.from(right[1])).toEqual([1, 2]);
+});
+
+test("selectRecordedChannel duplicates the chosen capture channel", () => {
+	const selected = selectRecordedChannel([
+		new Float32Array([1, 2]),
+		new Float32Array([3, 4]),
+	], "right");
+
+	expect(Array.from(selected[0])).toEqual([3, 4]);
+	expect(Array.from(selected[1])).toEqual([3, 4]);
+	expect(selected[0]).not.toBe(selected[1]);
 });
 
 test("encodeStereoWav writes a stereo pcm wav header", () => {

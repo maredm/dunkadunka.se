@@ -70,10 +70,11 @@ export function generateTargetCurve(type: string, frequencies: Float32Array, fre
         if (type === 'flat') {
             target[k] = 1.0; // 0 dB
         } else if (type === 'tilt') {
-            // -1 dB/octave tilt: gain(f) = 10^((-1/20) * log10(f/1000))
-            // At 1kHz: 0 dB, at 10kHz: -1 dB, at 100Hz: +1 dB
+            // -1 dB/decade tilt with 0 dB at 1 kHz.
+            // At 1kHz: 0 dB, at 10kHz: -1 dB, at 100Hz: +1 dB.
             const refFreq = 1000;
-            const tiltDb = -1 * Math.log2(freq / refFreq); // -1 dB per octave
+            const safeFreq = Math.max(freq, 1e-9);
+            const tiltDb = -1 * Math.log10(safeFreq / refFreq); // -1 dB per decade
             target[k] = Math.pow(10, tiltDb / 20);
         } else if (type === 'harman') {
             // Harman target curve (simplified version)

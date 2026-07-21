@@ -16,8 +16,194 @@
 					File
 				</a>
 			</div-->
+			<div class="split-view bar toolbar visible">
+                <nav class="toolbar-menu">
+					<a class="toolbar-item" href="https://norrmalms.se">
+                		<img src="https://norrmalms.se/favicon.ico" alt="Norrmalms logo" class="toolbar-logo">
+						<span>dunkadunka.se</span>
+					</a>
+                    <!-- <details class="toolbar-menu-item">
+                        <summary>File</summary>
+                        <ul class="toolbar-dropdown">
+                            <li><a href="#">New</a></li>
+                            <li><a href="#">Open…</a></li>
+                            <li><a href="#">Save</a></li>
+                            <li><a href="#">Export</a></li>
+                        </ul>
+                    </details>
+                    <details class="toolbar-menu-item">
+                        <summary>Settings</summary>
+                        <ul class="toolbar-dropdown">
+                            <li><a href="#">Preferences</a></li>
+                            <li><a href="#">Theme</a></li>
+                            <li><a href="#">About</a></li>
+                        </ul>
+                    </details> -->
+                </nav>
+            </div>
+			<div class="split-view tabs" id="tabs-outer">
+				<div id="tabs">
+				<button class="tab active" data-tab="upload">
+					Files
+				</button>
+				<button class="tab" data-tab="acquisition">
+					<span class="tab-icon-recording"></span>Acquisition
+				</button>
+				<button class="tab" data-tab="live">
+					<span class="tab-icon-live"></span>Live
+				</button>
+				</div>
+			</div>
 			<div class="split-view main visible">
-				{% include "templates/waveform.xhtml" %}
+				<div id="tab-contents" style="height: 100%;">
+					<div class="tab-content active" data-content="upload">
+						<div class="tab-inner-content">
+							<div class="loose-container">
+								<h2>Files</h2>
+								<p class="info">Upload one or more WAV files and open a new analysis tab with waveform and spectrogram plots.</p>
+								<p>
+									<input type="file" id="responseFileUpload" accept="audio/wav,.wav" multiple>
+									<label for="responseFileUpload" style="display: inline-block; margin-top: 1rem;" class="button-custom button-custom-secondary">Select files to upload</label>
+								</p>
+								<table class="file-table" id="fileTable">
+									<thead>
+										<tr>
+											<th>File</th>
+											<th>Size</th>
+											<th>Action</th>
+										</tr>
+									</thead>
+									<tbody id="fileTableBody"></tbody>
+								</table>
+							</div>
+						</div>
+					</div>
+					<div class="tab-content" data-content="acquisition">
+						<div class="acquisition-toolbar" role="toolbar" aria-label="Acquisition controls">
+							<div class="acquisition-toolbar-group">
+								<label for="acquisitionStimulusSelect" class="acquisition-toolbar-label">Stimulus</label>
+								<select id="acquisitionStimulusSelect" class="toolbar-select" aria-label="Stimulus selection">
+									<option value="swept-20-24000" selected>20-24000 Hz swept-sine</option>
+									<option value="swept-20-20000">20-20000 Hz swept-sine</option>
+								</select>
+							</div>
+							<div class="acquisition-toolbar-group">
+								<label for="acquisitionOutputDeviceSelect" class="acquisition-toolbar-label">Output</label>
+								<select id="acquisitionOutputDeviceSelect" class="toolbar-select" aria-label="Output device selection"></select>
+							</div>
+							<div class="acquisition-toolbar-group acquisition-toolbar-group--compact">
+								<label for="acquisitionOutputChannelSelect" class="acquisition-toolbar-label">Out ch</label>
+								<select id="acquisitionOutputChannelSelect" class="toolbar-select" aria-label="Output channel selection">
+									<option value="left" selected>L</option>
+									<option value="right">R</option>
+								</select>
+							</div>
+							<div class="acquisition-toolbar-group">
+								<label for="acquisitionInputDeviceSelect" class="acquisition-toolbar-label">Input</label>
+								<select id="acquisitionInputDeviceSelect" class="toolbar-select" aria-label="Input device selection"></select>
+							</div>
+							<div class="acquisition-toolbar-group acquisition-toolbar-group--compact">
+								<label for="acquisitionInputChannelSelect" class="acquisition-toolbar-label">In ch</label>
+								<select id="acquisitionInputChannelSelect" class="toolbar-select" aria-label="Input channel selection">
+									<option value="left" selected>L</option>
+									<option value="right">R</option>
+								</select>
+							</div>
+							<p id="acquisitionStatusText" class="acquisition-status" data-state="idle" aria-live="polite">Ready</p>
+							<button id="acquisitionRecordBtn" type="button" class="toolbar-button button acquisition-action-button">Record</button>
+							<button id="acquisitionStopBtn" type="button" class="toolbar-button button acquisition-action-button" disabled>Stop</button>
+						</div>
+						<div class="tab-inner-content">
+							<div class="loose-container acquisition-content">
+								<h2>Acquisition</h2>
+								<p class="info">Use Record to play the selected stimulus and capture the response from your audio input. The recording is saved as a WAV file and added to Files.</p>
+							</div>
+						</div>
+					</div>
+					<div class="tab-content" data-content="live">
+						<div class="acquisition-toolbar" role="toolbar" aria-label="Live monitor controls">
+							<div class="acquisition-toolbar-group">
+								<label for="liveMicDeviceSelect" class="acquisition-toolbar-label">Mic</label>
+								<select id="liveMicDeviceSelect" class="toolbar-select" aria-label="Microphone device selection"></select>
+							</div>
+							<div class="acquisition-toolbar-group acquisition-toolbar-group--compact">
+								<label for="liveMicChannelSelect" class="acquisition-toolbar-label">Mic ch</label>
+								<select id="liveMicChannelSelect" class="toolbar-select" aria-label="Microphone channel selection">
+									<option value="left" selected>L</option>
+									<option value="right">R</option>
+								</select>
+							</div>
+							<div class="acquisition-toolbar-group">
+								<label for="liveReferenceDeviceSelect" class="acquisition-toolbar-label">Reference</label>
+								<select id="liveReferenceDeviceSelect" class="toolbar-select" aria-label="Reference device selection"></select>
+							</div>
+							<div class="acquisition-toolbar-group acquisition-toolbar-group--compact">
+								<label for="liveReferenceChannelSelect" class="acquisition-toolbar-label">Ref ch</label>
+								<select id="liveReferenceChannelSelect" class="toolbar-select" aria-label="Reference channel selection">
+									<option value="left" selected>L</option>
+									<option value="right">R</option>
+								</select>
+							</div>
+							<div class="acquisition-toolbar-group acquisition-toolbar-group--compact">
+								<label for="liveAverageTimeConstantSelect" class="acquisition-toolbar-label">Averaging</label>
+								<select id="liveAverageTimeConstantSelect" class="toolbar-select" aria-label="Spectrum averaging time constant">
+									<option value="0.125">Impulse</option>
+									<option value="0.25">Fast</option>
+									<option value="1" selected>Medium</option>
+									<option value="3">Slow</option>
+									<option value="10">Very slow</option>
+								</select>
+							</div>
+							<div class="acquisition-toolbar-group acquisition-toolbar-group--compact">
+								<label for="liveSmoothingSelect" class="acquisition-toolbar-label">Smoothing</label>
+								<select id="liveSmoothingSelect" class="toolbar-select" aria-label="Fractional octave smoothing">
+									<option value="0.0416666667">1/24 oct</option>
+									<option value="0.0833333333">1/12 oct</option>
+									<option value="0.1666666667" selected>1/6 oct</option>
+									<option value="0.3333333333">1/3 oct</option>
+								</select>
+							</div>
+							<div class="acquisition-toolbar-group acquisition-toolbar-group--compact">
+								<label for="liveWeightingSelect" class="acquisition-toolbar-label">Weight</label>
+								<select id="liveWeightingSelect" class="toolbar-select" aria-label="Spectrum and SPL weighting">
+									<option value="z" selected>Z</option>
+									<option value="a">A</option>
+								</select>
+							</div>
+							<p id="liveStatusText" class="acquisition-status" data-state="idle" aria-live="polite">Ready</p>
+							<button id="liveStartBtn" type="button" class="toolbar-button button acquisition-action-button">Start</button>
+							<button id="liveStopBtn" type="button" class="toolbar-button button acquisition-action-button" disabled>Stop</button>
+						</div>
+						<div class="tab-inner-content live-tab-content">
+							<div class="live-summary-grid">
+								<div class="live-summary-card">
+									<h2>Mic SPL</h2>
+									<p id="liveMicSplValue" class="live-summary-value">-- dBFS</p>
+								</div>
+								<div class="live-summary-card">
+									<h2>Reference SPL</h2>
+									<p id="liveReferenceSplValue" class="live-summary-value">-- dBFS</p>
+								</div>
+								<div class="live-summary-card">
+									<h2>Difference</h2>
+									<p id="liveDifferenceSplValue" class="live-summary-value">-- dB</p>
+								</div>
+							</div>
+							<div class="live-plot-grid">
+								<section class="live-plot-card">
+									<h2>SPL history</h2>
+									<p class="info">Rolling 60-second log of uncalibrated weighted level values.</p>
+									<canvas id="liveSplHistoryCanvas" class="live-plot-canvas"></canvas>
+								</section>
+								<section class="live-plot-card">
+									<h2>Frequency spectrum</h2>
+									<p class="info">Log-frequency view with selectable weighting, exponential averaging, and fractional-octave smoothing.</p>
+									<canvas id="liveSpectrumCanvas" class="live-plot-canvas"></canvas>
+								</section>
+							</div>
+						</div>
+					</div>
+				</div>
 			</div>
 			<div class="split-view footer visible">Footer</div>
 		</div>

@@ -8,6 +8,7 @@ import { COLORS, plot } from "./plotting";
 import { AudioRecorder } from "./recorder";
 import { download, convertToIXML, save } from "./wave";
 import { BiquadCoefficients, firToMinPhase, generateTargetCurve, getFrequencyResponse, createBiquadCoefficients } from "./filter";
+import { initTabHandling, switchTab } from "./tabs";
 
 console.debug("App module loaded");
 
@@ -44,6 +45,15 @@ const statusMessage = document.getElementById('statusMessage') as HTMLElement;
 function setStatusMessage(message: string, isError: boolean = false): void {
     statusMessage.textContent = message;
     statusMessage.style.color = isError ? '#d73a49' : '#28a745';
+}
+
+function decadeTiltTargetDb(frequencies: ArrayLike<number>, referenceHz: number = 1000): number[] {
+    const out = new Array<number>(frequencies.length);
+    for (let i = 0; i < frequencies.length; i++) {
+        const freq = Math.max(Number(frequencies[i]) || 0, 1e-9);
+        out[i] = -Math.log10(freq / referenceHz);
+    }
+    return out;
 }
 
 // ============================================================================
@@ -405,40 +415,15 @@ window.addEventListener('beforeunload', (e: BeforeUnloadEvent) => {
 });
 
 // Tab switching
-tabsContainer.addEventListener('click', (e: MouseEvent) => {
-    const target = e.target as HTMLElement;
-
-    if (target.classList.contains('tab-close')) {
-        const tab = target.parentElement as HTMLElement;
-        const tabId = tab.dataset.tab;
-        if (tabId == 'upload') return;
-
+initTabHandling(tabsContainer, {
+    defaultTabId: 'upload',
+    isProtectedTab: (tabId: string) => tabId === 'upload',
+    onTabClosed: (tabId: string) => {
         console.debug('Closing tab', tabId);
-        tab.remove();
-        document.querySelector(`[data-content="${tabId}"]`)?.remove();
         storage.removeItem(`analysis-${tabId}`).catch(err => console.error('Failed to remove analysis from storage:', err));
-
-        // Activate upload tab if current was closed
-        if (tab.classList.contains('active')) {
-            switchTab('upload');
-        }
         saveState();
-        e.stopPropagation();
-    } else if (target.classList.contains('tab')) {
-        const tabId = target.dataset.tab;
-        if (tabId) {
-            switchTab(tabId);
-        }
     }
 });
-
-function switchTab(tabId: string): void {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-
-    document.querySelector(`[data-tab="${tabId}"]`)?.classList.add('active');
-    document.querySelector(`[data-content="${tabId}"]`)?.classList.add('active');
-}
 
 
 function compute(computation: Function, ...message: any[]): Promise<any> {
@@ -879,14 +864,15 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
             plot(
                 [
                     { x: responseFFT.frequency, y: db(responseFFT.magnitude), name: 'Recorded signal', line: { color: '#0366d666', width: 0.75 } },
-                    { x: smoothedResponseFFT.frequency, y: db(smoothedResponseFFT.magnitude), name: 'Recorded signal (Smoothed)', line: { color: '#0366d6', width: 1.5 } }
+                    { x: smoothedResponseFFT.frequency, y: db(smoothedResponseFFT.magnitude), name: 'Recorded signal (Smoothed)', line: { color: '#0366d6', width: 1.5 } },
+                    { x: responseFFT.frequency, y: decadeTiltTargetDb(responseFFT.frequency), name: 'Target (-1 dB/dec, 0 dB @ 1 kHz)', line: { color: '#d62728', width: 1.25, dash: 'dot' } }
                 ],
                 tabId,
                 'Recorded Spectrum',
                 'Frequency (Hz)',
                 'Amplitude (dBFS)',
                 { type: 'log', range: [Math.log10(20), Math.log10(20000)] },
-                { range: [-85, 5] },
+                { range: [-70, 20] },
                 {},
                 true
             );
@@ -913,14 +899,15 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
                 plot(
                     [
                         { x: referenceFFT.frequency, y: db(referenceFFT.magnitude), name: 'Stimulus signal', line: { color: '#0366d666', width: 0.75 } },
-                        { x: smoothedReferenceFFT.frequency, y: db(smoothedReferenceFFT.magnitude), name: 'Stimulus signal (Smoothed)', line: { color: '#0366d6', width: 1.5 } }
+                        { x: smoothedReferenceFFT.frequency, y: db(smoothedReferenceFFT.magnitude), name: 'Stimulus signal (Smoothed)', line: { color: '#0366d6', width: 1.5 } },
+                        { x: referenceFFT.frequency, y: decadeTiltTargetDb(referenceFFT.frequency), name: 'Target (-1 dB/dec, 0 dB @ 1 kHz)', line: { color: '#d62728', width: 1.25, dash: 'dot' } }
                     ],
                     tabId,
                     'Stimulus Spectrum',
                     'Frequency (Hz)',
                     'Amplitude (dBFS)',
                     { type: 'log', range: [Math.log10(20), Math.log10(20000)] },
-                    { range: [-85, 5] },
+                    { range: [-70, 20] },
                     {},
                     true
                 );
@@ -998,14 +985,15 @@ function createAnalysisTab(responseData: Audio, referenceData: Audio | null, fil
                 plot(
                     [
                         { x: transferFunction.frequency, y: db(transferFunction.magnitude), name: 'Magnitude', line: { color: '#0366d666', width: 0.75 } },
-                        { x: smoothedFreqResponse.frequency, y: db(smoothedFreqResponse.magnitude), name: 'Magnitude (Smoothed)', line: { color: '#0366d6', width: 1.5 } }
+                        { x: smoothedFreqResponse.frequency, y: db(smoothedFreqResponse.magnitude), name: 'Magnitude (Smoothed)', line: { color: '#0366d6', width: 1.5 } },
+                        { x: transferFunction.frequency, y: decadeTiltTargetDb(transferFunction.frequency), name: 'Target (-1 dB/dec, 0 dB @ 1 kHz)', line: { color: '#d62728', width: 1.25, dash: 'dot' } }
                     ],
                     tabId,
                     'Transfer Function',
                     'Frequency (Hz)',
                     'Amplitude (dBFS)',
                     { type: 'log', range: [Math.log10(20), Math.log10(20000)] },
-                    { range: [-85, 5] },
+                    { range: [-70, 20] },
                     {},
                     true
                 );
@@ -1352,6 +1340,7 @@ function createDirectivityPlotTab(responseDatas: Audio[], referenceData: Audio, 
                         return { x: smoothFFT(transfers[idx], 1 / 6, 1 / 48).frequency, y: db(smoothFFT(transfers[idx], 1 / 6, 1 / 48).magnitude), name: `${angle} deg response`, line: { width: 1.5, color: COLORS[i] } };
                     }),
                     { x: smoothAvgMagnitude.frequency, y: db(smoothAvgMagnitude.magnitude), name: 'Average Response', line: { width: 2, color: '#000000' } },
+                    { x: smoothAvgMagnitude.frequency, y: decadeTiltTargetDb(smoothAvgMagnitude.frequency), name: 'Target (-1 dB/dec, 0 dB @ 1 kHz)', line: { width: 1.25, color: '#d62728', dash: 'dot' } },
 
                 ],
                 tabId,
@@ -1359,7 +1348,7 @@ function createDirectivityPlotTab(responseDatas: Audio[], referenceData: Audio, 
                 'Frequency (Hz)',
                 'Amplitude (dB)',
                 { type: 'log', range: [Math.log10(20), Math.log10(20000)] },
-                { range: [-85, 5] },
+                { range: [-70, 20] },
                 {},
                 true
             );

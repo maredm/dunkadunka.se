@@ -161,6 +161,8 @@ export class WaveformPlot {
 			return;
 		}
 
+		console.log(this.canvas.getBoundingClientRect().width, this.xAxis.getBoundingClientRect().width);
+
 		const axisWidth = Math.max(
 			1,
 			Math.floor(this.canvas.getBoundingClientRect().width || this.xAxis.getBoundingClientRect().width || 0),
@@ -486,9 +488,12 @@ export class WaveformPlot {
 
 	private prepareCanvas(): { ctx: CanvasRenderingContext2D; width: number; height: number } | null {
 		const rect = this.canvas.getBoundingClientRect();
+		console.log(this.canvas.getBoundingClientRect().width, this.canvas.getBoundingClientRect().height);
 		const width = Math.max(1, Math.floor(rect.width || 0));
 		const height = Math.max(1, Math.floor(rect.height || 0));
 		const devicePixelRatio = 1;
+
+		console.log(this.canvas.getBoundingClientRect().width, this.xAxis?.getBoundingClientRect().width);
 
 		this.canvas.width = Math.max(1, Math.floor(width * devicePixelRatio));
 		this.canvas.height = Math.max(1, Math.floor(height * devicePixelRatio));

@@ -2265,7 +2265,8 @@ function generateTargetCurve(type, frequencies, freqStart, freqEnd) {
       target[k] = 1;
     } else if (type === "tilt") {
       const refFreq = 1e3;
-      const tiltDb = -1 * Math.log2(freq / refFreq);
+      const safeFreq = Math.max(freq, 1e-9);
+      const tiltDb = -1 * Math.log10(safeFreq / refFreq);
       target[k] = Math.pow(10, tiltDb / 20);
     } else if (type === "harman") {
       let targetDb = 0;
@@ -2343,6 +2344,48 @@ function firToMinPhase(input, fftSize = null, eps = 1e-12) {
   return hMinFull.subarray(0, L);
 }
 
+// src/tabs.ts
+function switchTab(tabId) {
+  var _a, _b;
+  document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
+  document.querySelectorAll(".tab-content").forEach((c) => c.classList.remove("active"));
+  (_a = document.querySelector(`[data-tab="${tabId}"]`)) == null ? void 0 : _a.classList.add("active");
+  (_b = document.querySelector(`[data-content="${tabId}"]`)) == null ? void 0 : _b.classList.add("active");
+}
+function initTabHandling(container, options = {}) {
+  var _a;
+  const defaultTabId = (_a = options.defaultTabId) != null ? _a : "upload";
+  container.addEventListener("click", (e) => {
+    var _a2, _b, _c, _d, _e;
+    const target = e.target;
+    const tabElement = target.closest(".tab");
+    if (!tabElement) {
+      return;
+    }
+    const tabId = tabElement.dataset.tab;
+    if (!tabId) {
+      return;
+    }
+    if (target.classList.contains("tab-close")) {
+      if ((_a2 = options.isProtectedTab) == null ? void 0 : _a2.call(options, tabId)) {
+        return;
+      }
+      const wasActive = tabElement.classList.contains("active");
+      tabElement.remove();
+      (_b = document.querySelector(`[data-content="${tabId}"]`)) == null ? void 0 : _b.remove();
+      (_c = options.onTabClosed) == null ? void 0 : _c.call(options, tabId);
+      if (wasActive) {
+        switchTab(defaultTabId);
+        (_d = options.onTabSwitched) == null ? void 0 : _d.call(options, defaultTabId);
+      }
+      e.stopPropagation();
+      return;
+    }
+    switchTab(tabId);
+    (_e = options.onTabSwitched) == null ? void 0 : _e.call(options, tabId);
+  });
+}
+
 // src/app.ts
 console.debug("App module loaded");
 var fileMap = /* @__PURE__ */ new Map();
@@ -2365,6 +2408,14 @@ var statusMessage = document.getElementById("statusMessage");
 function setStatusMessage(message, isError = false) {
   statusMessage.textContent = message;
   statusMessage.style.color = isError ? "#d73a49" : "#28a745";
+}
+function decadeTiltTargetDb(frequencies, referenceHz = 1e3) {
+  const out = new Array(frequencies.length);
+  for (let i = 0; i < frequencies.length; i++) {
+    const freq = Math.max(Number(frequencies[i]) || 0, 1e-9);
+    out[i] = -Math.log10(freq / referenceHz);
+  }
+  return out;
 }
 var acquisitionState = {
   audioContext: null,
@@ -2615,36 +2666,15 @@ window.addEventListener("beforeunload", (e) => {
     console.error("Failed to save state on beforeunload:", err);
   }
 });
-tabsContainer.addEventListener("click", (e) => {
-  var _a;
-  const target = e.target;
-  if (target.classList.contains("tab-close")) {
-    const tab = target.parentElement;
-    const tabId = tab.dataset.tab;
-    if (tabId == "upload") return;
+initTabHandling(tabsContainer, {
+  defaultTabId: "upload",
+  isProtectedTab: (tabId) => tabId === "upload",
+  onTabClosed: (tabId) => {
     console.debug("Closing tab", tabId);
-    tab.remove();
-    (_a = document.querySelector(`[data-content="${tabId}"]`)) == null ? void 0 : _a.remove();
     storage.removeItem(`analysis-${tabId}`).catch((err) => console.error("Failed to remove analysis from storage:", err));
-    if (tab.classList.contains("active")) {
-      switchTab("upload");
-    }
     saveState();
-    e.stopPropagation();
-  } else if (target.classList.contains("tab")) {
-    const tabId = target.dataset.tab;
-    if (tabId) {
-      switchTab(tabId);
-    }
   }
 });
-function switchTab(tabId) {
-  var _a, _b;
-  document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
-  document.querySelectorAll(".tab-content").forEach((c) => c.classList.remove("active"));
-  (_a = document.querySelector(`[data-tab="${tabId}"]`)) == null ? void 0 : _a.classList.add("active");
-  (_b = document.querySelector(`[data-content="${tabId}"]`)) == null ? void 0 : _b.classList.add("active");
-}
 function createAnalysisTab(responseData, referenceData, filename, referenceFilename) {
   setStatusMessage("Creating analysis tab...");
   tabCounter++;
@@ -2986,14 +3016,15 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
       plot(
         [
           { x: responseFFT.frequency, y: db(responseFFT.magnitude), name: "Recorded signal", line: { color: "#0366d666", width: 0.75 } },
-          { x: smoothedResponseFFT.frequency, y: db(smoothedResponseFFT.magnitude), name: "Recorded signal (Smoothed)", line: { color: "#0366d6", width: 1.5 } }
+          { x: smoothedResponseFFT.frequency, y: db(smoothedResponseFFT.magnitude), name: "Recorded signal (Smoothed)", line: { color: "#0366d6", width: 1.5 } },
+          { x: responseFFT.frequency, y: decadeTiltTargetDb(responseFFT.frequency), name: "Target (-1 dB/dec, 0 dB @ 1 kHz)", line: { color: "#d62728", width: 1.25, dash: "dot" } }
         ],
         tabId,
         "Recorded Spectrum",
         "Frequency (Hz)",
         "Amplitude (dBFS)",
         { type: "log", range: [Math.log10(20), Math.log10(2e4)] },
-        { range: [-85, 5] },
+        { range: [-70, 20] },
         {},
         true
       );
@@ -3018,14 +3049,15 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
         plot(
           [
             { x: referenceFFT.frequency, y: db(referenceFFT.magnitude), name: "Stimulus signal", line: { color: "#0366d666", width: 0.75 } },
-            { x: smoothedReferenceFFT.frequency, y: db(smoothedReferenceFFT.magnitude), name: "Stimulus signal (Smoothed)", line: { color: "#0366d6", width: 1.5 } }
+            { x: smoothedReferenceFFT.frequency, y: db(smoothedReferenceFFT.magnitude), name: "Stimulus signal (Smoothed)", line: { color: "#0366d6", width: 1.5 } },
+            { x: referenceFFT.frequency, y: decadeTiltTargetDb(referenceFFT.frequency), name: "Target (-1 dB/dec, 0 dB @ 1 kHz)", line: { color: "#d62728", width: 1.25, dash: "dot" } }
           ],
           tabId,
           "Stimulus Spectrum",
           "Frequency (Hz)",
           "Amplitude (dBFS)",
           { type: "log", range: [Math.log10(20), Math.log10(2e4)] },
-          { range: [-85, 5] },
+          { range: [-70, 20] },
           {},
           true
         );
@@ -3095,14 +3127,15 @@ function createAnalysisTab(responseData, referenceData, filename, referenceFilen
         plot(
           [
             { x: transferFunction.frequency, y: db(transferFunction.magnitude), name: "Magnitude", line: { color: "#0366d666", width: 0.75 } },
-            { x: smoothedFreqResponse.frequency, y: db(smoothedFreqResponse.magnitude), name: "Magnitude (Smoothed)", line: { color: "#0366d6", width: 1.5 } }
+            { x: smoothedFreqResponse.frequency, y: db(smoothedFreqResponse.magnitude), name: "Magnitude (Smoothed)", line: { color: "#0366d6", width: 1.5 } },
+            { x: transferFunction.frequency, y: decadeTiltTargetDb(transferFunction.frequency), name: "Target (-1 dB/dec, 0 dB @ 1 kHz)", line: { color: "#d62728", width: 1.25, dash: "dot" } }
           ],
           tabId,
           "Transfer Function",
           "Frequency (Hz)",
           "Amplitude (dBFS)",
           { type: "log", range: [Math.log10(20), Math.log10(2e4)] },
-          { range: [-85, 5] },
+          { range: [-70, 20] },
           {},
           true
         );

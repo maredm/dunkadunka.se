@@ -155,6 +155,55 @@ export function getExponentialSmoothingFactor(timeConstant: number, sampleRate: 
     return 1 - Math.exp(-1 / (timeConstant * sampleRate));
 }
 
+export const A_WEIGHTING_COEFFICIENTS: [Float32Array, Float32Array] = [
+    Float32Array.from([0.234301792299513, -0.468603584599026, -0.234301792299513, 0.937207169198054, -0.234301792299515, -0.468603584599025, 0.234301792299513]),
+    Float32Array.from([1.000000000000000, -4.113043408775871, 6.553121752655047, -4.990849294163381, 1.785737302937573, -0.246190595319487, 0.011224250033231]),
+];
+
+export const K_WEIGHTING_COEFFICIENTS_PRE: [Float32Array, Float32Array] = [
+    Float32Array.from([1.53512485958697, -2.69169618940638, 1.19839281085285]),
+    Float32Array.from([1, -1.69065929318241, 0.73248077421585]),
+];
+
+export const K_WEIGHTING_COEFFICIENTS_RLB: [Float32Array, Float32Array] = [
+    Float32Array.from([1.0, -2.0, 1.0]),
+    Float32Array.from([1, -1.99004745483398, 0.99007225036621]),
+];
+
+function applyIIRFilter(
+    buffer: Float32Array,
+    coefficients: [Float32Array, Float32Array],
+    zi: Float32Array,
+): Float32Array {
+    const [b, a] = coefficients;
+    if (zi.length < b.length) {
+        throw new Error(`IIR state must have length at least ${b.length}`);
+    }
+
+    const output = new Float32Array(buffer.length);
+    for (let n = 0; n < buffer.length; n += 1) {
+        output[n] = (b[0] * (buffer[n] ?? 0)) + zi[0];
+        for (let i = 1; i < b.length; i += 1) {
+            zi[i - 1] = (b[i] * (buffer[n] ?? 0)) + zi[i] - (a[i] * output[n]);
+        }
+    }
+
+    return output;
+}
+
+export function applyAWeightingToBuffer(buffer: Float32Array, zi: Float32Array): Float32Array {
+    return applyIIRFilter(buffer, A_WEIGHTING_COEFFICIENTS, zi);
+}
+
+export function applyAWeighting(buffer: Float32Array, zi: Float32Array = new Float32Array(A_WEIGHTING_COEFFICIENTS[0].length)): Float32Array {
+    const b = A_WEIGHTING_COEFFICIENTS[0];
+    if (zi.length < b.length) {
+        throw new Error(`A-weighting state must have length at least ${b.length}`);
+    }
+
+    return applyAWeightingToBuffer(buffer, zi);
+}
+
 
 /** Signal generation functions. */
 
@@ -190,26 +239,28 @@ export function chirp(fStart: number, fStop: number, duration: number | null = n
     // compact phi: pre-fade (fade_in samples), main sweep, post-fade (fade_out samples)
     const pre = Math.max(0, fade_in);
     const post = Math.max(0, fade_out);
-    const phi = Float64Array.from({ length: pre + samples_count + post }, () => 0);
+    const phi = Float64Array.from({ length: samples_count}, () => 0);  // Float64Array.from({ length: pre + samples_count + post }, () => 0);
 
     // offset matches original phi_fade_in last value: f_start * ((fade_in+1)/fs)
-    const offset = fStart * ((fade_in + 1) / fs);
+    const offset = 0;  // fStart * ((fade_in + 1) / fs);
 
     // pre-fade linear ramp
-    for (let i = 0; i < pre; i++) phi[i] = fStart * (i / fs);
+    // for (let i = 0; i < pre; i++) phi[i] = fStart * (i / fs);
 
     // main sweep (adds offset)
-    const baseIdx = pre;
+    const baseIdx = 0;  // pre;
     for (let i = 0; i < samples_count; i++) {
         let t = i / fs;
         phi[baseIdx + i] = 2 * Math.PI * L * fStart * (Math.pow(Math.E, t / L) - 1) + offset;
     }
 
     // post-fade linear ramp starting from last sweep value
+    /*
     const last = phi[baseIdx + samples_count - 1] || 0;
     for (let i = 0; i < post; i++) {
         phi[baseIdx + samples_count + i] = last + fStop * ((i + 1) / fs);
     }
+    */
 
     // sweep = sin(2 * PI * phi)
     const sweep = Float64Array.from({ length: phi.length }, () => 0);
@@ -233,16 +284,27 @@ export function chirp(fStart: number, fStop: number, duration: number | null = n
         envelope[startZeros + i] = envMain[i];
     }
 
-    // window: simple linear fade in/out over fade_in / fade_out samples
+    // window: raised-cosine fade-in and raised-cosine fade-out
     const window = Float64Array.from({ length: sweep.length }, () => 0);
     for (let i = 0; i < sweep.length; i++) {
         let w = 1.0;
         if (fade_in > 0 && i < fade_in) {
-            w = i / Math.max(1, fade_in);
+            if (fade_in === 1) {
+                w = 1;
+            } else {
+                const x = i / (fade_in - 1);
+                w = 0.5 * (1 - Math.cos(Math.PI * x));
+            }
         }
         if (fade_out > 0 && i >= sweep.length - fade_out) {
             const k = i - (sweep.length - fade_out);
-            w *= 1 - (k / Math.max(1, fade_out));
+            if (fade_out === 1) {
+                w *= 0;
+            } else {
+                const x = k / (fade_out - 1);
+                const raisedCosineOut = 0.5 * (1 + Math.cos(Math.PI * x));
+                w *= raisedCosineOut;
+            }
         }
         window[i] = w;
     }
