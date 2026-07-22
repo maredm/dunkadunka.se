@@ -1,7 +1,7 @@
 import { setAudioDeviceSelectOptions, listAudioDevices } from "./audio_devices";
 import { startPlayAndRecord, type ActiveDuplexSession, type AudioChannelSelection } from "./audio_io";
 import { chirp, normalizeToRMS } from "./signal";
-import { createStereoWavBlob } from "./wavfile";
+import { createMultichannelWavBlob } from "./wavfile";
 
 export type MeasurementStimulusPreset = {
 	id: string;
@@ -196,20 +196,23 @@ export function createMeasurementController(options: MeasurementControllerOption
 			const captureReferenceInput = recorded[1].subarray(captureStart);
 			const hasReferenceInput = referenceDeviceId.length > 0;
 
-			// Export stereo acquisition as:
-			// - ch1 = measured input
-			// - ch2 = reference input when configured, otherwise synthetic sweep
+			// Export acquisition channels as:
+			// - ch1 = recorded (measured input)
+			// - ch2 = stimulus (played sweep)
+			// - ch3 = recorded stimulus (reference input), when configured
 			const measured = new Float32Array(captureMeasured);
-			const reference = new Float32Array(measured.length);
+			const stimulusTrack = new Float32Array(measured.length);
+			stimulusTrack.set(normalizedStimulus.subarray(0, Math.min(normalizedStimulus.length, stimulusTrack.length)), 0);
+			const channels: Float32Array[] = [measured, stimulusTrack];
 			if (hasReferenceInput) {
-				reference.set(captureReferenceInput.subarray(0, Math.min(captureReferenceInput.length, reference.length)), 0);
-			} else {
-				reference.set(normalizedStimulus.subarray(0, Math.min(normalizedStimulus.length, reference.length)), 0);
+				const recordedStimulus = new Float32Array(measured.length);
+				recordedStimulus.set(captureReferenceInput.subarray(0, Math.min(captureReferenceInput.length, recordedStimulus.length)), 0);
+				channels.push(recordedStimulus);
 			}
 
 			const comment = commentInput?.value?.trim() ?? "";
 			const file = new File(
-				[createStereoWavBlob([measured, reference], SAMPLE_RATE)],
+				[createMultichannelWavBlob(channels, SAMPLE_RATE)],
 				buildAcquisitionFileName(comment),
 				{ type: "audio/wav" },
 			);
