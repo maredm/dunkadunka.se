@@ -28,7 +28,7 @@
 	--bg-color: #161718;
     --bg-primary: #1d1e1f;
     --bg-secondary: #2d2e2f;
-    --bg-hover: #2c2c2c;
+    --bg-hover: #444;
     --text-primary: #eee;
     --text-secondary: #ddd;
 	--color: #1f77b4;
@@ -183,7 +183,7 @@ body {
 /* Toolbar logo styling */
 
 .toolbar {
-    background-color: color-mix(in hsl, var(--bg-color) 90%, white 10%);
+    background-color: var(--bg-secondary);
 }
 
 .toolbar-logo {
