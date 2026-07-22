@@ -2,15 +2,23 @@ import { listAudioDevices, setAudioDeviceSelectOptions } from "./audio_devices";
 import { startLiveMonitor, type LiveMonitorSession, type AudioChannelSelection } from "./audio_io";
 import { fft } from "./fft";
 import { fractionalOctaveSmoothing, getFractionalOctaveFrequencies } from "./fractional_octave_smoothing";
+import {
+	createLevelMeterState,
+	computeExponentialAverageAlpha,
+	computeWaveformDecibels,
+	getLevelMetricLabel,
+	parseLevelMetric,
+	updateLevelMeter,
+	type LevelMeterState,
+	type LevelMetric,
+} from "./level_meter";
 import { nextPow2 } from "./math";
-import { A_WEIGHTING_COEFFICIENTS, applyAWeightingToBuffer, calculateTwoChannelImpulseResponse, estimateDelay } from "./signal";
+import { calculateTwoChannelImpulseResponse, estimateDelay } from "./signal";
 
 type LiveSpectrumSeries = {
 	frequencies: Float32Array;
 	valuesDb: Float32Array;
 };
-
-export type FrequencyWeighting = "z" | "a";
 
 type LiveMonitorHistoryPoint = {
 	timeSeconds: number;
@@ -29,6 +37,8 @@ export interface LiveMonitorControllerOptions {
 	statusText: HTMLElement;
 	startButton: HTMLButtonElement;
 	stopButton: HTMLButtonElement;
+	adaptButton: HTMLButtonElement;
+	delayValue: HTMLElement;
 	micSplValue: HTMLElement;
 	referenceSplValue: HTMLElement;
 	differenceSplValue: HTMLElement;
@@ -46,9 +56,10 @@ export interface LiveMonitorController {
 const HISTORY_SECONDS = 60;
 const MIN_DB = -96;
 const MAX_DB = 6;
-const SPECTRUM_MIN_DB = -50;
-const SPECTRUM_MAX_DB = 10;
+const SPECTRUM_MIN_DB = -40;
+const SPECTRUM_MAX_DB = 20;
 const DEFAULT_SMOOTHING_FRACTION = 1 / 6;
+const PLOT_AXIS_FRACTION = 1 / 24;
 const LOG_FREQUENCY_MIN = 20;
 const DEFAULT_AVERAGING_SECONDS = 1;
 const SPECTRUM_GRID_FREQUENCIES = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
@@ -56,7 +67,9 @@ const LEVEL_GRID_VALUES = [-90, -80, -70, -60, -50, -40, -30, -20, -10, 0];
 const SPECTRUM_LEVEL_GRID_VALUES = [-50, -40, -30, -20, -10, 0, 10];
 const DERIVED_PLOT_MIN_UPDATE_MS = 250;
 const DERIVED_AVERAGING_SECONDS = 15;
-const DELAY_ALIGNMENT_SECONDS = 25;
+const DELAY_ALIGNMENT_SECONDS = 120;
+const DELAY_STABILITY_THRESHOLD_MS = 0.25;
+const DELAY_STABILITY_UPDATES = 8;
 
 type PhaseResponse = {
 	frequencies: Float32Array;
@@ -73,31 +86,6 @@ type TransferComplexResponse = {
 	re: Float32Array;
 	im: Float32Array;
 };
-
-export function computeWaveformDecibels(samples: Float32Array): number {
-	if (samples.length === 0) {
-		return MIN_DB;
-	}
-
-	let sumSquares = 0;
-	for (let index = 0; index < samples.length; index += 1) {
-		const value = samples[index] ?? 0;
-		sumSquares += value * value;
-	}
-
-	const rms = Math.sqrt(sumSquares / Math.max(1, samples.length));
-	return 20 * Math.log10(Math.max(rms, 1e-12));
-}
-
-export function computeExponentialAverageAlpha(elapsedSeconds: number, timeConstantSeconds: number): number {
-	if (!Number.isFinite(elapsedSeconds) || elapsedSeconds <= 0) {
-		return 1;
-	}
-	if (!Number.isFinite(timeConstantSeconds) || timeConstantSeconds <= 0) {
-		return 1;
-	}
-	return 1 - Math.exp(-elapsedSeconds / timeConstantSeconds);
-}
 
 export function applyExponentialAverage(previous: Float32Array | null, next: Float32Array, alpha: number): Float32Array {
 	if (!previous || previous.length !== next.length || alpha >= 1) {
@@ -127,18 +115,18 @@ function formatLevel(value: number | null): string {
 	return `${value.toFixed(1)} dBFS`;
 }
 
-function formatWeightedLevel(value: number | null, weighting: FrequencyWeighting): string {
+function formatMetricLevel(value: number | null, metric: LevelMetric): string {
 	if (value === null || !Number.isFinite(value)) {
-		return weighting === "a" ? "-- dBFS(A)" : "-- dBFS";
+		return `-- ${getLevelMetricLabel(metric)}`;
 	}
-	return weighting === "a" ? `${value.toFixed(1)} dBFS(A)` : formatLevel(value);
+	return `${value.toFixed(1)} ${getLevelMetricLabel(metric)}`;
 }
 
-function formatDifferenceLevel(value: number | null, weighting: FrequencyWeighting): string {
+function formatDifferenceLevel(value: number | null): string {
 	if (value === null || !Number.isFinite(value)) {
-		return weighting === "a" ? "-- dB(A)" : "-- dB";
+		return "-- dB";
 	}
-	return weighting === "a" ? `${value.toFixed(1)} dB(A)` : `${value.toFixed(1)} dB`;
+	return `${value.toFixed(1)} dB`;
 }
 
 function formatFrequencyLabel(value: number): string {
@@ -153,14 +141,6 @@ function parseSmoothingFraction(value: string): number {
 function parseAveragingSeconds(value: string): number {
 	const parsed = Number.parseFloat(value);
 	return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_AVERAGING_SECONDS;
-}
-
-function parseWeighting(value: string): FrequencyWeighting {
-	return value === "a" ? "a" : "z";
-}
-
-function createAWeightingState(): Float32Array {
-	return new Float32Array(A_WEIGHTING_COEFFICIENTS[0].length);
 }
 
 function computeSpectrumMagnitudes(samples: Float32Array, useWindow = true): Float32Array {
@@ -181,28 +161,6 @@ function computeSpectrumMagnitudes(samples: Float32Array, useWindow = true): Flo
 	return magnitudes;
 }
 
-export function applyFrequencyWeightingToWaveform(
-	samples: Float32Array,
-	weighting: FrequencyWeighting,
-	state?: Float32Array,
-): Float32Array {
-	if (weighting === "z") {
-		return Float32Array.from(samples);
-	}
-
-    const output = applyAWeightingToBuffer(samples, state ?? createAWeightingState());
-
-	return output;
-}
-
-export function computeWeightedWaveformDecibels(
-	samples: Float32Array,
-	weighting: FrequencyWeighting,
-	state?: Float32Array,
-): number {
-	return computeWaveformDecibels(applyFrequencyWeightingToWaveform(samples, weighting, state));
-}
-
 export function buildSmoothedSpectrum(
 	samples: Float32Array,
 	sampleRate: number,
@@ -217,7 +175,7 @@ export function buildSmoothedSpectrum(
 		};
 	}
 
-	const frequencies = getFractionalOctaveFrequencies(smoothingFraction, LOG_FREQUENCY_MIN, nyquist, magnitudes.length * 2, sampleRate);
+	const frequencies = getFractionalOctaveFrequencies(PLOT_AXIS_FRACTION, LOG_FREQUENCY_MIN, nyquist, magnitudes.length * 2, sampleRate);
 	const smoothed = fractionalOctaveSmoothing(magnitudes, smoothingFraction, frequencies);
 	const valuesDb = new Float32Array(smoothed.length);
 	for (let index = 0; index < smoothed.length; index += 1) {
@@ -274,7 +232,7 @@ function drawLinePlot(
 	x: Float32Array,
 	y: Float32Array,
 	lineColor: string,
-	options: { logX?: boolean; yMin?: number; yMax?: number } = {},
+	options: { logX?: boolean; yMin?: number; yMax?: number; wrapY?: boolean } = {},
 ): void {
 	const prepared = prepareCanvas(canvas);
 	if (!prepared) {
@@ -384,21 +342,66 @@ function drawLinePlot(
 	}
 
 	ctx.beginPath();
-	let started = false;
+	let hasCurrentPoint = false;
+	let prevX = 0;
+	let prevY = 0;
+	const wrapY = options.wrapY === true;
+	const wrapRange = yMax - yMin;
+	const halfWrapRange = wrapRange * 0.5;
+
 	for (let i = 0; i < x.length; i += 1) {
 		const xv = x[i] ?? 0;
 		const yv = y[i] ?? 0;
 		if (!Number.isFinite(xv) || !Number.isFinite(yv)) {
+			hasCurrentPoint = false;
 			continue;
 		}
-		const px = projectX(xv);
-		const py = projectY(yv);
-		if (!started) {
-			ctx.moveTo(px, py);
-			started = true;
-		} else {
-			ctx.lineTo(px, py);
+
+		if (!hasCurrentPoint) {
+			ctx.moveTo(projectX(xv), projectY(yv));
+			prevX = xv;
+			prevY = yv;
+			hasCurrentPoint = true;
+			continue;
 		}
+
+		if (wrapY && Number.isFinite(wrapRange) && wrapRange > 0) {
+			const dy = yv - prevY;
+			if (dy > halfWrapRange || dy < -halfWrapRange) {
+				if (dy > halfWrapRange) {
+					const yAdjusted = yv - wrapRange;
+					const denom = yAdjusted - prevY;
+					if (Math.abs(denom) > 1e-12) {
+						const t = clamp((yMin - prevY) / denom, 0, 1);
+						const xEdge = prevX + (xv - prevX) * t;
+						ctx.lineTo(projectX(xEdge), projectY(yMin));
+						ctx.moveTo(projectX(xEdge), projectY(yMax));
+						ctx.lineTo(projectX(xv), projectY(yv));
+					} else {
+						ctx.lineTo(projectX(xv), projectY(yv));
+					}
+				} else {
+					const yAdjusted = yv + wrapRange;
+					const denom = yAdjusted - prevY;
+					if (Math.abs(denom) > 1e-12) {
+						const t = clamp((yMax - prevY) / denom, 0, 1);
+						const xEdge = prevX + (xv - prevX) * t;
+						ctx.lineTo(projectX(xEdge), projectY(yMax));
+						ctx.moveTo(projectX(xEdge), projectY(yMin));
+						ctx.lineTo(projectX(xv), projectY(yv));
+					} else {
+						ctx.lineTo(projectX(xv), projectY(yv));
+					}
+				}
+				prevX = xv;
+				prevY = yv;
+				continue;
+			}
+		}
+
+		ctx.lineTo(projectX(xv), projectY(yv));
+		prevX = xv;
+		prevY = yv;
 	}
 	ctx.strokeStyle = lineColor;
 	ctx.lineWidth = 1.5;
@@ -555,6 +558,46 @@ function normalizePhaseAtReference(
 		normalized[i] = (phasesDeg[i] ?? 0) - refPhase;
 	}
 	return normalized;
+}
+
+function smoothPhaseFractional(
+	phasesDeg: Float32Array,
+	smoothingFraction: number,
+	sampleRate: number,
+): { frequencies: Float32Array; phasesDeg: Float32Array } {
+	if (phasesDeg.length === 0 || !Number.isFinite(sampleRate) || sampleRate <= 0) {
+		return { frequencies: new Float32Array(0), phasesDeg: new Float32Array(0) };
+	}
+
+	const nyquist = Math.max(LOG_FREQUENCY_MIN * 2, sampleRate / 2);
+	const frequencies = getFractionalOctaveFrequencies(
+		PLOT_AXIS_FRACTION,
+		LOG_FREQUENCY_MIN,
+		nyquist,
+		phasesDeg.length * 2,
+		sampleRate,
+	);
+	const smoothed = fractionalOctaveSmoothing(phasesDeg, smoothingFraction, frequencies);
+	return { frequencies, phasesDeg: smoothed };
+}
+
+function wrapPhaseToRange(phasesDeg: Float32Array, minDeg = -720, maxDeg = 720): Float32Array {
+	if (phasesDeg.length === 0) {
+		return phasesDeg;
+	}
+
+	const range = maxDeg - minDeg;
+	if (!Number.isFinite(range) || range <= 0) {
+		return Float32Array.from(phasesDeg);
+	}
+
+	const wrapped = new Float32Array(phasesDeg.length);
+	for (let i = 0; i < phasesDeg.length; i += 1) {
+		const value = phasesDeg[i] ?? 0;
+		const normalized = ((value - minDeg) % range + range) % range;
+		wrapped[i] = normalized + minDeg;
+	}
+	return wrapped;
 }
 
 function computeImpulseResponseWindowed(recorded: Float32Array, stimulus: Float32Array, sampleRate: number): ImpulseResponseWindow | null {
@@ -838,6 +881,8 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 		statusText,
 		startButton,
 		stopButton,
+		adaptButton,
+		delayValue,
 		micSplValue,
 		referenceSplValue,
 		differenceSplValue,
@@ -855,10 +900,13 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 	let averagedMicSpectrum: Float32Array | null = null;
 	let averagedReferenceSpectrum: Float32Array | null = null;
 	let history: LiveMonitorHistoryPoint[] = [];
-	let micWeightingState = createAWeightingState();
-	let referenceWeightingState = createAWeightingState();
+	let micLevelMeter: LevelMeterState | null = null;
+	let referenceLevelMeter: LevelMeterState | null = null;
 	let lastDerivedPlotUpdateMs = 0;
 	let smoothedDelaySamples: number | null = null;
+	let delaySampleRate: number | null = null;
+	let delayStableUpdateCount = 0;
+	let delayAdaptationLocked = false;
 	let averagedPhaseRe: Float32Array | null = null;
 	let averagedPhaseIm: Float32Array | null = null;
 	let phaseFrequencies: Float32Array | null = null;
@@ -870,6 +918,51 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 		statusText.dataset.state = state;
 	};
 
+	const updateLevelPlaceholders = (): void => {
+		const metric = parseLevelMetric(weightingSelect.value);
+		micSplValue.textContent = formatMetricLevel(null, metric);
+		referenceSplValue.textContent = formatMetricLevel(null, metric);
+		differenceSplValue.textContent = formatDifferenceLevel(null);
+	};
+
+	const resetDerivedAverages = (): void => {
+		averagedPhaseRe = null;
+		averagedPhaseIm = null;
+		phaseFrequencies = null;
+		averagedImpulse = null;
+		impulseTimeMs = null;
+	};
+
+	const updateDelayUi = (sampleRate: number | null, hasReference: boolean): void => {
+		if (!hasReference) {
+			delayValue.textContent = "-- ms";
+			adaptButton.textContent = "Freeze delay";
+			adaptButton.disabled = true;
+			return;
+		}
+
+		if (sampleRate === null || sampleRate <= 0 || smoothedDelaySamples === null || !Number.isFinite(smoothedDelaySamples)) {
+			delayValue.textContent = "Adapting...";
+			adaptButton.textContent = "Freeze delay";
+			adaptButton.disabled = true;
+			return;
+		}
+
+		const delayMs = (smoothedDelaySamples / sampleRate) * 1000;
+		delayValue.textContent = `${delayMs.toFixed(2)} ms${delayAdaptationLocked ? " (locked)" : ""}`;
+		adaptButton.textContent = delayAdaptationLocked ? "Adapt delay" : "Freeze delay";
+		adaptButton.disabled = !runningSession;
+	};
+
+	const resetDelayAlignment = (): void => {
+		smoothedDelaySamples = null;
+		delaySampleRate = null;
+		delayStableUpdateCount = 0;
+		delayAdaptationLocked = false;
+		resetDerivedAverages();
+		updateDelayUi(null, false);
+	};
+
 	const renderState = (): void => {
 		const nowSeconds = performance.now() / 1000;
 		drawSplHistory(splHistoryCanvas, history, nowSeconds);
@@ -879,14 +972,9 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 		drawSpectrum(spectrumCanvas, mic, reference, buildDifferenceSpectrum(mic, reference), sampleRate / 2);
 	};
 
-	const renderDerivedPlots = (mic: Float32Array | null, reference: Float32Array | null, sampleRate: number): void => {
+	const renderDerivedPlots = (mic: Float32Array | null, reference: Float32Array | null, sampleRate: number, smoothingFraction: number): void => {
 		if (!mic || !reference) {
-			averagedPhaseRe = null;
-			averagedPhaseIm = null;
-			phaseFrequencies = null;
-			averagedImpulse = null;
-			impulseTimeMs = null;
-			smoothedDelaySamples = null;
+			resetDelayAlignment();
 			drawEmptyPlot(impulseCanvas, "Impulse response (live)", "Select a reference input device.");
 			drawEmptyPlot(phaseCanvas, "Phase response (live)", "Select a reference input device.");
 			return;
@@ -894,13 +982,27 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 
 		const delaySecondsInst = estimateDelay(reference, mic, sampleRate);
 		const delaySamplesInst = delaySecondsInst * sampleRate;
+		delaySampleRate = sampleRate;
 		if (smoothedDelaySamples === null || !Number.isFinite(smoothedDelaySamples)) {
 			smoothedDelaySamples = delaySamplesInst;
-		} else {
+			delayStableUpdateCount = 0;
+			delayAdaptationLocked = false;
+		} else if (!delayAdaptationLocked) {
 			const elapsedSeconds = Math.max(1 / 120, (lastDerivedPlotUpdateMs <= 0 ? DERIVED_PLOT_MIN_UPDATE_MS : DERIVED_PLOT_MIN_UPDATE_MS) / 1000);
 			const alphaDelay = computeExponentialAverageAlpha(elapsedSeconds, DELAY_ALIGNMENT_SECONDS);
-			smoothedDelaySamples = (1 - alphaDelay) * smoothedDelaySamples + alphaDelay * delaySamplesInst;
+			const nextDelaySamples = (1 - alphaDelay) * smoothedDelaySamples + alphaDelay * delaySamplesInst;
+			const stabilityThresholdSamples = Math.max(1, (DELAY_STABILITY_THRESHOLD_MS / 1000) * sampleRate);
+			if (Math.abs(delaySamplesInst - smoothedDelaySamples) <= stabilityThresholdSamples) {
+				delayStableUpdateCount += 1;
+				if (delayStableUpdateCount >= DELAY_STABILITY_UPDATES) {
+					delayAdaptationLocked = true;
+				}
+			} else {
+				delayStableUpdateCount = 0;
+			}
+			smoothedDelaySamples = nextDelaySamples;
 		}
+		updateDelayUi(sampleRate, true);
 
 		const alphaLong = computeExponentialAverageAlpha(Math.max(1 / 120, DERIVED_PLOT_MIN_UPDATE_MS / 1000), DERIVED_AVERAGING_SECONDS);
 
@@ -923,24 +1025,18 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 			}
 
 			const phaseUnwrapped = computeUnwrappedPhaseFromComplex(averagedPhaseRe, averagedPhaseIm);
-			const phaseNormalized = normalizePhaseAtReference(phaseFrequencies, phaseUnwrapped, 1000);
-			let phaseMin = Number.POSITIVE_INFINITY;
-			let phaseMax = Number.NEGATIVE_INFINITY;
-			for (let i = 0; i < phaseNormalized.length; i += 1) {
-				const v = phaseNormalized[i] ?? 0;
-				phaseMin = Math.min(phaseMin, v);
-				phaseMax = Math.max(phaseMax, v);
-			}
-			const padding = 15;
+			const phaseNormalized = normalizePhaseAtReference(phaseFrequencies, phaseUnwrapped, 100);
+			const phaseSmoothed = smoothPhaseFractional(phaseNormalized, smoothingFraction, sampleRate);
+			const phaseWrapped = wrapPhaseToRange(phaseSmoothed.phasesDeg, -1440, 1440);
 			drawLinePlot(
 				phaseCanvas,
-				"Phase response (live, long average, 1 kHz ref)",
+				"Phase response (live, long average, 100 Hz ref)",
 				"Frequency (Hz)",
 				"Phase (deg)",
-				phaseFrequencies,
-				phaseNormalized,
+				phaseSmoothed.frequencies,
+				phaseWrapped,
 				"#38bdf8",
-				{ logX: true, yMin: phaseMin - padding, yMax: phaseMax + padding },
+					{ logX: true, yMin: -1440, yMax: 1440, wrapY: true },
 			);
 		}
 
@@ -986,6 +1082,7 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 		weightingSelect.disabled = isBusy;
 		startButton.disabled = isBusy;
 		stopButton.disabled = !isBusy;
+		adaptButton.disabled = !isBusy;
 	};
 
 	const refreshDeviceLists = async (): Promise<void> => {
@@ -1028,22 +1125,24 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 		lastFrameTime = currentTime;
 		const alpha = computeExponentialAverageAlpha(elapsedSeconds, parseAveragingSeconds(averageTimeConstantSelect.value));
 		const smoothingFraction = parseSmoothingFraction(smoothingSelect.value);
-		const weighting = parseWeighting(weightingSelect.value);
-		const micWaveform = applyFrequencyWeightingToWaveform(snapshot.micWaveform, weighting, micWeightingState);
-		const referenceWaveform = snapshot.referenceWaveform
-			? applyFrequencyWeightingToWaveform(snapshot.referenceWaveform, weighting, referenceWeightingState)
-			: null;
+		const metric = parseLevelMetric(weightingSelect.value);
+		if (!micLevelMeter || micLevelMeter.metric !== metric || micLevelMeter.sampleRate !== snapshot.sampleRate) {
+			micLevelMeter = createLevelMeterState(metric, snapshot.sampleRate);
+		}
+		if (snapshot.referenceWaveform && (!referenceLevelMeter || referenceLevelMeter.metric !== metric || referenceLevelMeter.sampleRate !== snapshot.sampleRate)) {
+			referenceLevelMeter = createLevelMeterState(metric, snapshot.sampleRate);
+		}
 
-		const micLevel = computeWaveformDecibels(micWaveform);
-		const referenceLevel = referenceWaveform
-			? computeWaveformDecibels(referenceWaveform)
+		const micLevel = updateLevelMeter(micLevelMeter, snapshot.micWaveform, snapshot.sampleRate);
+		const referenceLevel = snapshot.referenceWaveform && referenceLevelMeter
+			? updateLevelMeter(referenceLevelMeter, snapshot.referenceWaveform, snapshot.sampleRate)
 			: null;
 		const differenceLevel = referenceLevel === null ? null : micLevel - referenceLevel;
 		history.push(createHistoryPoint(currentTime / 1000, micLevel, referenceLevel));
 		history = history.filter((point) => (currentTime / 1000) - point.timeSeconds <= HISTORY_SECONDS);
-		micSplValue.textContent = formatWeightedLevel(micLevel, weighting);
-		referenceSplValue.textContent = formatWeightedLevel(referenceLevel, weighting);
-		differenceSplValue.textContent = formatDifferenceLevel(differenceLevel, weighting);
+		micSplValue.textContent = formatMetricLevel(micLevel, metric);
+		referenceSplValue.textContent = formatMetricLevel(referenceLevel, metric);
+		differenceSplValue.textContent = formatDifferenceLevel(differenceLevel);
 		renderState();
 
 		const micSpectrumRaw = buildSmoothedSpectrum(snapshot.micWaveform, snapshot.sampleRate, smoothingFraction);
@@ -1063,13 +1162,14 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 			};
 		} else {
 			averagedReferenceSpectrum = null;
+			referenceLevelMeter = null;
 		}
 
 		renderSpectrum(micSpectrum, referenceSpectrum, snapshot.sampleRate);
 
 		if ((currentTime - lastDerivedPlotUpdateMs) >= DERIVED_PLOT_MIN_UPDATE_MS) {
 			lastDerivedPlotUpdateMs = currentTime;
-			renderDerivedPlots(snapshot.micWaveform, snapshot.referenceWaveform, snapshot.sampleRate);
+			renderDerivedPlots(snapshot.micWaveform, snapshot.referenceWaveform, snapshot.sampleRate, smoothingFraction);
 		}
 		animationFrame = requestAnimationFrame(step);
 	};
@@ -1081,23 +1181,18 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 
 		setControlsBusy(true);
 		setStatus("Starting live monitor...", "busy");
-		const weighting = parseWeighting(weightingSelect.value);
-		micSplValue.textContent = formatWeightedLevel(null, weighting);
-		referenceSplValue.textContent = formatWeightedLevel(null, weighting);
-		differenceSplValue.textContent = formatDifferenceLevel(null, weighting);
+		const metric = parseLevelMetric(weightingSelect.value);
+		micSplValue.textContent = formatMetricLevel(null, metric);
+		referenceSplValue.textContent = formatMetricLevel(null, metric);
+		differenceSplValue.textContent = formatDifferenceLevel(null);
 		history = [];
 		averagedMicSpectrum = null;
 		averagedReferenceSpectrum = null;
 		lastFrameTime = 0;
 		lastDerivedPlotUpdateMs = 0;
-		smoothedDelaySamples = null;
-		averagedPhaseRe = null;
-		averagedPhaseIm = null;
-		phaseFrequencies = null;
-		averagedImpulse = null;
-		impulseTimeMs = null;
-		micWeightingState = createAWeightingState();
-		referenceWeightingState = createAWeightingState();
+		resetDelayAlignment();
+		micLevelMeter = null;
+		referenceLevelMeter = null;
 
 		try {
 			runningSession = await startLiveMonitor({
@@ -1106,7 +1201,7 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 				referenceDeviceId: referenceDeviceSelect.value && referenceDeviceSelect.value !== "none" ? referenceDeviceSelect.value : undefined,
 				referenceChannel: normalizeChannelSelection(referenceChannelSelect.value),
 			});
-			setStatus(`Live monitor running. SPL is uncalibrated ${weighting === "a" ? "dBFS(A)" : "dBFS"}.`, "success");
+			setStatus(`Live monitor running. Levels are uncalibrated full-scale values using ${getLevelMetricLabel(metric)}.`, "success");
 			await refreshDeviceLists();
 			animationFrame = requestAnimationFrame(step);
 		} catch (error) {
@@ -1124,16 +1219,33 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 		void stop();
 	};
 
+	const handleDelayButtonClick = (): void => {
+		if (!runningSession) {
+			return;
+		}
+
+		if (delayAdaptationLocked) {
+			resetDelayAlignment();
+			updateDelayUi(null, true);
+			return;
+		}
+
+		delayAdaptationLocked = true;
+		delayStableUpdateCount = 0;
+		updateDelayUi(delaySampleRate, true);
+	};
+
 	startButton.addEventListener("click", handleStart);
 	stopButton.addEventListener("click", handleStop);
+	adaptButton.addEventListener("click", handleDelayButtonClick);
+	weightingSelect.addEventListener("change", updateLevelPlaceholders);
 	navigator.mediaDevices?.addEventListener?.("devicechange", refreshDeviceLists);
 	void refreshDeviceLists();
-	micSplValue.textContent = formatWeightedLevel(null, parseWeighting(weightingSelect.value));
-	referenceSplValue.textContent = formatWeightedLevel(null, parseWeighting(weightingSelect.value));
-	differenceSplValue.textContent = formatDifferenceLevel(null, parseWeighting(weightingSelect.value));
+	updateLevelPlaceholders();
+	updateDelayUi(null, false);
 	renderState();
 	renderSpectrum(null, null, 48000);
-	renderDerivedPlots(null, null, 48000);
+	renderDerivedPlots(null, null, 48000, DEFAULT_SMOOTHING_FRACTION);
 
 	return {
 		destroy: () => {
@@ -1143,6 +1255,8 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 			destroyed = true;
 			startButton.removeEventListener("click", handleStart);
 			stopButton.removeEventListener("click", handleStop);
+			adaptButton.removeEventListener("click", handleDelayButtonClick);
+			weightingSelect.removeEventListener("change", updateLevelPlaceholders);
 			navigator.mediaDevices?.removeEventListener?.("devicechange", refreshDeviceLists);
 			void stop();
 		},

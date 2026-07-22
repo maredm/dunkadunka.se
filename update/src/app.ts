@@ -2,9 +2,11 @@ import "./styles.css";
 import { createLiveMonitorController, type LiveMonitorController } from "./live_monitor";
 import { mountWaveformTool, type WaveformToolHandle } from "./waveform";
 import { createMeasurementController, type MeasurementController } from "./measurement";
+import Plotly from "plotly.js-dist-min";
 import { readMultichannelWavFile } from "./wavfile";
 import { fft } from "./fft";
 import { nextPow2 } from "./math";
+import { fractionalOctaveSmoothing, getFractionalOctaveFrequencies } from "./fractional_octave_smoothing";
 import { calculateTwoChannelImpulseResponse } from "./signal";
 
 type LoadedAudioFile = {
@@ -12,9 +14,26 @@ type LoadedAudioFile = {
 	file: File;
 };
 
+type AnalysisCurve = {
+	label: string;
+	raw: MagnitudeResponse;
+	smoothed: MagnitudeResponse;
+};
+
+type HarmonicCurve = {
+	label: string;
+	order: number;
+	smoothed: MagnitudeResponse;
+};
+
+type SeriesResponse = {
+	frequencies: Float32Array;
+	values: Float32Array;
+};
+
 type PlotSession = {
-	tool: WaveformToolHandle;
-	measurement: MeasurementController | null;
+	tool?: WaveformToolHandle | null;
+	measurement?: MeasurementController | null;
 	rerenderDerivedPlots?: () => void;
 };
 
@@ -22,6 +41,15 @@ type PhaseResponse = {
 	frequencies: Float32Array;
 	phasesDeg: Float32Array;
 };
+
+type MagnitudeResponse = {
+	frequencies: Float32Array;
+	valuesDb: Float32Array;
+};
+
+const DEFAULT_SMOOTHING_FRACTION = 1 / 6;
+const PLOT_AXIS_FRACTION = 1 / 24;
+const LOG_FREQUENCY_MIN = 20;
 
 const tabsOuter = document.getElementById("tabs-outer") as HTMLElement | null;
 const tabsInner = document.getElementById("tabs") as HTMLElement | null;
@@ -47,9 +75,11 @@ const liveWeightingSelect = document.getElementById("liveWeightingSelect") as HT
 const liveStatusText = document.getElementById("liveStatusText") as HTMLParagraphElement | null;
 const liveStartBtn = document.getElementById("liveStartBtn") as HTMLButtonElement | null;
 const liveStopBtn = document.getElementById("liveStopBtn") as HTMLButtonElement | null;
+const liveAdaptBtn = document.getElementById("liveAdaptBtn") as HTMLButtonElement | null;
 const liveMicSplValue = document.getElementById("liveMicSplValue") as HTMLElement | null;
 const liveReferenceSplValue = document.getElementById("liveReferenceSplValue") as HTMLElement | null;
 const liveDifferenceSplValue = document.getElementById("liveDifferenceSplValue") as HTMLElement | null;
+const liveDelayValue = document.getElementById("liveDelayValue") as HTMLElement | null;
 const liveSplHistoryCanvas = document.getElementById("liveSplHistoryCanvas") as HTMLCanvasElement | null;
 const liveSpectrumCanvas = document.getElementById("liveSpectrumCanvas") as HTMLCanvasElement | null;
 const liveImpulseCanvas = document.getElementById("liveImpulseCanvas") as HTMLCanvasElement | null;
@@ -76,12 +106,15 @@ if (
 const tabsInnerEl: HTMLElement = tabsInner;
 const tabContentsEl: HTMLElement = tabContents;
 const fileTableBodyEl: HTMLTableSectionElement = fileTableBody;
+const openSelectedAnalysisBtn = document.getElementById("openSelectedAnalysisBtn") as HTMLButtonElement | null;
 
 const files = new Map<string, LoadedAudioFile>();
 const plotSessions = new Map<string, PlotSession>();
+const selectedFileIds = new Set<string>();
 let tabCounter = 0;
 let acquisitionMeasurementController: MeasurementController | null = null;
 let liveMonitorController: LiveMonitorController | null = null;
+const ANALYSIS_COLORS = ["#a3e635", "#38bdf8", "#f97316", "#f472b6", "#facc15", "#22c55e", "#fb7185", "#60a5fa"];
 
 function formatBytes(bytes: number): string {
 	if (!Number.isFinite(bytes) || bytes <= 0) {
@@ -92,6 +125,27 @@ function formatBytes(bytes: number): string {
 	const exponent = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
 	const value = bytes / (1024 ** exponent);
 	return `${value.toFixed(exponent === 0 ? 0 : 1)} ${units[exponent]}`;
+}
+
+function updateSelectedAnalysisButtonState(): void {
+	if (!openSelectedAnalysisBtn) {
+		return;
+	}
+	openSelectedAnalysisBtn.disabled = selectedFileIds.size === 0;
+	openSelectedAnalysisBtn.textContent = selectedFileIds.size <= 1
+		? "Open selected analysis tab"
+		: `Open selected analysis tab (${selectedFileIds.size})`;
+}
+
+function getSelectedFiles(): File[] {
+	const selected: File[] = [];
+	for (const id of selectedFileIds) {
+		const entry = files.get(id);
+		if (entry) {
+			selected.push(entry.file);
+		}
+	}
+	return selected;
 }
 
 function switchTab(tabId: string): void {
@@ -132,6 +186,27 @@ function drawEmptyPlot(canvas: HTMLCanvasElement, title: string, message: string
 	ctx.fillText(message, 10, 40);
 }
 
+function drawEmptyPlotHost(host: HTMLElement, title: string, message: string): void {
+	host.innerHTML = `
+		<div class="analysis-plot-empty">
+			<strong>${title}</strong>
+			<span>${message}</span>
+		</div>
+	`;
+}
+
+function withAlpha(hexColor: string, alpha: number): string {
+	const match = /^#([0-9a-fA-F]{6})$/.exec(hexColor);
+	if (!match) {
+		return hexColor;
+	}
+	const hex = match[1];
+	const red = Number.parseInt(hex.slice(0, 2), 16);
+	const green = Number.parseInt(hex.slice(2, 4), 16);
+	const blue = Number.parseInt(hex.slice(4, 6), 16);
+	return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+}
+
 function drawLinePlot(
 	canvas: HTMLCanvasElement,
 	title: string,
@@ -140,7 +215,7 @@ function drawLinePlot(
 	x: Float32Array,
 	y: Float32Array,
 	lineColor: string,
-	options: { logX?: boolean; yMin?: number; yMax?: number } = {},
+	options: { logX?: boolean; yMin?: number; yMax?: number; wrapY?: boolean } = {},
 ): void {
 	const rect = canvas.getBoundingClientRect();
 	const width = Math.max(1, Math.floor(rect.width || canvas.width || 1));
@@ -258,21 +333,66 @@ function drawLinePlot(
 	}
 
 	ctx.beginPath();
-	let started = false;
+	let hasCurrentPoint = false;
+	let prevX = 0;
+	let prevY = 0;
+	const wrapY = options.wrapY === true;
+	const wrapRange = yMax - yMin;
+	const halfWrapRange = wrapRange * 0.5;
+
 	for (let i = 0; i < x.length; i += 1) {
 		const xv = x[i] ?? 0;
 		const yv = y[i] ?? 0;
 		if (!Number.isFinite(xv) || !Number.isFinite(yv)) {
+			hasCurrentPoint = false;
 			continue;
 		}
-		const px = projectX(xv);
-		const py = projectY(yv);
-		if (!started) {
-			ctx.moveTo(px, py);
-			started = true;
-		} else {
-			ctx.lineTo(px, py);
+
+		if (!hasCurrentPoint) {
+			ctx.moveTo(projectX(xv), projectY(yv));
+			prevX = xv;
+			prevY = yv;
+			hasCurrentPoint = true;
+			continue;
 		}
+
+		if (wrapY && Number.isFinite(wrapRange) && wrapRange > 0) {
+			const dy = yv - prevY;
+			if (dy > halfWrapRange || dy < -halfWrapRange) {
+				if (dy > halfWrapRange) {
+					const yAdjusted = yv - wrapRange;
+					const denom = yAdjusted - prevY;
+					if (Math.abs(denom) > 1e-12) {
+						const t = clamp((yMin - prevY) / denom, 0, 1);
+						const xEdge = prevX + (xv - prevX) * t;
+						ctx.lineTo(projectX(xEdge), projectY(yMin));
+						ctx.moveTo(projectX(xEdge), projectY(yMax));
+						ctx.lineTo(projectX(xv), projectY(yv));
+					} else {
+						ctx.lineTo(projectX(xv), projectY(yv));
+					}
+				} else {
+					const yAdjusted = yv + wrapRange;
+					const denom = yAdjusted - prevY;
+					if (Math.abs(denom) > 1e-12) {
+						const t = clamp((yMax - prevY) / denom, 0, 1);
+						const xEdge = prevX + (xv - prevX) * t;
+						ctx.lineTo(projectX(xEdge), projectY(yMax));
+						ctx.moveTo(projectX(xEdge), projectY(yMin));
+						ctx.lineTo(projectX(xv), projectY(yv));
+					} else {
+						ctx.lineTo(projectX(xv), projectY(yv));
+					}
+				}
+				prevX = xv;
+				prevY = yv;
+				continue;
+			}
+		}
+
+		ctx.lineTo(projectX(xv), projectY(yv));
+		prevX = xv;
+		prevY = yv;
 	}
 	ctx.strokeStyle = lineColor;
 	ctx.lineWidth = 1.5;
@@ -356,6 +476,61 @@ function computeTransferPhaseResponse(recorded: Float32Array, stimulus: Float32A
 	};
 }
 
+function computeTransferMagnitudeResponse(recorded: Float32Array, stimulus: Float32Array, sampleRate: number): MagnitudeResponse | null {
+	const n = Math.min(recorded.length, stimulus.length);
+	if (n < 8 || sampleRate <= 0) {
+		return null;
+	}
+
+	const nfft = nextPow2(n);
+	const rec = new Array<number>(nfft).fill(0);
+	const stim = new Array<number>(nfft).fill(0);
+	for (let i = 0; i < n; i += 1) {
+		rec[i] = recorded[i] ?? 0;
+		stim[i] = stimulus[i] ?? 0;
+	}
+
+	const [yRe, yIm] = fft(rec);
+	const [xRe, xIm] = fft(stim);
+	const nyquist = sampleRate / 2;
+	const minHz = 20;
+	const maxHz = Math.min(20000, nyquist);
+	const frequencies: number[] = [];
+	const valuesDb: number[] = [];
+
+	for (let k = 1; k < nfft / 2; k += 1) {
+		const freq = (k * sampleRate) / nfft;
+		if (freq < minHz || freq > maxHz) {
+			continue;
+		}
+
+		const denom = (xRe[k] * xRe[k]) + (xIm[k] * xIm[k]);
+		if (denom <= 1e-20) {
+			continue;
+		}
+
+		const hRe = ((yRe[k] * xRe[k]) + (yIm[k] * xIm[k])) / denom;
+		const hIm = ((yIm[k] * xRe[k]) - (yRe[k] * xIm[k])) / denom;
+		const magnitude = Math.sqrt((hRe * hRe) + (hIm * hIm));
+		if (!Number.isFinite(magnitude) || magnitude <= 1e-20) {
+			continue;
+		}
+
+		frequencies.push(freq);
+		valuesDb.push(20 * Math.log10(magnitude));
+	}
+
+	if (frequencies.length === 0) {
+		return null;
+	}
+
+	return {
+		frequencies: Float32Array.from(frequencies),
+		valuesDb: Float32Array.from(valuesDb),
+	};
+}
+
+
 function normalizePhaseAtReference(
 	frequencies: Float32Array,
 	phasesDeg: Float32Array,
@@ -381,6 +556,468 @@ function normalizePhaseAtReference(
 		normalized[i] = (phasesDeg[i] ?? 0) - refPhase;
 	}
 	return normalized;
+}
+
+function smoothPhaseFractional(phasesDeg: Float32Array, smoothingFraction: number, sampleRate: number): PhaseResponse {
+	if (phasesDeg.length === 0 || !Number.isFinite(sampleRate) || sampleRate <= 0) {
+		return { frequencies: new Float32Array(0), phasesDeg: new Float32Array(0) };
+	}
+
+	const nyquist = Math.max(LOG_FREQUENCY_MIN * 2, sampleRate / 2);
+	const frequencies = getFractionalOctaveFrequencies(
+		PLOT_AXIS_FRACTION,
+		LOG_FREQUENCY_MIN,
+		nyquist,
+		phasesDeg.length * 2,
+		sampleRate,
+	);
+	const smoothed = fractionalOctaveSmoothing(phasesDeg, smoothingFraction, frequencies);
+	return { frequencies, phasesDeg: smoothed };
+}
+
+function smoothMagnitudeFractional(valuesDb: Float32Array, smoothingFraction: number, sampleRate: number): MagnitudeResponse {
+	if (valuesDb.length === 0 || !Number.isFinite(sampleRate) || sampleRate <= 0) {
+		return { frequencies: new Float32Array(0), valuesDb: new Float32Array(0) };
+	}
+
+	const nyquist = Math.max(LOG_FREQUENCY_MIN * 2, sampleRate / 2);
+	const frequencies = getFractionalOctaveFrequencies(
+		PLOT_AXIS_FRACTION,
+		LOG_FREQUENCY_MIN,
+		nyquist,
+		valuesDb.length * 2,
+		sampleRate,
+	);
+	const smoothed = fractionalOctaveSmoothing(valuesDb, smoothingFraction, frequencies);
+	return { frequencies, valuesDb: smoothed };
+}
+
+function computeSpectrumDbWithFrequencyScale(samples: Float32Array, sampleRate: number, frequencyScale: number): MagnitudeResponse | null {
+	if (samples.length < 8 || sampleRate <= 0 || !Number.isFinite(frequencyScale) || frequencyScale <= 0) {
+		return null;
+	}
+
+	const nfft = nextPow2(samples.length);
+	const windowed = new Array<number>(nfft).fill(0);
+	for (let index = 0; index < samples.length; index += 1) {
+		const window = 0.5 * (1 - Math.cos((2 * Math.PI * index) / Math.max(1, samples.length - 1)));
+		windowed[index] = (samples[index] ?? 0) * window;
+	}
+
+	const [real, imag] = fft(windowed);
+	const frequencies: number[] = [];
+	const valuesDb: number[] = [];
+	for (let bin = 1; bin < nfft / 2; bin += 1) {
+		const frequency = ((bin * sampleRate) / nfft) * frequencyScale;
+		if (frequency < LOG_FREQUENCY_MIN || frequency > 20000) {
+			continue;
+		}
+		const magnitude = Math.sqrt((real[bin] ?? 0) ** 2 + (imag[bin] ?? 0) ** 2);
+		frequencies.push(frequency);
+		valuesDb.push(20 * Math.log10(Math.max(magnitude, 1e-12)));
+	}
+
+	if (frequencies.length === 0) {
+		return null;
+	}
+
+	return {
+		frequencies: Float32Array.from(frequencies),
+		valuesDb: Float32Array.from(valuesDb),
+	};
+}
+
+function extractWindowedSlice(signal: Float32Array, center: number, windowSize: number): Float32Array {
+	const output = new Float32Array(windowSize);
+	const half = Math.floor(windowSize / 2);
+	for (let i = 0; i < windowSize; i += 1) {
+		const sourceIndex = center - half + i;
+		if (sourceIndex < 0 || sourceIndex >= signal.length) {
+			output[i] = 0;
+			continue;
+		}
+		const window = 0.5 * (1 - Math.cos((2 * Math.PI * i) / Math.max(1, windowSize - 1)));
+		output[i] = (signal[sourceIndex] ?? 0) * window;
+	}
+	return output;
+}
+
+function estimateSweepStopHz(reference: Float32Array, sampleRate: number): number {
+	const nyquist = sampleRate / 2;
+	if (nyquist <= 0) {
+		return 20000;
+	}
+	return Math.min(nyquist * 0.98, nyquist >= 22050 ? 24000 : 20000);
+}
+
+function computeFarinaLikeHarmonicCurves(
+	measured: Float32Array,
+	reference: Float32Array,
+	sampleRate: number,
+	label: string,
+	windowSeconds = 0.2,
+	maxHarmonics = 5,
+): HarmonicCurve[] {
+	const n = Math.min(measured.length, reference.length);
+	if (n < 512 || sampleRate <= 0) {
+		return [];
+	}
+
+	const nfft = nextPow2(n);
+	const rec = new Float32Array(nfft);
+	const stim = new Float32Array(nfft);
+	rec.set(measured.subarray(0, n), 0);
+	stim.set(reference.subarray(0, n), 0);
+	const ir = calculateTwoChannelImpulseResponse(rec, stim) as Float32Array;
+	if (!ir || ir.length === 0) {
+		return [];
+	}
+
+	let peakIndex = 0;
+	let peakValue = 0;
+	for (let i = 0; i < ir.length; i += 1) {
+		const value = Math.abs(ir[i] ?? 0);
+		if (value > peakValue) {
+			peakValue = value;
+			peakIndex = i;
+		}
+	}
+
+	const durationSeconds = Math.max(1e-3, n / sampleRate);
+	const sweepStartHz = 20;
+	const sweepStopHz = 24000;
+	const ell = 2; //durationSeconds / Math.log(sweepStopHz / sweepStartHz);
+	const windowSize = Math.max(256, Math.round(0.25 * sampleRate));
+
+	const curves: HarmonicCurve[] = [];
+	for (let order = 1; order <= maxHarmonics + 1; order += 1) {
+		const lagSeconds = ell * Math.log(order);
+		const center = Math.round(peakIndex - lagSeconds * sampleRate);
+		const harmonicIr = extractWindowedSlice(ir, center, windowSize);
+		const magnitude = computeSpectrumDbWithFrequencyScale(harmonicIr, sampleRate, 1 / order);
+		if (!magnitude) {
+			continue;
+		}
+		const smoothed = smoothMagnitudeFractional(magnitude.valuesDb, DEFAULT_SMOOTHING_FRACTION, sampleRate);
+		curves.push({
+			label,
+			order,
+			smoothed,
+		});
+	}
+
+	return curves;
+}
+
+function computeThdSeries(harmonics: HarmonicCurve[]): SeriesResponse | null {
+	const fundamental = harmonics.find((entry) => entry.order === 1);
+	if (!fundamental || fundamental.smoothed.frequencies.length === 0) {
+		return null;
+	}
+
+	const frequencies = Float32Array.from(fundamental.smoothed.frequencies);
+	const values = new Float32Array(frequencies.length);
+	for (let index = 0; index < frequencies.length; index += 1) {
+		const frequency = frequencies[index] ?? 0;
+		const fundamentalDb = interpolateMagnitudeValue(fundamental.smoothed, frequency);
+		if (fundamentalDb === null || !Number.isFinite(fundamentalDb)) {
+			values[index] = Number.NaN;
+			continue;
+		}
+
+		const fundamentalLinear = Math.pow(10, fundamentalDb / 20);
+		if (!Number.isFinite(fundamentalLinear) || fundamentalLinear <= 1e-12) {
+			values[index] = Number.NaN;
+			continue;
+		}
+
+		let sumSquares = 0;
+		for (const harmonic of harmonics) {
+			if (harmonic.order <= 1) {
+				continue;
+			}
+			const harmonicDb = interpolateMagnitudeValue(harmonic.smoothed, frequency);
+			if (harmonicDb === null || !Number.isFinite(harmonicDb)) {
+				continue;
+			}
+			const harmonicLinear = Math.pow(10, harmonicDb / 20);
+			sumSquares += harmonicLinear * harmonicLinear;
+		}
+		values[index] = (Math.sqrt(sumSquares) / fundamentalLinear) * 100;
+	}
+
+	return { frequencies, values };
+}
+
+function interpolateMagnitudeValue(series: MagnitudeResponse, targetFrequency: number): number | null {
+	const { frequencies, valuesDb } = series;
+	if (frequencies.length === 0 || valuesDb.length === 0) {
+		return null;
+	}
+	if (targetFrequency < (frequencies[0] ?? 0) || targetFrequency > (frequencies[frequencies.length - 1] ?? 0)) {
+		return null;
+	}
+
+	for (let index = 1; index < frequencies.length; index += 1) {
+		const leftFrequency = frequencies[index - 1] ?? 0;
+		const rightFrequency = frequencies[index] ?? 0;
+		if (targetFrequency > rightFrequency) {
+			continue;
+		}
+		const leftValue = valuesDb[index - 1] ?? 0;
+		const rightValue = valuesDb[index] ?? 0;
+		if (Math.abs(rightFrequency - leftFrequency) <= 1e-12) {
+			return leftValue;
+		}
+		const leftLog = Math.log10(Math.max(1e-9, leftFrequency));
+		const rightLog = Math.log10(Math.max(1e-9, rightFrequency));
+		const targetLog = Math.log10(Math.max(1e-9, targetFrequency));
+		const fraction = (targetLog - leftLog) / Math.max(1e-12, rightLog - leftLog);
+		return leftValue + (rightValue - leftValue) * fraction;
+	}
+
+	return valuesDb[valuesDb.length - 1] ?? null;
+}
+
+function computeAverageMagnitudeResponse(curves: AnalysisCurve[]): MagnitudeResponse | null {
+	if (curves.length === 0) {
+		return null;
+	}
+
+	const base = curves[0]?.smoothed;
+	if (!base || base.frequencies.length === 0) {
+		return null;
+	}
+
+	const valuesDb = new Float32Array(base.frequencies.length);
+	for (let index = 0; index < base.frequencies.length; index += 1) {
+		const frequency = base.frequencies[index] ?? 0;
+		let sum = 0;
+		let count = 0;
+		for (const curve of curves) {
+			const value = interpolateMagnitudeValue(curve.smoothed, frequency);
+			if (value === null || !Number.isFinite(value)) {
+				continue;
+			}
+			sum += value;
+			count += 1;
+		}
+		valuesDb[index] = count > 0 ? sum / count : Number.NaN;
+	}
+
+	return {
+		frequencies: Float32Array.from(base.frequencies),
+		valuesDb,
+	};
+}
+
+function computeTargetMagnitudeResponse(frequencies: Float32Array, offsetDb: number): MagnitudeResponse {
+	const valuesDb = new Float32Array(frequencies.length);
+	for (let index = 0; index < frequencies.length; index += 1) {
+		const frequency = frequencies[index] ?? 1000;
+		valuesDb[index] = -Math.log10(Math.max(1e-9, frequency) / 1000) + offsetDb;
+	}
+	return {
+		frequencies: Float32Array.from(frequencies),
+		valuesDb,
+	};
+}
+
+function renderAnalysisFrequencyPlot(
+	host: HTMLElement,
+	curves: AnalysisCurve[],
+	averageCurve: MagnitudeResponse | null,
+	targetCurve: MagnitudeResponse | null,
+): void {
+	const traces: any[] = curves.flatMap((curve, index) => {
+		const color = ANALYSIS_COLORS[index % ANALYSIS_COLORS.length];
+		return [
+			{
+				type: "scatter",
+				mode: "lines",
+				name: `${curve.label} original`,
+				x: Array.from(curve.raw.frequencies),
+				y: Array.from(curve.raw.valuesDb),
+				line: { color: withAlpha(color, 0.15), width: 1 },
+				showlegend: false,
+				hovertemplate: "%{x:.1f} Hz<br>%{y:.2f} dB<extra>Original</extra>",
+			},
+			{
+				type: "scatter",
+				mode: "lines",
+				name: curve.label,
+				x: Array.from(curve.smoothed.frequencies),
+				y: Array.from(curve.smoothed.valuesDb),
+				line: { color, width: 2 },
+				hovertemplate: "%{x:.1f} Hz<br>%{y:.2f} dB<extra>1/6 octave</extra>",
+			},
+		];
+	});
+	if (averageCurve) {
+		traces.push({
+			type: "scatter",
+			mode: "lines",
+			name: "Average",
+			x: Array.from(averageCurve.frequencies),
+			y: Array.from(averageCurve.valuesDb),
+			line: { color: "#f8fafc", width: 3 },
+			hovertemplate: "%{x:.1f} Hz<br>%{y:.2f} dB<extra>Average</extra>",
+		});
+	}
+	if (targetCurve) {
+		traces.push({
+			type: "scatter",
+			mode: "lines",
+			name: "Target",
+			x: Array.from(targetCurve.frequencies),
+			y: Array.from(targetCurve.valuesDb),
+			line: { color: "#ef4444", width: 2, dash: "dot" },
+			hovertemplate: "%{x:.1f} Hz<br>%{y:.2f} dB<extra>Target</extra>",
+		});
+	}
+
+	void Plotly.react(
+		host,
+		traces,
+		{
+			title: { text: "Frequency response", font: { color: "#f8fafc", size: 14 } },
+			paper_bgcolor: "#000",
+			plot_bgcolor: "#000",
+			margin: { l: 56, r: 180, t: 36, b: 44 },
+			showlegend: true,
+			legend: {
+				orientation: "v",
+				yanchor: "top",
+				y: 1,
+				xanchor: "left",
+				x: 1.02,
+				font: { color: "#cbd5e1", size: 11 },
+			},
+			xaxis: {
+				title: { text: "Frequency (Hz)", font: { color: "#9aa4b2", size: 12 } },
+				type: "log",
+				range: [Math.log10(20), Math.log10(20000)],
+				gridcolor: "rgba(181, 192, 224, 0.12)",
+				zeroline: false,
+				color: "#9aa4b2",
+			},
+			yaxis: {
+				title: { text: "Magnitude (dB)", font: { color: "#9aa4b2", size: 12 } },
+				range: [-40, 20],
+				gridcolor: "rgba(181, 192, 224, 0.12)",
+				zeroline: false,
+				color: "#9aa4b2",
+			},
+		},
+		{
+			responsive: true,
+			displayModeBar: false,
+		},
+	);
+}
+
+function renderFarinaDistortionPlot(host: HTMLElement, harmonics: HarmonicCurve[]): void {
+	const traces = harmonics.map((curve, index) => {
+		const color = ANALYSIS_COLORS[index % ANALYSIS_COLORS.length];
+		return {
+			type: "scatter",
+			mode: "lines",
+			name: `${curve.label} ${curve.order === 1 ? "Fundamental" : `H${curve.order}`}`,
+			x: Array.from(curve.smoothed.frequencies),
+			y: Array.from(curve.smoothed.valuesDb),
+			line: { color, width: curve.order === 1 ? 2.2 : 1.4 },
+			hovertemplate: "%{x:.1f} Hz<br>%{y:.2f} dB<extra></extra>",
+		};
+	});
+
+	void Plotly.react(
+		host,
+		traces,
+		{
+			title: { text: "Farina-style distortion", font: { color: "#f8fafc", size: 14 } },
+			paper_bgcolor: "#000",
+			plot_bgcolor: "#000",
+			margin: { l: 56, r: 180, t: 36, b: 44 },
+			showlegend: true,
+			legend: { orientation: "v", yanchor: "top", y: 1, xanchor: "left", x: 1.02, font: { color: "#cbd5e1", size: 11 } },
+			xaxis: {
+				title: { text: "Frequency (Hz)", font: { color: "#9aa4b2", size: 12 } },
+				type: "log",
+				range: [Math.log10(20), Math.log10(20000)],
+				gridcolor: "rgba(181, 192, 224, 0.12)",
+				zeroline: false,
+				color: "#9aa4b2",
+			},
+			yaxis: {
+				title: { text: "Amplitude (dB)", font: { color: "#9aa4b2", size: 12 } },
+				range: [-85, 5],
+				gridcolor: "rgba(181, 192, 224, 0.12)",
+				zeroline: false,
+				color: "#9aa4b2",
+			},
+		},
+		{ responsive: true, displayModeBar: false },
+	);
+}
+
+function renderThdPlot(host: HTMLElement, seriesList: Array<{ label: string; series: SeriesResponse }>): void {
+	const traces = seriesList.map((entry, index) => ({
+		type: "scatter",
+		mode: "lines",
+		name: `${entry.label} THD`,
+		x: Array.from(entry.series.frequencies),
+		y: Array.from(entry.series.values),
+		line: { color: ANALYSIS_COLORS[index % ANALYSIS_COLORS.length], width: 2 },
+		hovertemplate: "%{x:.1f} Hz<br>%{y:.2f}%<extra></extra>",
+	}));
+
+	void Plotly.react(
+		host,
+		traces,
+		{
+			title: { text: "Total harmonic distortion", font: { color: "#f8fafc", size: 14 } },
+			paper_bgcolor: "#000",
+			plot_bgcolor: "#000",
+			margin: { l: 56, r: 180, t: 36, b: 44 },
+			showlegend: true,
+			legend: { orientation: "v", yanchor: "top", y: 1, xanchor: "left", x: 1.02, font: { color: "#cbd5e1", size: 11 } },
+			xaxis: {
+				title: { text: "Frequency (Hz)", font: { color: "#9aa4b2", size: 12 } },
+				type: "log",
+				range: [Math.log10(20), Math.log10(20000)],
+				gridcolor: "rgba(181, 192, 224, 0.12)",
+				zeroline: false,
+				color: "#9aa4b2",
+			},
+			yaxis: {
+				title: { text: "THD (%)", font: { color: "#9aa4b2", size: 12 } },
+				range: [0, 10],
+				gridcolor: "rgba(181, 192, 224, 0.12)",
+				zeroline: false,
+				color: "#9aa4b2",
+			},
+		},
+		{ responsive: true, displayModeBar: false },
+	);
+}
+
+function wrapPhaseToRange(phasesDeg: Float32Array, minDeg = -720, maxDeg = 720): Float32Array {
+	if (phasesDeg.length === 0) {
+		return phasesDeg;
+	}
+
+	const range = maxDeg - minDeg;
+	if (!Number.isFinite(range) || range <= 0) {
+		return Float32Array.from(phasesDeg);
+	}
+
+	const wrapped = new Float32Array(phasesDeg.length);
+	for (let i = 0; i < phasesDeg.length; i += 1) {
+		const value = phasesDeg[i] ?? 0;
+		const normalized = ((value - minDeg) % range + range) % range;
+		wrapped[i] = normalized + minDeg;
+	}
+	return wrapped;
 }
 
 function computeImpulseResponseWindowed(recorded: Float32Array, stimulus: Float32Array, sampleRate: number): { timeMs: Float32Array; amplitude: Float32Array } | null {
@@ -437,15 +1074,14 @@ function closeDynamicTab(tabId: string): void {
 
 	const session = plotSessions.get(tabId);
 	session?.measurement?.destroy();
-	session?.tool.destroy();
+	session?.tool?.destroy();
 
 	document.querySelector(`[data-tab="${tabId}"]`)?.remove();
 	document.querySelector(`[data-content="${tabId}"]`)?.remove();
 	plotSessions.delete(tabId);
 }
 
-function createAnalysisMarkup(tabId: string, fileName: string, sampleRate: number, channelCount: number, frameCount: number): string {
-	const durationSeconds = sampleRate > 0 ? frameCount / sampleRate : 0;
+function createWaveformMarkup(tabId: string): string {
 	return `
 		<div class="acquisition-toolbar" role="toolbar" aria-label="Acquisition controls">
 			<div class="acquisition-toolbar-group">
@@ -486,35 +1122,56 @@ function createAnalysisMarkup(tabId: string, fileName: string, sampleRate: numbe
 			<button id="analysisStopBtn-${tabId}" type="button" class="toolbar-button button acquisition-action-button" disabled>Stop</button>
 		</div>
 		<div id="waveform-tool-${tabId}" class="waveform-tool-host"></div>
-		<div class="analysis-extra-plots">
-			<section class="live-plot-card">
-				<h2>Impulse response</h2>
-				<canvas id="analysisImpulseCanvas-${tabId}" class="analysis-plot-canvas"></canvas>
-			</section>
-			<section class="live-plot-card">
-				<h2>Phase response</h2>
-				<canvas id="analysisPhaseCanvas-${tabId}" class="analysis-plot-canvas"></canvas>
-			</section>
+	`;
+}
+
+function createAnalysisMarkup(tabId: string, fileName: string, sampleRate: number, channelCount: number, frameCount: number): string {
+	const durationSeconds = sampleRate > 0 ? frameCount / sampleRate : 0;
+	return `
+		<div class="tab-inner-content">
+			<div class="loose-container">
+				<p class="info">1/6-octave smoothed transfer magnitude from channel 1 measured against channel 2 reference.</p>
+				<p class="info">${fileName} · ${sampleRate} Hz · ${channelCount} ch · ${durationSeconds.toFixed(2)} s</p>
+				<div class="analysis-target-controls">
+					<label for="analysisTargetOffset-${tabId}" class="acquisition-toolbar-label">Target offset</label>
+					<input id="analysisTargetOffset-${tabId}" class="toolbar-select analysis-target-input" type="number" value="0" step="0.5" min="-20" max="20" />
+					<span class="info">dB @ 1 kHz</span>
+				</div>
+			</div>
+			<div class="analysis-extra-plots">
+				<section class="live-plot-card">
+					<h2>Frequency response</h2>
+					<div id="analysisFrequencyPlot-${tabId}" class="analysis-plot-host"></div>
+				</section>
+				<section class="live-plot-card">
+					<h2>Farina-style distortion</h2>
+					<div id="analysisDistortionPlot-${tabId}" class="analysis-plot-host"></div>
+				</section>
+				<section class="live-plot-card">
+					<h2>THD</h2>
+					<div id="analysisThdPlot-${tabId}" class="analysis-plot-host"></div>
+				</section>
+			</div>
 		</div>
 	`;
 }
 
-function registerRecordedFile(file: File): LoadedAudioFile {
+function registerRecordedFile(file: File, options: { selected?: boolean } = {}): LoadedAudioFile {
 	const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
 	const entry: LoadedAudioFile = { id, file };
 	files.set(id, entry);
-	appendFileRow(entry);
+	appendFileRow(entry, options);
 	return entry;
 }
 
 function rerenderAllPlots(): void {
 	plotSessions.forEach((session) => {
-		session.tool.rerender();
+		session.tool?.rerender();
 		session.rerenderDerivedPlots?.();
 	});
 }
 
-async function openAnalysisTab(file: File): Promise<void> {
+async function openWaveformTab(file: File): Promise<void> {
 	const tabId = `analysis-${++tabCounter}`;
 	const shortName = file.name.length > 30 ? `${file.name.slice(0, 27)}...` : file.name;
 
@@ -535,7 +1192,7 @@ async function openAnalysisTab(file: File): Promise<void> {
 		const frameCount = parsed.channels[0]?.length ?? 0;
 		const channelCount = parsed.channels.length;
 
-		content.innerHTML = createAnalysisMarkup(tabId, file.name, sampleRate, channelCount, frameCount);
+		content.innerHTML = createWaveformMarkup(tabId);
 
 		const mountHost = document.getElementById(`waveform-tool-${tabId}`) as HTMLElement | null;
 		const stimulusSelect = document.getElementById(`analysisStimulusSelect-${tabId}`) as HTMLSelectElement | null;
@@ -547,8 +1204,6 @@ async function openAnalysisTab(file: File): Promise<void> {
 		const statusText = document.getElementById(`analysisStatusText-${tabId}`) as HTMLParagraphElement | null;
 		const recordButton = document.getElementById(`analysisRecordBtn-${tabId}`) as HTMLButtonElement | null;
 		const stopButton = document.getElementById(`analysisStopBtn-${tabId}`) as HTMLButtonElement | null;
-		const impulseCanvas = document.getElementById(`analysisImpulseCanvas-${tabId}`) as HTMLCanvasElement | null;
-		const phaseCanvas = document.getElementById(`analysisPhaseCanvas-${tabId}`) as HTMLCanvasElement | null;
 
 		if (!mountHost) {
 			throw new Error("Failed to create waveform tool host.");
@@ -562,63 +1217,10 @@ async function openAnalysisTab(file: File): Promise<void> {
 			!commentInput ||
 			!statusText ||
 			!recordButton ||
-			!stopButton ||
-			!impulseCanvas ||
-			!phaseCanvas
+			!stopButton
 		) {
 			throw new Error("Failed to create analysis acquisition toolbar.");
 		}
-
-		const renderDerivedPlots = (): void => {
-			if (parsed.channels.length < 2) {
-				drawEmptyPlot(impulseCanvas, "Impulse response", "Requires a two-channel file.");
-				drawEmptyPlot(phaseCanvas, "Phase response", "Requires a two-channel file.");
-				return;
-			}
-
-			const measured = parsed.channels[0] ?? new Float32Array(0);
-			const reference = parsed.channels[1] ?? new Float32Array(0);
-
-			const ir = computeImpulseResponseWindowed(measured, reference, sampleRate);
-			if (!ir) {
-				drawEmptyPlot(impulseCanvas, "Impulse response", "Could not compute impulse response.");
-			} else {
-				drawLinePlot(
-					impulseCanvas,
-					"Impulse response",
-					"Time (ms)",
-					"Amplitude",
-					ir.timeMs,
-					ir.amplitude,
-					"#f97316",
-				);
-			}
-
-			const phase = computeTransferPhaseResponse(measured, reference, sampleRate);
-			if (!phase) {
-				drawEmptyPlot(phaseCanvas, "Phase response", "Could not compute phase response.");
-			} else {
-				const phaseNormalized = normalizePhaseAtReference(phase.frequencies, phase.phasesDeg, 1000);
-				let phaseMin = Number.POSITIVE_INFINITY;
-				let phaseMax = Number.NEGATIVE_INFINITY;
-				for (let i = 0; i < phaseNormalized.length; i += 1) {
-					const v = phaseNormalized[i] ?? 0;
-					phaseMin = Math.min(phaseMin, v);
-					phaseMax = Math.max(phaseMax, v);
-				}
-				const padding = 15;
-				drawLinePlot(
-					phaseCanvas,
-					"Phase response (1 kHz ref)",
-					"Frequency (Hz)",
-					"Phase (deg)",
-					phase.frequencies,
-					phaseNormalized,
-					"#38bdf8",
-					{ logX: true, yMin: phaseMin - padding, yMax: phaseMax + padding },
-				);
-			}
-		};
 
 		const tool = mountWaveformTool(mountHost);
 		const measurement = createMeasurementController({
@@ -637,8 +1239,7 @@ async function openAnalysisTab(file: File): Promise<void> {
 			},
 		});
 		await tool.openFile(file);
-		renderDerivedPlots();
-		plotSessions.set(tabId, { tool, measurement, rerenderDerivedPlots: renderDerivedPlots });
+		plotSessions.set(tabId, { tool, measurement });
 		tabButton.classList.remove("tab-loading");
 		switchTab(tabId);
 		rerenderAllPlots();
@@ -650,9 +1251,154 @@ async function openAnalysisTab(file: File): Promise<void> {
 	}
 }
 
-function appendFileRow(entry: LoadedAudioFile): void {
+async function openAnalysisTab(inputFiles: File[] | File): Promise<void> {
+	const analysisFiles = Array.isArray(inputFiles) ? inputFiles : [inputFiles];
+	if (analysisFiles.length === 0) {
+		return;
+	}
+
+	const tabId = `analysis-${++tabCounter}`;
+	const shortName = analysisFiles.length === 1
+		? (analysisFiles[0]?.name.length ?? 0) > 30
+			? `${analysisFiles[0]?.name.slice(0, 27)}...`
+			: (analysisFiles[0]?.name ?? "Analysis")
+		: `${analysisFiles.length} files`;
+
+	const tabButton = document.createElement("button");
+	tabButton.className = "tab tab-closable tab-loading";
+	tabButton.dataset.tab = tabId;
+	tabButton.innerHTML = `<span class="tab-icon-analysis"></span>${shortName} <span class="tab-close" title="Close">x</span>`;
+	tabsInnerEl.append(tabButton);
+
+	const content = document.createElement("div");
+	content.className = "tab-content";
+	content.dataset.content = tabId;
+	tabContentsEl.append(content);
+
+	try {
+		const parsedFiles = await Promise.all(analysisFiles.map(async (file) => ({ file, parsed: await readMultichannelWavFile(file) })));
+		const sampleRate = parsedFiles[0]?.parsed.sampleRate ?? 0;
+		const frameCount = parsedFiles[0]?.parsed.channels[0]?.length ?? 0;
+		const channelCount = parsedFiles[0]?.parsed.channels.length ?? 0;
+		const fileLabel = analysisFiles.length === 1 ? analysisFiles[0]?.name ?? "Analysis" : `${analysisFiles.length} selected files`;
+
+		content.innerHTML = createAnalysisMarkup(tabId, fileLabel, sampleRate, channelCount, frameCount);
+
+		const frequencyPlot = document.getElementById(`analysisFrequencyPlot-${tabId}`) as HTMLElement | null;
+		const distortionPlot = document.getElementById(`analysisDistortionPlot-${tabId}`) as HTMLElement | null;
+		const thdPlot = document.getElementById(`analysisThdPlot-${tabId}`) as HTMLElement | null;
+		const targetOffsetInput = document.getElementById(`analysisTargetOffset-${tabId}`) as HTMLInputElement | null;
+		if (!frequencyPlot) {
+			throw new Error("Failed to create analysis frequency plot.");
+		}
+		if (!distortionPlot || !thdPlot) {
+			throw new Error("Failed to create distortion plots.");
+		}
+		if (!targetOffsetInput) {
+			throw new Error("Failed to create target offset control.");
+		}
+
+		const renderDerivedPlots = (): void => {
+			const curves: AnalysisCurve[] = [];
+			for (const { file, parsed } of parsedFiles) {
+				if (parsed.channels.length < 2) {
+					continue;
+				}
+				const measured = parsed.channels[0] ?? new Float32Array(0);
+				const reference = parsed.channels[1] ?? new Float32Array(0);
+				const magnitude = computeTransferMagnitudeResponse(measured, reference, parsed.sampleRate);
+				if (!magnitude) {
+					continue;
+				}
+				const magnitudeSmoothed = smoothMagnitudeFractional(magnitude.valuesDb, DEFAULT_SMOOTHING_FRACTION, parsed.sampleRate);
+				curves.push({
+					label: file.name,
+					raw: magnitude,
+					smoothed: magnitudeSmoothed,
+				});
+			}
+
+			if (curves.length === 0) {
+				drawEmptyPlotHost(frequencyPlot, "Frequency response", "Requires a two-channel file.");
+				return;
+			}
+			const averageCurve = computeAverageMagnitudeResponse(curves);
+			const targetOffsetDb = Number.parseFloat(targetOffsetInput.value || "0");
+			const targetBase = averageCurve ?? curves[0]?.smoothed ?? null;
+			const targetCurve = targetBase
+				? computeTargetMagnitudeResponse(targetBase.frequencies, Number.isFinite(targetOffsetDb) ? targetOffsetDb : 0)
+				: null;
+			renderAnalysisFrequencyPlot(frequencyPlot, curves, averageCurve, targetCurve);
+
+			const harmonicCurves: HarmonicCurve[] = [];
+			const thdSeries: Array<{ label: string; series: SeriesResponse }> = [];
+			for (const { file, parsed } of parsedFiles) {
+				if (parsed.channels.length < 2) {
+					continue;
+				}
+				const measured = parsed.channels[0] ?? new Float32Array(0);
+				const reference = parsed.channels[1] ?? new Float32Array(0);
+				const harmonics = computeFarinaLikeHarmonicCurves(measured, reference, parsed.sampleRate, file.name, 0.2, 5);
+				if (harmonics.length === 0) {
+					continue;
+				}
+				harmonicCurves.push(...harmonics);
+				const thd = computeThdSeries(harmonics);
+				if (thd) {
+					thdSeries.push({ label: file.name, series: thd });
+				}
+			}
+
+			if (harmonicCurves.length === 0) {
+				drawEmptyPlotHost(distortionPlot, "Farina-style distortion", "Requires a valid two-channel sweep/reference file.");
+			} else {
+				renderFarinaDistortionPlot(distortionPlot, harmonicCurves);
+			}
+
+			if (thdSeries.length === 0) {
+				drawEmptyPlotHost(thdPlot, "THD", "Could not compute THD from the selected files.");
+			} else {
+				renderThdPlot(thdPlot, thdSeries);
+			}
+		};
+
+		targetOffsetInput.addEventListener("input", renderDerivedPlots);
+
+		renderDerivedPlots();
+		plotSessions.set(tabId, { rerenderDerivedPlots: renderDerivedPlots });
+		tabButton.classList.remove("tab-loading");
+		switchTab(tabId);
+		rerenderAllPlots();
+	} catch (error) {
+		content.innerHTML = `<div class="tab-inner-content"><div class="loose-container"><p class="info">Failed to open analysis tab: ${error instanceof Error ? error.message : "unknown error"}</p></div></div>`;
+		tabButton.classList.remove("tab-loading");
+		tabButton.classList.add("tab-error");
+		switchTab(tabId);
+	}
+}
+
+function appendFileRow(entry: LoadedAudioFile, options: { selected?: boolean } = {}): void {
 	const row = document.createElement("tr");
 	row.dataset.fileId = entry.id;
+	const checkboxCell = document.createElement("td");
+	const checkbox = document.createElement("input");
+	checkbox.type = "checkbox";
+	checkbox.className = "file-select-checkbox";
+	checkbox.checked = options.selected === true;
+	if (checkbox.checked) {
+		selectedFileIds.add(entry.id);
+	}
+	checkbox.setAttribute("aria-label", `Select ${entry.file.name} for combined analysis`);
+	checkbox.addEventListener("change", () => {
+		if (checkbox.checked) {
+			selectedFileIds.add(entry.id);
+		} else {
+			selectedFileIds.delete(entry.id);
+		}
+		updateSelectedAnalysisButtonState();
+	});
+	checkboxCell.append(checkbox);
+	row.append(checkboxCell);
 
 	const nameCell = document.createElement("td");
 	nameCell.textContent = entry.file.name;
@@ -666,11 +1412,19 @@ function appendFileRow(entry: LoadedAudioFile): void {
 	const openButton = document.createElement("button");
 	openButton.type = "button";
 	openButton.className = "button-custom button-custom-secondary file-open-btn";
-	openButton.textContent = "Open tab";
+	openButton.textContent = "Open waveform tab";
 	openButton.addEventListener("click", () => {
-		void openAnalysisTab(entry.file);
+		void openWaveformTab(entry.file);
 	});
 	actionCell.append(openButton);
+	const analysisButton = document.createElement("button");
+	analysisButton.type = "button";
+	analysisButton.className = "button-custom button-custom-secondary file-open-btn";
+	analysisButton.textContent = "Open analysis tab";
+	analysisButton.addEventListener("click", () => {
+		void openAnalysisTab(entry.file);
+	});
+	actionCell.append(analysisButton);
 	row.append(actionCell);
 
 	fileTableBodyEl.append(row);
@@ -704,9 +1458,18 @@ tabsOuter.addEventListener("click", (event: MouseEvent) => {
 uploadInput.addEventListener("change", () => {
 	const fileList = Array.from(uploadInput.files ?? []);
 	for (const file of fileList) {
-		registerRecordedFile(file);
+		registerRecordedFile(file, { selected: true });
 	}
 	uploadInput.value = "";
+	updateSelectedAnalysisButtonState();
+});
+
+openSelectedAnalysisBtn?.addEventListener("click", () => {
+	const selectedFiles = getSelectedFiles();
+	if (selectedFiles.length === 0) {
+		return;
+	}
+	void openAnalysisTab(selectedFiles);
 });
 
 acquisitionMeasurementController = createMeasurementController({
@@ -736,9 +1499,11 @@ if (
 	liveStatusText &&
 	liveStartBtn &&
 	liveStopBtn &&
+	liveAdaptBtn &&
 	liveMicSplValue &&
 	liveReferenceSplValue &&
 	liveDifferenceSplValue &&
+	liveDelayValue &&
 	liveSplHistoryCanvas &&
 	liveSpectrumCanvas &&
 	liveImpulseCanvas &&
@@ -755,6 +1520,8 @@ if (
 		statusText: liveStatusText,
 		startButton: liveStartBtn,
 		stopButton: liveStopBtn,
+		adaptButton: liveAdaptBtn,
+		delayValue: liveDelayValue,
 		micSplValue: liveMicSplValue,
 		referenceSplValue: liveReferenceSplValue,
 		differenceSplValue: liveDifferenceSplValue,
@@ -774,8 +1541,9 @@ window.addEventListener("beforeunload", () => {
 	liveMonitorController?.destroy();
 	plotSessions.forEach((session) => {
 		session.measurement?.destroy();
-		session.tool.destroy();
+		session.tool?.destroy();
 	});
 });
 
 switchTab("upload");
+updateSelectedAnalysisButtonState();

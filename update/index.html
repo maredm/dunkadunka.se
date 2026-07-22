@@ -60,14 +60,18 @@
 						<div class="tab-inner-content">
 							<div class="loose-container">
 								<h2>Files</h2>
-								<p class="info">Upload one or more WAV files and open a new analysis tab with waveform and spectrogram plots.</p>
+								<p class="info">Upload one or more WAV files and open waveform tabs or combined analysis tabs.</p>
 								<p>
 									<input type="file" id="responseFileUpload" accept="audio/wav,.wav" multiple>
 									<label for="responseFileUpload" style="display: inline-block; margin-top: 1rem;" class="button-custom button-custom-secondary">Select files to upload</label>
 								</p>
+								<p>
+									<button id="openSelectedAnalysisBtn" type="button" class="button-custom button-custom-secondary" disabled>Open selected analysis tab</button>
+								</p>
 								<table class="file-table" id="fileTable">
 									<thead>
 										<tr>
+											<th>Select</th>
 											<th>File</th>
 											<th>Size</th>
 											<th>Action</th>
@@ -168,15 +172,21 @@
 								</select>
 							</div>
 							<div class="acquisition-toolbar-group acquisition-toolbar-group--compact">
-								<label for="liveWeightingSelect" class="acquisition-toolbar-label">Weight</label>
-								<select id="liveWeightingSelect" class="toolbar-select" aria-label="Spectrum and SPL weighting">
-									<option value="z" selected>Z</option>
-									<option value="a">A</option>
+								<label for="liveWeightingSelect" class="acquisition-toolbar-label">Level</label>
+								<select id="liveWeightingSelect" class="toolbar-select" aria-label="Live level metric">
+									<option value="laeq" selected>LAeq</option>
+									<option value="dba-fast">dBA (fast)</option>
+									<option value="dba-slow">dBA (slow)</option>
+									<option value="dba-instant">dBA (instant)</option>
+									<option value="lcmax">LCmax</option>
+									<option value="dbc-fast">dBC (fast)</option>
+									<option value="dbc-slow">dBC (slow)</option>
 								</select>
 							</div>
 							<p id="liveStatusText" class="acquisition-status" data-state="idle" aria-live="polite">Ready</p>
 							<button id="liveStartBtn" type="button" class="toolbar-button button acquisition-action-button">Start</button>
 							<button id="liveStopBtn" type="button" class="toolbar-button button acquisition-action-button" disabled>Stop</button>
+							<button id="liveAdaptBtn" type="button" class="toolbar-button button acquisition-action-button" disabled>Freeze delay</button>
 						</div>
 						<div class="tab-inner-content live-tab-content">
 							<div class="live-summary-grid">
@@ -191,6 +201,10 @@
 								<div class="live-summary-card">
 									<h2>Difference</h2>
 									<p id="liveDifferenceSplValue" class="live-summary-value">-- dB</p>
+								</div>
+								<div class="live-summary-card">
+									<h2>Delay alignment</h2>
+									<p id="liveDelayValue" class="live-summary-value">-- ms</p>
 								</div>
 							</div>
 							<div class="live-plot-grid">

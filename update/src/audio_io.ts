@@ -595,6 +595,7 @@ export async function startLiveMonitor(options: LiveMonitorOptions = {}): Promis
 	let micInput: MonitorInputNodes | null = null;
 	let referenceInput: MonitorInputNodes | null = null;
 	let closed = false;
+	const useSharedInput = !!referenceDeviceId && referenceDeviceId === micDeviceId;
 
 	const cleanup = async (): Promise<void> => {
 		if (closed) {
@@ -602,11 +603,14 @@ export async function startLiveMonitor(options: LiveMonitorOptions = {}): Promis
 		}
 		closed = true;
 
-		const inputs = [micInput, referenceInput];
+		const inputs = new Set<MonitorInputNodes>();
+		if (micInput) {
+			inputs.add(micInput);
+		}
+		if (referenceInput) {
+			inputs.add(referenceInput);
+		}
 		for (const input of inputs) {
-			if (!input) {
-				continue;
-			}
 			input.source.disconnect();
 			input.splitter.disconnect();
 			stopStream(input.stream);
@@ -618,7 +622,7 @@ export async function startLiveMonitor(options: LiveMonitorOptions = {}): Promis
 	try {
 		micInput = await createMonitorInput(context, micDeviceId, fftSize);
 		if (referenceDeviceId) {
-			referenceInput = await createMonitorInput(context, referenceDeviceId, fftSize);
+			referenceInput = useSharedInput ? micInput : await createMonitorInput(context, referenceDeviceId, fftSize);
 		}
 
 		return {

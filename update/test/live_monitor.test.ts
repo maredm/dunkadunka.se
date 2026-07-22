@@ -2,13 +2,10 @@ import { expect, test } from "bun:test";
 
 import {
 	applyExponentialAverage,
-	applyFrequencyWeightingToWaveform,
 	buildSmoothedSpectrum,
-	computeExponentialAverageAlpha,
-	computeWaveformDecibels,
-	computeWeightedWaveformDecibels,
 } from "../src/live_monitor";
-import { A_WEIGHTING_COEFFICIENTS, applyAWeightingToBuffer } from "../src/signal";
+import { computeExponentialAverageAlpha, computeWaveformDecibels } from "../src/level_meter";
+import { getFrequencyWeightingGainDb } from "../src/weighting";
 
 test("computeWaveformDecibels returns 0 dBFS for unity sine RMS scaled to full scale square", () => {
 	const samples = new Float32Array([1, -1, 1, -1]);
@@ -36,56 +33,19 @@ test("buildSmoothedSpectrum returns logarithmic points in range", () => {
 	expect(Number.isFinite(maxDb)).toBe(true);
 });
 
-test("signal A-weighting helper uses the expected filter state size", () => {
-	const state = new Float32Array(A_WEIGHTING_COEFFICIENTS[0].length);
-	const filtered = applyAWeightingToBuffer(new Float32Array([1, 0, 0, 0]), state);
+test("frequency weighting response attenuates 100 Hz more for A than C", () => {
+	const aGain = getFrequencyWeightingGainDb("a", 100);
+	const cGain = getFrequencyWeightingGainDb("c", 100);
 
-	expect(filtered.length).toBe(4);
-	expect(state.length).toBe(A_WEIGHTING_COEFFICIENTS[0].length);
-	expect(Array.from(filtered).some((value) => value !== 0)).toBe(true);
-});
-
-test("A-weighted live level is lower than Z-weighted level for low frequency content", () => {
-	const samples = new Float32Array(Array.from({ length: 2048 }, (_, index) => Math.sin((2 * Math.PI * 100 * index) / 48000)));
-	const zLevel = computeWeightedWaveformDecibels(samples, "z");
-	const aLevel = computeWeightedWaveformDecibels(samples, "a");
-
-	expect(aLevel).toBeLessThan(zLevel - 5);
-});
-
-test("A-weighted live level stays stable for repeated overlapping windows", () => {
-	const samples = new Float32Array(Array.from({ length: 2048 }, (_, index) => Math.sin((2 * Math.PI * 1000 * index) / 48000)));
-	const first = computeWeightedWaveformDecibels(samples, "a");
-	const second = computeWeightedWaveformDecibels(samples, "a");
-
-	expect(second).toBeCloseTo(first, 6);
-});
-
-test("A-weighting state carries forward across split buffers", () => {
-	const samples = new Float32Array(Array.from({ length: 4096 }, (_, index) => Math.sin((2 * Math.PI * 1000 * index) / 48000)));
-	const fullState = new Float32Array(A_WEIGHTING_COEFFICIENTS[0].length);
-	const full = applyAWeightingToBuffer(samples, fullState);
-
-	const splitState = new Float32Array(A_WEIGHTING_COEFFICIENTS[0].length);
-	const firstHalf = applyAWeightingToBuffer(samples.subarray(0, 2048), splitState);
-	const secondHalf = applyAWeightingToBuffer(samples.subarray(2048), splitState);
-	const joined = new Float32Array(samples.length);
-	joined.set(firstHalf, 0);
-	joined.set(secondHalf, firstHalf.length);
-
-	for (let index = 0; index < joined.length; index += 1) {
-		expect(joined[index]).toBeCloseTo(full[index], 5);
-	}
+	expect(aGain).toBeLessThan(cGain - 5);
 });
 
 test("live spectrum remains unweighted when SPL weighting changes", () => {
 	const samples = new Float32Array(Array.from({ length: 4096 }, (_, index) => Math.sin((2 * Math.PI * 100 * index) / 48000)));
 	const zSpectrum = buildSmoothedSpectrum(samples, 48000, 1 / 6);
-	const weightedWaveformSpectrum = buildSmoothedSpectrum(applyFrequencyWeightingToWaveform(samples, "a"), 48000, 1 / 6);
 	const unweightedSpectrum = buildSmoothedSpectrum(samples, 48000, 1 / 6);
 	const bandIndex = zSpectrum.frequencies.findIndex((value) => value >= 100);
 
 	expect(bandIndex).toBeGreaterThanOrEqual(0);
-	expect(weightedWaveformSpectrum.valuesDb[bandIndex]).toBeLessThan(zSpectrum.valuesDb[bandIndex] - 5);
 	expect(unweightedSpectrum.valuesDb[bandIndex]).toBeCloseTo(zSpectrum.valuesDb[bandIndex], 6);
 });
