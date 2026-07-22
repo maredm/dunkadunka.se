@@ -65,6 +65,7 @@ const DEFAULT_AVERAGING_SECONDS = 1;
 const SPECTRUM_GRID_FREQUENCIES = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
 const LEVEL_GRID_VALUES = [-90, -80, -70, -60, -50, -40, -30, -20, -10, 0];
 const SPECTRUM_LEVEL_GRID_VALUES = [-50, -40, -30, -20, -10, 0, 10];
+const LIVE_PLOT_MIN_UPDATE_MS = 100;
 const DERIVED_PLOT_MIN_UPDATE_MS = 250;
 const DERIVED_AVERAGING_SECONDS = 15;
 const DELAY_ALIGNMENT_SECONDS = 120;
@@ -582,6 +583,8 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 	let history: LiveMonitorHistoryPoint[] = [];
 	let micLevelMeter: LevelMeterState | null = null;
 	let referenceLevelMeter: LevelMeterState | null = null;
+	let lastSplPlotUpdateMs = 0;
+	let lastSpectrumPlotUpdateMs = 0;
 	let lastDerivedPlotUpdateMs = 0;
 	let smoothedDelaySamples: number | null = null;
 	let delaySampleRate: number | null = null;
@@ -748,11 +751,21 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 		const calibratedMicLevel = micLevel + calibrationDb;
 		const differenceLevel = referenceLevel === null ? null : calibratedMicLevel - referenceLevel;
 		history.push(createHistoryPoint(currentTime / 1000, calibratedMicLevel, referenceLevel));
-		history = history.filter((point) => (currentTime / 1000) - point.timeSeconds <= HISTORY_SECONDS);
+		const historyCutoffSeconds = (currentTime / 1000) - HISTORY_SECONDS;
+		let staleHistoryCount = 0;
+		while (staleHistoryCount < history.length && history[staleHistoryCount].timeSeconds < historyCutoffSeconds) {
+			staleHistoryCount += 1;
+		}
+		if (staleHistoryCount > 0) {
+			history.splice(0, staleHistoryCount);
+		}
 		micSplValue.textContent = formatCalibratedLevel(micLevel, calibrationDb);
 		referenceSplValue.textContent = formatMetricLevel(referenceLevel, metric);
 		differenceSplValue.textContent = formatDifferenceLevel(differenceLevel);
-		renderState();
+		if ((currentTime - lastSplPlotUpdateMs) >= LIVE_PLOT_MIN_UPDATE_MS) {
+			lastSplPlotUpdateMs = currentTime;
+			renderState();
+		}
 
 		const micSpectrumRaw = buildSmoothedSpectrum(snapshot.micWaveform, snapshot.sampleRate, smoothingFraction);
 		averagedMicSpectrum = applyExponentialAverage(averagedMicSpectrum, micSpectrumRaw.valuesDb, alpha);
@@ -774,7 +787,10 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 			referenceLevelMeter = null;
 		}
 
-		renderSpectrum(micSpectrum, referenceSpectrum, snapshot.sampleRate);
+		if ((currentTime - lastSpectrumPlotUpdateMs) >= LIVE_PLOT_MIN_UPDATE_MS) {
+			lastSpectrumPlotUpdateMs = currentTime;
+			renderSpectrum(micSpectrum, referenceSpectrum, snapshot.sampleRate);
+		}
 
 		if ((currentTime - lastDerivedPlotUpdateMs) >= DERIVED_PLOT_MIN_UPDATE_MS) {
 			lastDerivedPlotUpdateMs = currentTime;
@@ -799,6 +815,8 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 		averagedMicSpectrum = null;
 		averagedReferenceSpectrum = null;
 		lastFrameTime = 0;
+		lastSplPlotUpdateMs = 0;
+		lastSpectrumPlotUpdateMs = 0;
 		lastDerivedPlotUpdateMs = 0;
 		resetDelayAlignment();
 		micLevelMeter = null;

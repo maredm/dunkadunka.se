@@ -41,10 +41,11 @@ type AlignedImpulseTrace = {
 	delaySamples: number;
 };
 
+type DelayDisplayUnit = "ms" | "m";
+
 type PlotSession = {
 	tool?: WaveformToolHandle | null;
 	measurement?: MeasurementController | null;
-	rerenderDerivedPlots?: () => void;
 };
 
 type PhaseResponse = {
@@ -65,6 +66,7 @@ type MagnitudeResponseWithStdDev = MagnitudeResponse & {
 const DEFAULT_SMOOTHING_FRACTION = 1 / 6;
 const PLOT_AXIS_FRACTION = 1 / 96;
 const LOG_FREQUENCY_MIN = 20;
+const SPEED_OF_SOUND_METERS_PER_SECOND = 343;
 const ANALYSIS_PLOTLY_CONFIG = {
 	responsive: true,
 	displayModeBar: true,
@@ -216,6 +218,22 @@ function drawEmptyPlotHost(host: HTMLElement, title: string, message: string): v
 			<span>${message}</span>
 		</div>
 	`;
+}
+
+function convertDelayMsForDisplay(delayMs: number, unit: DelayDisplayUnit): number {
+	if (unit === "m") {
+		return delayMs * (SPEED_OF_SOUND_METERS_PER_SECOND / 1000);
+	}
+	return delayMs;
+}
+
+function getDelayDisplayUnitLabel(unit: DelayDisplayUnit): string {
+	return unit === "m" ? "m" : "ms";
+}
+
+function formatDelayForDisplay(delayMs: number, unit: DelayDisplayUnit, digits = 3): string {
+	const converted = convertDelayMsForDisplay(delayMs, unit);
+	return `${converted.toFixed(digits)} ${getDelayDisplayUnitLabel(unit)}`;
 }
 
 function withAlpha(hexColor: string, alpha: number): string {
@@ -1032,7 +1050,12 @@ function renderAnalysisFrequencyPlot(
 	);
 }
 
-function renderAnalysisPhaseDelayPlot(host: HTMLElement, curves: AnalysisCurve[], delayOffsetMs: number = 0): void {
+function renderAnalysisPhaseDelayPlot(
+	host: HTMLElement,
+	curves: AnalysisCurve[],
+	delayOffsetMs: number = 0,
+	displayUnit: DelayDisplayUnit = "ms",
+): void {
 	const traces: any[] = curves.flatMap((curve, index) => {
 		const color = ANALYSIS_COLORS[index % ANALYSIS_COLORS.length];
 		// Calculate group delay from phase: gd = -d(phase)/d(freq)
@@ -1055,8 +1078,12 @@ function renderAnalysisPhaseDelayPlot(host: HTMLElement, curves: AnalysisCurve[]
 			const phaseRad = dp * (Math.PI / 180);
 			const gd = (-phaseRad / df) / (2 * Math.PI) * 1000; // convert to ms
 			const gdCompensated = gd - delayOffsetMs; // subtract ch3/ch2 delay
-			groupDelays.push(Number.isFinite(gdCompensated) ? gdCompensated : Number.NaN);
+			const gdDisplay = convertDelayMsForDisplay(gdCompensated, displayUnit);
+			groupDelays.push(Number.isFinite(gdDisplay) ? gdDisplay : Number.NaN);
 		}
+
+		const delayUnitLabel = getDelayDisplayUnitLabel(displayUnit);
+		const delayHoverFormat = displayUnit === "m" ? "%{y:.4f}" : "%{y:.2f}";
 
 		return [{
 			type: "scatter",
@@ -1065,9 +1092,13 @@ function renderAnalysisPhaseDelayPlot(host: HTMLElement, curves: AnalysisCurve[]
 			x: frequencies,
 			y: groupDelays,
 			line: { color, width: 2 },
-			hovertemplate: "%{x:.1f} Hz<br>%{y:.2f} ms<extra>Group delay</extra>",
+			hovertemplate: `%{x:.1f} Hz<br>${delayHoverFormat} ${delayUnitLabel}<extra>Group delay</extra>`,
 		}];
 	});
+
+	const yMin = convertDelayMsForDisplay(-10, displayUnit);
+	const yMax = convertDelayMsForDisplay(40, displayUnit);
+	const delayUnitLabel = getDelayDisplayUnitLabel(displayUnit);
 
 	void Plotly.react(
 		host,
@@ -1095,8 +1126,8 @@ function renderAnalysisPhaseDelayPlot(host: HTMLElement, curves: AnalysisCurve[]
 				color: "#9aa4b2",
 			},
 			yaxis: {
-				title: { text: "Group delay (ms)", font: { color: "#9aa4b2", size: 12 } },
-				range: [-10, 40],
+				title: { text: `Group delay (${delayUnitLabel})`, font: { color: "#9aa4b2", size: 12 } },
+				range: [yMin, yMax],
 				gridcolor: "rgba(181, 192, 224, 0.12)",
 				zeroline: false,
 				color: "#9aa4b2",
@@ -1191,15 +1222,23 @@ function renderThdPlot(host: HTMLElement, seriesList: Array<{ label: string; ser
 	);
 }
 
-function renderAlignedImpulseResponsePlot(host: HTMLElement, traces: AlignedImpulseTrace[]): void {
+function renderAlignedImpulseResponsePlot(
+	host: HTMLElement,
+	traces: AlignedImpulseTrace[],
+	displayUnit: DelayDisplayUnit = "ms",
+): void {
+	const delayUnitLabel = getDelayDisplayUnitLabel(displayUnit);
+	const xHoverFormat = displayUnit === "m" ? "%{x:.4f}" : "%{x:.3f}";
+	const xMin = convertDelayMsForDisplay(-10, displayUnit);
+	const xMax = convertDelayMsForDisplay(40, displayUnit);
 	const plotTraces = traces.map((entry, index) => ({
 		type: "scatter",
 		mode: "lines",
-		name: `${entry.label} (${entry.delayMs.toFixed(3)} ms)`,
-		x: Array.from(entry.timeMs),
+		name: `${entry.label} (${formatDelayForDisplay(entry.delayMs, displayUnit, displayUnit === "m" ? 4 : 3)})`,
+		x: Array.from(entry.timeMs, (value) => convertDelayMsForDisplay(value, displayUnit)),
 		y: Array.from(entry.amplitude),
 		line: { color: ANALYSIS_COLORS[index % ANALYSIS_COLORS.length], width: 2 },
-		hovertemplate: "%{x:.3f} ms<br>%{y:.5f}<extra></extra>",
+		hovertemplate: `${xHoverFormat} ${delayUnitLabel}<br>%{y:.5f}<extra></extra>`,
 	}));
 
 	void Plotly.react(
@@ -1213,8 +1252,8 @@ function renderAlignedImpulseResponsePlot(host: HTMLElement, traces: AlignedImpu
 			showlegend: true,
 			legend: { orientation: "v", yanchor: "top", y: 1, xanchor: "left", x: 1.02, font: { color: "#cbd5e1", size: 11 } },
 			xaxis: {
-				title: { text: "Time (ms)", font: { color: "#9aa4b2", size: 12 } },
-				range: [-10, 40],
+				title: { text: `Time (${delayUnitLabel})`, font: { color: "#9aa4b2", size: 12 } },
+				range: [xMin, xMax],
 				gridcolor: "rgba(181, 192, 224, 0.12)",
 				zeroline: false,
 				color: "#9aa4b2",
@@ -1519,12 +1558,20 @@ function createAnalysisMarkup(tabId: string, fileName: string, sampleRate: numbe
 					<option value="0.0208">1/48 octave</option>
 				</select>
 			</div>
+			<div class="acquisition-toolbar-group">
+				<label for="analysisDelayUnit-${tabId}" class="acquisition-toolbar-label">Delay unit</label>
+				<select id="analysisDelayUnit-${tabId}" class="toolbar-select">
+					<option value="ms" selected>ms</option>
+					<option value="m">meters</option>
+				</select>
+			</div>
 			<div class="acquisition-toolbar-group" style="margin-left: auto;">
 				<button id="analysisUpdateBtn-${tabId}" type="button" class="toolbar-button button acquisition-action-button" style="background-color: #3b82f6; border-color: #2563eb;">Update analysis</button>
 			</div>
 		</div>
 		<div class="tab-inner-content">
 			<div class="loose-container">
+				<p class="info">Press "Update analysis" to run or refresh the analysis plots.</p>
 				<p class="info">1/6-octave smoothed transfer magnitude from channel 1 measured against channel 2 reference.</p>
 				<p id="analysisDelaySummary-${tabId}" class="info">Ch3 -> Ch2 delay compensation: unavailable (requires channel 3).</p>
 				<p class="info">${fileName} · ${sampleRate} Hz · ${channelCount} ch · ${durationSeconds.toFixed(2)} s</p>
@@ -1567,7 +1614,6 @@ function registerRecordedFile(file: File, options: { selected?: boolean } = {}):
 function rerenderAllPlots(): void {
 	plotSessions.forEach((session) => {
 		session.tool?.rerender();
-		session.rerenderDerivedPlots?.();
 	});
 }
 
@@ -1699,7 +1745,8 @@ async function openAnalysisTab(inputFiles: File[] | File): Promise<void> {
 		const delaySummary = document.getElementById(`analysisDelaySummary-${tabId}`) as HTMLElement | null;
 		const targetOffsetInput = document.getElementById(`analysisTargetOffset-${tabId}`) as HTMLInputElement | null;
 		const farinaWindowInput = document.getElementById(`analysisFarinaWindow-${tabId}`) as HTMLInputElement | null;
-		const smoothingFractionInput = document.getElementById(`analysisSmoothingFraction-${tabId}`) as HTMLInputElement | null;
+		const smoothingFractionInput = document.getElementById(`analysisSmoothingFraction-${tabId}`) as HTMLSelectElement | null;
+		const delayUnitInput = document.getElementById(`analysisDelayUnit-${tabId}`) as HTMLSelectElement | null;
 		const updateBtn = document.getElementById(`analysisUpdateBtn-${tabId}`) as HTMLButtonElement | null;
 		if (!frequencyPlot) {
 			throw new Error("Failed to create analysis frequency plot.");
@@ -1716,12 +1763,16 @@ async function openAnalysisTab(inputFiles: File[] | File): Promise<void> {
 		if (!smoothingFractionInput) {
 			throw new Error("Failed to create smoothing fraction control.");
 		}
+		if (!delayUnitInput) {
+			throw new Error("Failed to create delay unit control.");
+		}
 		if (!updateBtn) {
 			throw new Error("Failed to create update button.");
 		}
 
 		const renderDerivedPlots = (): void => {
 			const smoothingFraction = Number.parseFloat(smoothingFractionInput.value || "0.1667");
+			const delayDisplayUnit: DelayDisplayUnit = delayUnitInput.value === "m" ? "m" : "ms";
 			const curves: AnalysisCurve[] = [];
 			let ch3Ch2DelayMs = 0;
 			
@@ -1814,14 +1865,14 @@ async function openAnalysisTab(inputFiles: File[] | File): Promise<void> {
 				delaySummary.textContent = "Ch3 -> Ch2 delay compensation: unavailable (requires channel 3).";
 			} else if (alignmentTraces.length === 1) {
 				const entry = alignmentTraces[0];
-				delaySummary.textContent = `Ch3 -> Ch2 delay compensation: ${entry.delayMs.toFixed(3)} ms (${entry.delaySamples.toFixed(1)} samples).`;
+				delaySummary.textContent = `Ch3 -> Ch2 delay compensation: ${formatDelayForDisplay(entry.delayMs, delayDisplayUnit)} (${entry.delaySamples.toFixed(1)} samples).`;
 			} else {
 				const averageMs = alignmentTraces.reduce((sum, entry) => sum + entry.delayMs, 0) / alignmentTraces.length;
-				delaySummary.textContent = `Ch3 -> Ch2 delay compensation: average ${averageMs.toFixed(3)} ms across ${alignmentTraces.length} files.`;
+				delaySummary.textContent = `Ch3 -> Ch2 delay compensation: average ${formatDelayForDisplay(averageMs, delayDisplayUnit)} across ${alignmentTraces.length} files.`;
 			}
 
 			if (alignmentTraces.length > 0) {
-				renderAlignedImpulseResponsePlot(alignmentIrPlot, alignmentTraces);
+				renderAlignedImpulseResponsePlot(alignmentIrPlot, alignmentTraces, delayDisplayUnit);
 			}
 
 			const harmonicCurves: HarmonicCurve[] = [];
@@ -1858,7 +1909,7 @@ async function openAnalysisTab(inputFiles: File[] | File): Promise<void> {
 
 			// Render phase delay plot last
 			if (curves.length > 0) {
-				renderAnalysisPhaseDelayPlot(phaseDelayPlot, curves, ch3Ch2DelayMs);
+				renderAnalysisPhaseDelayPlot(phaseDelayPlot, curves, ch3Ch2DelayMs, delayDisplayUnit);
 			} else {
 				drawEmptyPlotHost(phaseDelayPlot, "Group delay (phase)", "Requires a two-channel file.");
 			}
@@ -1872,9 +1923,8 @@ async function openAnalysisTab(inputFiles: File[] | File): Promise<void> {
 		updateAnalysisPlotLayout();
 
 		updateBtn.addEventListener("click", renderDerivedPlots);
-
 		renderDerivedPlots();
-		plotSessions.set(tabId, { rerenderDerivedPlots: renderDerivedPlots });
+		plotSessions.set(tabId, {});
 		tabButton.classList.remove("tab-loading");
 		switchTab(tabId);
 		rerenderAllPlots();
