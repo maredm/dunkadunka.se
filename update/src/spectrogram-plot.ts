@@ -1,3 +1,4 @@
+import Plotly from "plotly.js-dist-min";
 import { fft } from "./fft";
 import type { NumberArray } from "./signal";
 import { waveformColormap } from "./waveform-colormap";
@@ -34,8 +35,15 @@ const SPECTROGRAM_TICKS_BY_STEP: number[][] = [
 	[0, 20, 50, 100, 200, 500, 1000, 2000, 5000, 8000, 10000, 16000, 20000, 24000],
 ];
 
+const PLOTLY_CONFIG = {
+	responsive: true,
+	displayModeBar: false,
+	staticPlot: true,
+};
+
 export class SpectrogramPlot {
 	private readonly canvas: HTMLCanvasElement;
+	private readonly plotHost: HTMLDivElement;
 	private readonly xAxis: HTMLElement | null;
 	private readonly yAxis: HTMLElement | null;
 	private readonly zoomOverlay: HTMLDivElement | null;
@@ -48,6 +56,7 @@ export class SpectrogramPlot {
 
 	constructor(canvas: HTMLCanvasElement, axes: SpectrogramPlotAxes = {}) {
 		this.canvas = canvas;
+		this.plotHost = this.createPlotHost(canvas);
 		this.xAxis = axes.xAxis ?? null;
 		this.yAxis = axes.yAxis ?? null;
 		this.zoomOverlay = this.createZoomOverlay();
@@ -99,17 +108,198 @@ export class SpectrogramPlot {
 			this.samples = Float32Array.from(samples);
 		}
 
-		const context = this.prepareCanvas();
-		if (!context) {
+		const { startSample, stopSample } = this.getVisibleSampleWindow();
+		const visibleSampleCount = Math.max(0, stopSample - startSample);
+		const axisHeight = Math.max(1, Math.floor(this.canvas.getBoundingClientRect().height || 1));
+		const axisWidth = Math.max(1, Math.floor(this.canvas.getBoundingClientRect().width || 1));
+		const { startSeconds, stopSeconds } = this.getVisibleWindowSeconds();
+
+		if (visibleSampleCount <= 1 || this.samples.length === 0 || this.sampleRate <= 0) {
+			void Plotly.react(this.plotHost, [], {
+				paper_bgcolor: "#000000",
+				plot_bgcolor: "#000000",
+				margin: { l: 0, r: 0, t: 0, b: 0, pad: 0 },
+				xaxis: { visible: false },
+				yaxis: { visible: false },
+			}, PLOTLY_CONFIG);
+			this.setZoomOverlayVisible(false);
 			return;
 		}
 
-		const { ctx, width, height } = context;
-		ctx.clearRect(0, 0, width, height);
-		this.drawBackground(ctx, width, height);
-		this.drawGrid(ctx, width, height);
-		this.drawSpectrogram(ctx, width, height);
+		const renderWidth = Math.max(64, Math.min(axisWidth, 1024));
+		const renderHeight = Math.max(64, Math.min(axisHeight, 512));
+		const magnitudesByColumn = this.buildMagnitudeColumns(renderWidth, startSample, visibleSampleCount);
+		let globalMaxDb = -Infinity;
+		let globalMinDb = Infinity;
+
+		for (const column of magnitudesByColumn) {
+			for (let bin = 0; bin < column.length; bin += 1) {
+				const dbValue = 20 * Math.log10((column[bin] ?? 0) + 1e-12);
+				globalMaxDb = Math.max(globalMaxDb, dbValue);
+				globalMinDb = Math.min(globalMinDb, dbValue);
+			}
+		}
+
+		if (!Number.isFinite(globalMaxDb)) {
+			this.setZoomOverlayVisible(false);
+			return;
+		}
+
+		if (!Number.isFinite(globalMinDb)) {
+			globalMinDb = globalMaxDb - SPECTROGRAM_DYNAMIC_RANGE_DB;
+		}
+
+		if (globalMaxDb - globalMinDb > SPECTROGRAM_DYNAMIC_RANGE_DB) {
+			globalMinDb = globalMaxDb - SPECTROGRAM_DYNAMIC_RANGE_DB;
+		}
+
+		const dbSpan = Math.max(1e-12, globalMaxDb - globalMinDb);
+		const binCount = this.getMagnitudeBinCount();
+		const z: number[][] = new Array(renderHeight);
+		const yRows: number[] = new Array(renderHeight);
+
+		for (let row = 0; row < renderHeight; row += 1) {
+			const rowValues = new Array<number>(renderWidth);
+			const rowIndexFromBottom = renderHeight - 1 - row;
+			const { startBin, endBin } = this.getFrequencyBinRange(rowIndexFromBottom, renderHeight, binCount);
+			yRows[row] = row;
+
+			for (let x = 0; x < renderWidth; x += 1) {
+				const magnitudes = magnitudesByColumn[x] ?? new Float32Array(binCount);
+				let totalDb = 0;
+				let sampleCount = 0;
+				for (let bin = startBin; bin <= endBin; bin += 1) {
+					const dbValue = 20 * Math.log10((magnitudes[bin] ?? 0) + 1e-12);
+					totalDb += dbValue;
+					sampleCount += 1;
+				}
+
+				const dbValue = totalDb / Math.max(1, sampleCount);
+				const clampedDb = Math.max(globalMinDb, Math.min(globalMaxDb, dbValue));
+				rowValues[x] = Math.max(0, Math.min(1, (clampedDb - globalMinDb) / dbSpan));
+			}
+
+			z[row] = rowValues;
+		}
+
+		const xTimes: number[] = new Array(renderWidth);
+		const secondsSpan = Math.max(1 / Math.max(1, this.sampleRate), stopSeconds - startSeconds);
+		for (let index = 0; index < renderWidth; index += 1) {
+			xTimes[index] = startSeconds + ((index / Math.max(1, renderWidth - 1)) * secondsSpan);
+		}
+
+		const yTickValues = this.getFrequencyTickPositions(axisHeight).map(({ y }) => {
+			if (axisHeight <= 1) {
+				return 0;
+			}
+			return (y / (axisHeight - 1)) * Math.max(1, renderHeight - 1);
+		});
+
+		void Plotly.react(
+			this.plotHost,
+			[
+				{
+					type: "heatmap",
+					x: xTimes,
+					y: yRows,
+					z,
+					zmin: 0,
+					zmax: 1,
+					colorscale: this.getPlotlyColorScale(),
+					showscale: false,
+					hoverinfo: "skip",
+				},
+			],
+			{
+				paper_bgcolor: "#000000",
+				plot_bgcolor: "#000000",
+				margin: { l: 0, r: 0, t: 0, b: 0, pad: 0 },
+				showlegend: false,
+				xaxis: {
+					range: [startSeconds, Math.max(startSeconds + (1 / Math.max(1, this.sampleRate)), stopSeconds)],
+					showgrid: true,
+					gridcolor: "rgba(181, 192, 224, 0.10)",
+					zeroline: false,
+					showline: false,
+					fixedrange: true,
+					showticklabels: false,
+					ticks: "",
+				},
+				yaxis: {
+					range: [0, Math.max(1, renderHeight - 1)],
+					autorange: "reversed",
+					showgrid: true,
+					gridcolor: "rgba(181, 192, 224, 0.10)",
+					zeroline: false,
+					showline: false,
+					fixedrange: true,
+					showticklabels: false,
+					ticks: "",
+					tickvals: yTickValues,
+				},
+			},
+			PLOTLY_CONFIG,
+		);
+
 		this.setZoomOverlayVisible(false);
+	}
+
+	private createPlotHost(canvas: HTMLCanvasElement): HTMLDivElement {
+		const host = document.createElement("div");
+		host.className = canvas.className;
+		host.style.position = "absolute";
+		host.style.inset = "0 auto 0 0";
+		host.style.pointerEvents = "none";
+		host.style.zIndex = "1";
+		host.style.background = "#000";
+
+		canvas.style.background = "transparent";
+		canvas.style.position = "relative";
+		canvas.style.zIndex = "2";
+
+		canvas.parentElement?.append(host);
+		return host;
+	}
+
+	private getPlotlyColorScale(): Array<[number, string]> {
+		const scale: Array<[number, string]> = [];
+		for (let index = 0; index < 256; index += 1) {
+			const fraction = index / 255;
+			scale.push([
+				fraction,
+				`rgb(${waveformColormap.r[index]}, ${waveformColormap.g[index]}, ${waveformColormap.b[index]})`,
+			]);
+		}
+		return scale;
+	}
+
+	private buildMagnitudeColumns(width: number, startSample: number, visibleSampleCount: number): Float32Array[] {
+		const halfWindow = SPECTROGRAM_WINDOW_SIZE / 2;
+		const maxX = Math.max(1, width - 1);
+		const window = this.createHannWindow(SPECTROGRAM_WINDOW_SIZE);
+		const columns: Float32Array[] = new Array(width);
+
+		for (let x = 0; x < width; x += 1) {
+			const centerSample = Math.round(startSample + (x / maxX) * (visibleSampleCount - 1));
+			const frame = new Array<number>(SPECTROGRAM_WINDOW_SIZE).fill(0);
+			for (let i = 0; i < SPECTROGRAM_WINDOW_SIZE; i += 1) {
+				const sampleIndex = centerSample + i - halfWindow;
+				if (sampleIndex >= 0 && sampleIndex < this.samples.length) {
+					frame[i] = (this.samples[sampleIndex] ?? 0) * window[i];
+				}
+			}
+
+			const [real, imag] = fft(frame);
+			const magnitudeBins = halfWindow;
+			const magnitudes = new Float32Array(magnitudeBins);
+			for (let bin = 0; bin < magnitudeBins; bin += 1) {
+				magnitudes[bin] = Math.sqrt((real[bin] ?? 0) ** 2 + (imag[bin] ?? 0) ** 2);
+			}
+
+			columns[x] = magnitudes;
+		}
+
+		return columns;
 	}
 
 	private createZoomOverlay(): HTMLDivElement | null {
@@ -158,7 +348,6 @@ export class SpectrogramPlot {
 		}
 
 		for (const { value, y } of this.getFrequencyTickPositions(axisHeight)) {
-
 			const tick = document.createElement("div");
 			tick.className = "ytick";
 			tick.style.top = `${Math.max(0, Math.min(axisHeight - 1, y)) - 0.5}px`;
@@ -181,130 +370,6 @@ export class SpectrogramPlot {
 		if (!this.xAxis) {
 			return;
 		}
-	}
-
-	private drawBackground(ctx: CanvasRenderingContext2D, width: number, height: number): void {
-		ctx.fillStyle = "#000000";
-		ctx.fillRect(0, 0, width, height);
-	}
-
-	private drawGrid(ctx: CanvasRenderingContext2D, width: number, height: number): void {
-		if (width <= 0 || height <= 0 || this.sampleRate <= 0) {
-			return;
-		}
-
-		ctx.save();
-		ctx.strokeStyle = "rgba(181, 192, 224, 0.10)";
-		ctx.lineWidth = 1;
-
-		for (const { y } of this.getFrequencyTickPositions(height)) {
-			const lineY = Math.round(Math.max(0, Math.min(height - 1, y)));
-			ctx.beginPath();
-			ctx.moveTo(0, lineY);
-			ctx.lineTo(width, lineY);
-			ctx.stroke();
-		}
-
-		const verticalDivisions = 8;
-		for (let index = 0; index <= verticalDivisions; index += 1) {
-			const x = Math.round((index / verticalDivisions) * (width - 1));
-			ctx.beginPath();
-			ctx.moveTo(x, 0);
-			ctx.lineTo(x, height);
-			ctx.stroke();
-		}
-
-		ctx.restore();
-	}
-
-	private drawSpectrogram(ctx: CanvasRenderingContext2D, width: number, height: number): void {
-		if (width <= 0 || height <= 0 || this.samples.length === 0 || this.sampleRate <= 0) {
-			return;
-		}
-
-		const { startSample, stopSample } = this.getVisibleSampleWindow();
-		const visibleSampleCount = Math.max(0, stopSample - startSample);
-		if (visibleSampleCount <= 1) {
-			return;
-		}
-
-		const imageData = ctx.createImageData(width, height);
-		const pixels = imageData.data;
-		const halfWindow = SPECTROGRAM_WINDOW_SIZE / 2;
-		const maxX = Math.max(1, width - 1);
-		const window = this.createHannWindow(SPECTROGRAM_WINDOW_SIZE);
-		const cmap = waveformColormap;
-		const frameMagnitudes: Float32Array[] = new Array(width);
-		let globalMaxDb = -Infinity;
-		let globalMinDb = Infinity;
-
-		for (let x = 0; x < width; x += 1) {
-			const centerSample = Math.round(startSample + (x / maxX) * (visibleSampleCount - 1));
-			const frame = new Array<number>(SPECTROGRAM_WINDOW_SIZE).fill(0);
-			for (let i = 0; i < SPECTROGRAM_WINDOW_SIZE; i += 1) {
-				const sampleIndex = centerSample + i - halfWindow;
-				if (sampleIndex >= 0 && sampleIndex < this.samples.length) {
-					frame[i] = (this.samples[sampleIndex] ?? 0) * window[i];
-				}
-			}
-
-			const [real, imag] = fft(frame);
-			const magnitudeBins = halfWindow;
-			const magnitudes = new Float32Array(magnitudeBins);
-			frameMagnitudes[x] = magnitudes;
-
-			for (let bin = 0; bin < magnitudeBins; bin += 1) {
-				const magnitude = Math.sqrt((real[bin] ?? 0) ** 2 + (imag[bin] ?? 0) ** 2);
-				magnitudes[bin] = magnitude;
-				const dbValue = 20 * Math.log10(magnitude + 1e-12);
-				globalMaxDb = Math.max(globalMaxDb, dbValue);
-				globalMinDb = Math.min(globalMinDb, dbValue);
-			}
-		}
-
-		if (!Number.isFinite(globalMaxDb)) {
-			return;
-		}
-
-		if (!Number.isFinite(globalMinDb)) {
-			globalMinDb = globalMaxDb - SPECTROGRAM_DYNAMIC_RANGE_DB;
-		}
-
-		if (globalMaxDb - globalMinDb > SPECTROGRAM_DYNAMIC_RANGE_DB) {
-			globalMinDb = globalMaxDb - SPECTROGRAM_DYNAMIC_RANGE_DB;
-		}
-
-		const dbSpan = Math.max(1e-12, globalMaxDb - globalMinDb);
-
-		for (let x = 0; x < width; x += 1) {
-			const magnitudeBins = halfWindow;
-			const magnitudes = frameMagnitudes[x] ?? new Float32Array(magnitudeBins);
-
-			for (let y = 0; y < height; y += 1) {
-				const rowIndexFromBottom = height - 1 - y;
-				const { startBin, endBin } = this.getFrequencyBinRange(rowIndexFromBottom, height, magnitudeBins);
-				let totalDb = 0;
-				let sampleCount = 0;
-				for (let bin = startBin; bin <= endBin; bin += 1) {
-					const magnitude = magnitudes[bin] ?? 0;
-					const dbValue = 20 * Math.log10(magnitude + 1e-12);
-					totalDb += dbValue;
-					sampleCount += 1;
-				}
-				const dbValue = totalDb / Math.max(1, sampleCount);
-				const clampedDb = Math.max(globalMinDb, Math.min(globalMaxDb, dbValue));
-				const normalized = Math.max(0, Math.min(1, (clampedDb - globalMinDb) / dbSpan));
-
-				const [r, g, b] = this.colorForNormalized(normalized, cmap);
-				const pixelIndex = (y * width + x) * 4;
-				pixels[pixelIndex] = r;
-				pixels[pixelIndex + 1] = g;
-				pixels[pixelIndex + 2] = b;
-				pixels[pixelIndex + 3] = 255;
-			}
-		}
-
-		ctx.putImageData(imageData, 0, 0);
 	}
 
 	private getFrequencyTickPositions(axisHeight: number): Array<{ value: number; y: number }> {
@@ -368,11 +433,6 @@ export class SpectrogramPlot {
 		return { startBin, endBin };
 	}
 
-	private colorForNormalized(value: number, cmap: typeof waveformColormap): [number, number, number] {
-		const idx = Math.max(0, Math.min(255, Math.round(value * 255)));
-		return [cmap.r[idx], cmap.g[idx], cmap.b[idx]];
-	}
-
 	private createHannWindow(length: number): number[] {
 		if (length <= 1) {
 			return [1];
@@ -382,24 +442,6 @@ export class SpectrogramPlot {
 			output[index] = 0.5 * (1 - Math.cos((2 * Math.PI * index) / (length - 1)));
 		}
 		return output;
-	}
-
-	private prepareCanvas(): { ctx: CanvasRenderingContext2D; width: number; height: number } | null {
-		const rect = this.canvas.getBoundingClientRect();
-		const width = Math.max(1, Math.floor(rect.width || 0));
-		const height = Math.max(1, Math.floor(rect.height || 0));
-		const devicePixelRatio = 1;
-
-		this.canvas.width = Math.max(1, Math.floor(width * devicePixelRatio));
-		this.canvas.height = Math.max(1, Math.floor(height * devicePixelRatio));
-
-		const context = this.canvas.getContext("2d");
-		if (!context) {
-			return null;
-		}
-
-		context.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
-		return { ctx: context, width, height };
 	}
 
 	private formatFrequency(valueHz: number): string {

@@ -1,3 +1,4 @@
+import Plotly from "plotly.js-dist-min";
 import { db, type MultichannelBuffer, type NumberArray } from "./signal";
 
 type WaveformPlotAxes = {
@@ -8,18 +9,25 @@ type WaveformPlotAxes = {
 type XAxisDisplayMode = "time" | "samples";
 
 const lineColorOptions = [
-    '#1F77B4', // steel blue
-    '#2CA02C', // medium green
-    '#D62728', // vermilion red
-    '#9467BD', // muted purple
-    '#8C564B', // warm brown
-    '#E377C2', // soft magenta
-    '#7F7F7F', // neutral gray
-    '#BCBD22'  // olive chartreuse
+	"#1F77B4",
+	"#2CA02C",
+	"#D62728",
+	"#9467BD",
+	"#8C564B",
+	"#E377C2",
+	"#7F7F7F",
+	"#BCBD22",
 ];
+
+const PLOTLY_CONFIG = {
+	responsive: true,
+	displayModeBar: false,
+	staticPlot: true,
+};
 
 export class WaveformPlot {
 	private readonly canvas: HTMLCanvasElement;
+	private readonly plotHost: HTMLDivElement;
 	private readonly xAxis: HTMLElement | null;
 	private readonly yAxis: HTMLElement | null;
 	private samples: Float32Array[] = [new Float32Array(0)];
@@ -31,6 +39,7 @@ export class WaveformPlot {
 
 	constructor(canvas: HTMLCanvasElement, axes: WaveformPlotAxes = {}) {
 		this.canvas = canvas;
+		this.plotHost = this.createPlotHost(canvas);
 		this.xAxis = axes.xAxis ?? null;
 		this.yAxis = axes.yAxis ?? null;
 		this.yAxis?.addEventListener("wheel", this.handleYAxisWheel, { passive: false });
@@ -90,17 +99,235 @@ export class WaveformPlot {
 			this.samples = this.normalizeSamples(samples);
 		}
 
-		const context = this.prepareCanvas();
-		if (!context) {
-			return;
+		const { startSample, stopSample } = this.getVisibleSampleWindow();
+		const visibleSampleCount = Math.max(0, stopSample - startSample);
+		const { startSeconds, stopSeconds } = this.getVisibleWindowSeconds();
+		const halfRange = 1 / this.visibleAmplitudeScale;
+		const axisHeight = Math.max(1, Math.floor(this.canvas.getBoundingClientRect().height || 1));
+		const axisWidth = Math.max(1, Math.floor(this.canvas.getBoundingClientRect().width || 1));
+
+		const traces: any[] = [];
+		const channelCount = this.samples.length;
+
+		if (visibleSampleCount > 0 && this.sampleRate > 0) {
+			const maxPoints = Math.max(256, Math.min(6000, axisWidth * 2));
+			const samplesPerPixel = visibleSampleCount / Math.max(1, axisWidth);
+			for (let channelIndex = channelCount - 1; channelIndex >= 0; channelIndex -= 1) {
+				const channel = this.samples[channelIndex];
+				if (!channel || channel.length === 0) {
+					continue;
+				}
+
+				const lineColor = lineColorOptions[channelIndex % lineColorOptions.length];
+				const shouldHighlightSamples = visibleSampleCount < 2000;
+				if (samplesPerPixel > 10) {
+					const [upperTrace, lowerTrace] = this.createEnvelopeTraces(
+						channel,
+						startSample,
+						visibleSampleCount,
+						axisWidth,
+						lineColor,
+					);
+					traces.push(upperTrace, lowerTrace);
+					continue;
+				}
+
+				const x: number[] = [];
+				const y: number[] = [];
+				const markerX: number[] = [];
+				const markerY: number[] = [];
+				const pointCount = shouldHighlightSamples
+					? visibleSampleCount
+					: Math.max(1, Math.min(maxPoints, visibleSampleCount));
+				const step = visibleSampleCount / pointCount;
+
+				for (let i = 0; i < pointCount; i += 1) {
+					const sampleIndex = Math.max(
+						0,
+						Math.min(channel.length - 1, Math.round(startSample + (i * step))),
+					);
+					const timeSeconds = sampleIndex / this.sampleRate;
+					const value = Math.max(-1, Math.min(1, channel[sampleIndex] ?? 0));
+					x.push(timeSeconds);
+					y.push(value);
+					if (shouldHighlightSamples) {
+						markerX.push(timeSeconds);
+						markerY.push(value);
+					}
+				}
+
+				if (x.length > 0 && x[x.length - 1] < stopSeconds) {
+					x.push(stopSeconds);
+					y.push(Math.max(-1, Math.min(1, channel[Math.max(0, Math.min(channel.length - 1, stopSample - 1))] ?? 0)));
+				}
+
+				traces.push({
+					type: "scattergl",
+					mode: "lines",
+					x,
+					y,
+					line: { color: lineColor, width: 1 },
+					hoverinfo: "skip",
+					showlegend: false,
+				});
+
+				if (shouldHighlightSamples && markerX.length > 0) {
+					traces.push({
+						type: "scatter",
+						mode: "markers",
+						x: markerX,
+						y: markerY,
+						marker: {
+							size: Math.max(2, Math.min(8, 8 - (visibleSampleCount / 100))),
+							color: lineColor,
+							symbol: "circle",
+							line: { width: 0 },
+						},
+						hoverinfo: "skip",
+						showlegend: false,
+					});
+				}
+			}
 		}
 
-		const { ctx, width, height } = context;
-		ctx.clearRect(0, 0, width, height);
+		if (traces.length === 0) {
+			traces.push({
+				type: "scattergl",
+				mode: "lines",
+				x: [startSeconds, stopSeconds],
+				y: [0, 0],
+				line: { color: lineColorOptions[0], width: 1 },
+				hoverinfo: "skip",
+				showlegend: false,
+			});
+		}
 
-		this.drawBackground(ctx, width, height);
-		this.drawGrid(ctx, width, height);
-		this.drawWaveform(ctx, width, height);
+		const yTickValues = this.getYAxisTicks(axisHeight).map(({ value }) => value);
+		const xTickValues = this.getXAxisTicks(axisWidth).map(({ value }) => value);
+
+		void Plotly.react(
+			this.plotHost,
+			traces,
+			{
+				paper_bgcolor: "#000000",
+				plot_bgcolor: "#000000",
+				margin: { l: 0, r: 0, t: 0, b: 0, pad: 0 },
+				showlegend: false,
+				xaxis: {
+					range: [startSeconds, Math.max(startSeconds + (1 / Math.max(1, this.sampleRate)), stopSeconds)],
+					showgrid: true,
+					gridcolor: "rgba(181, 192, 224, 0.22)",
+					zeroline: false,
+					showline: false,
+					fixedrange: true,
+					showticklabels: false,
+					ticks: "",
+					tickvals: xTickValues,
+				},
+				yaxis: {
+					range: [-halfRange, halfRange],
+					showgrid: true,
+					gridcolor: "rgba(181, 192, 224, 0.22)",
+					zeroline: false,
+					showline: false,
+					fixedrange: true,
+					showticklabels: false,
+					ticks: "",
+					tickvals: yTickValues,
+				},
+			},
+			PLOTLY_CONFIG,
+		);
+	}
+
+	private createEnvelopeTraces(
+		channel: Float32Array,
+		startSample: number,
+		visibleSampleCount: number,
+		axisWidth: number,
+		lineColor: string,
+	): [any, any] {
+		const pointCount = Math.max(2, Math.min(axisWidth, visibleSampleCount));
+		const x: number[] = new Array(pointCount);
+		const yMax: number[] = new Array(pointCount);
+		const yMin: number[] = new Array(pointCount);
+
+		for (let pointIndex = 0; pointIndex < pointCount; pointIndex += 1) {
+			const blockStart = Math.floor(startSample + ((pointIndex * visibleSampleCount) / pointCount));
+			const blockEnd = Math.max(
+				blockStart + 1,
+				Math.floor(startSample + (((pointIndex + 1) * visibleSampleCount) / pointCount)),
+			);
+
+			let blockMax = -Infinity;
+			let blockMin = Infinity;
+			for (let sampleIndex = blockStart; sampleIndex < blockEnd; sampleIndex += 1) {
+				const sample = Math.max(-1, Math.min(1, channel[sampleIndex] ?? 0));
+				blockMax = Math.max(blockMax, sample);
+				blockMin = Math.min(blockMin, sample);
+			}
+
+			const representativeSample = Math.max(
+				0,
+				Math.min(channel.length - 1, Math.floor((blockStart + blockEnd) * 0.5)),
+			);
+			x[pointIndex] = representativeSample / this.sampleRate;
+			yMax[pointIndex] = blockMax === -Infinity ? 0 : blockMax;
+			yMin[pointIndex] = blockMin === Infinity ? 0 : blockMin;
+		}
+
+		const upperTrace = {
+			type: "scatter",
+			mode: "lines",
+			x,
+			y: yMax,
+			line: { color: lineColor, width: 0 },
+			hoverinfo: "skip",
+			showlegend: false,
+		};
+
+		const lowerTrace = {
+			type: "scatter",
+			mode: "lines",
+			x,
+			y: yMin,
+			line: { color: lineColor, width: 0 },
+			fill: "tonexty",
+			fillcolor: this.colorWithAlpha(lineColor, 1),
+			hoverinfo: "skip",
+			showlegend: false,
+		};
+
+		return [upperTrace, lowerTrace];
+	}
+
+	private colorWithAlpha(hexColor: string, alpha: number): string {
+		const match = /^#([0-9a-fA-F]{6})$/.exec(hexColor);
+		if (!match) {
+			return hexColor;
+		}
+		const hex = match[1];
+		const red = Number.parseInt(hex.slice(0, 2), 16);
+		const green = Number.parseInt(hex.slice(2, 4), 16);
+		const blue = Number.parseInt(hex.slice(4, 6), 16);
+		return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+	}
+
+	private createPlotHost(canvas: HTMLCanvasElement): HTMLDivElement {
+		const host = document.createElement("div");
+		host.className = canvas.className;
+		host.style.position = "absolute";
+		host.style.inset = "0 auto 0 0";
+		host.style.pointerEvents = "none";
+		host.style.zIndex = "1";
+		host.style.background = "#000";
+
+		canvas.style.background = "transparent";
+		canvas.style.position = "relative";
+		canvas.style.zIndex = "2";
+
+		canvas.parentElement?.append(host);
+		return host;
 	}
 
 	private normalizeSamples(samples: NumberArray | MultichannelBuffer): Float32Array[] {
@@ -161,8 +388,6 @@ export class WaveformPlot {
 			return;
 		}
 
-		console.log(this.canvas.getBoundingClientRect().width, this.xAxis.getBoundingClientRect().width);
-
 		const axisWidth = Math.max(
 			1,
 			Math.floor(this.canvas.getBoundingClientRect().width || this.xAxis.getBoundingClientRect().width || 0),
@@ -204,37 +429,6 @@ export class WaveformPlot {
 			label.style.width = "70px";
 			this.xAxis.append(label);
 		}
-	}
-
-	private drawBackground(ctx: CanvasRenderingContext2D, width: number, height: number): void {
-		ctx.fillStyle = "#000000";
-		ctx.fillRect(0, 0, width, height);
-	}
-
-	private drawGrid(ctx: CanvasRenderingContext2D, width: number, height: number): void {
-		if (width <= 0 || height <= 0) {
-			return;
-		}
-
-		const tickYs = this.getYAxisTicks(height).map(({ y }) => y);
-		const tickXs = this.getXAxisTicks(width).map(({ x }) => x);
-
-		ctx.save();
-		ctx.strokeStyle = "rgba(181, 192, 224, 0.22)";
-		ctx.lineWidth = 1;
-		for (const y of tickYs) {
-			ctx.beginPath();
-			ctx.moveTo(0, y);
-			ctx.lineTo(width, y);
-			ctx.stroke();
-		}
-		for (const x of tickXs) {
-			ctx.beginPath();
-			ctx.moveTo(x, 0);
-			ctx.lineTo(x, height);
-			ctx.stroke();
-		}
-		ctx.restore();
 	}
 
 	private getXAxisTicks(axisWidth: number): Array<{ value: number; x: number }> {
@@ -291,220 +485,6 @@ export class WaveformPlot {
 		}
 
 		return `${db(Math.abs(value)).toFixed(0)} dB`;
-	}
-
-	private drawWaveform(ctx: CanvasRenderingContext2D, width: number, height: number): void {
-		if (width <= 0 || height <= 0) {
-			return;
-		}
-
-		const centerY = height / 2;
-		const amplitude = Math.max(1, height * 0.42 * this.visibleAmplitudeScale);
-		const sampleCount = this.getSampleCount();
-		const channelCount = this.samples.length;
-		const { startSample, stopSample } = this.getVisibleSampleWindow();
-		const { startSeconds, stopSeconds } = this.getVisibleWindowSeconds();
-		const visibleSampleCount = Math.max(0, stopSample - startSample);
-
-		const useInterpolation = visibleSampleCount > 0 && visibleSampleCount < 2000;
-		if (sampleCount === 0 || width <= 1 || visibleSampleCount <= 0) {
-			ctx.save();
-			ctx.strokeStyle = lineColorOptions[0];
-			ctx.lineWidth = 1;
-			ctx.beginPath();
-			ctx.lineTo(width, centerY);
-			ctx.stroke();
-			ctx.restore();
-			return;
-		}
-
-		for (let channelIndex = channelCount - 1; channelIndex >= 0; channelIndex -= 1) {
-			const channel = this.samples[channelIndex];
-			if (!channel || channel.length === 0) {
-				continue;
-			}
-
-			const lineColor = lineColorOptions[channelIndex % lineColorOptions.length];
-			ctx.save();
-			ctx.strokeStyle = lineColor;
-			ctx.fillStyle = lineColor;
-			ctx.lineWidth = 1;
-			ctx.beginPath();
-
-			if (channelCount === 1 && visibleSampleCount < 2000) {
-				this.drawSampleMarkers(ctx, channel, startSeconds, stopSeconds, centerY, amplitude, lineColor);
-			}
-
-			if (useInterpolation) {
-				const maxX = Math.max(1, width - 1);
-				for (let x = 0; x < width; x += 1) {
-					const samplePosition = startSample + (x / maxX) * (visibleSampleCount - 1);
-					const sample = this.interpolateLanczosSample(samplePosition, channel);
-					const normalized = Math.max(-1, Math.min(1, sample));
-					const y = centerY - normalized * amplitude;
-
-					if (x === 0) {
-						ctx.moveTo(0, y);
-					}
-					ctx.lineTo(x, y);
-				}
-				ctx.stroke();
-				ctx.beginPath();
-			} else {
-				const samplesPerPixel = visibleSampleCount / width;
-				if (samplesPerPixel > 10) {
-					const envelopePoints: Array<{ x: number; yMax: number; yMin: number }> = [];
-					for (let x = 0; x < width; x += 1) {
-						const blockStart = Math.floor(startSample + (x * visibleSampleCount) / width);
-						const blockEnd = Math.max(blockStart + 1, Math.floor(startSample + ((x + 1) * visibleSampleCount) / width));
-						let blockMax = -Infinity;
-						let blockMin = Infinity;
-						for (let sampleIndex = blockStart; sampleIndex < blockEnd; sampleIndex += 1) {
-							const sample = channel[sampleIndex] ?? 0;
-							blockMax = Math.max(blockMax, sample);
-							blockMin = Math.min(blockMin, sample);
-						}
-						envelopePoints.push({
-							x,
-							yMax: centerY - (Math.max(-1, Math.min(1, blockMax === -Infinity ? 0 : blockMax)) * amplitude),
-							yMin: centerY - (Math.max(-1, Math.min(1, blockMin === Infinity ? 0 : blockMin)) * amplitude),
-						});
-					}
-					if (envelopePoints.length > 0) {
-						ctx.beginPath();
-						ctx.moveTo(envelopePoints[0].x, envelopePoints[0].yMax);
-						for (let index = 1; index < envelopePoints.length; index += 1) {
-							ctx.lineTo(envelopePoints[index].x, envelopePoints[index].yMax);
-						}
-						for (let index = envelopePoints.length - 1; index >= 0; index -= 1) {
-							ctx.lineTo(envelopePoints[index].x, envelopePoints[index].yMin);
-						}
-						ctx.closePath();
-						ctx.fill();
-						ctx.stroke();
-					}
-				} else {
-					const lastIndex = startSample + visibleSampleCount - 1;
-					const maxX = width - 1;
-					for (let x = 0; x < width; x += 0.01) {
-						const sampleIndex = Math.round(startSample + (x / maxX) * (lastIndex - startSample));
-						const sample = channel[sampleIndex] ?? 0;
-						const normalized = Math.max(-1, Math.min(1, sample));
-						const y = centerY - normalized * amplitude;
-						ctx.lineTo(x, y);
-					}
-				}
-				ctx.stroke();
-			}
-
-			ctx.restore();
-		}
-	}
-
-	private drawSampleMarkers(ctx: CanvasRenderingContext2D, channel: Float32Array, startSeconds: number, stopSeconds: number, centerY: number, amplitude: number, lineColor: string): void {
-		// TODO: FIX THIS FUNCTION SO THAT IT DOES START DRAWING AT x = 0, even if the sample is not at 0 (due to rounding). Right now, it will skip the first sample if it is not at 0, which is not correct.
-		// Round seconds to nearest sample boundary
-
-		const canvasWidth = Math.max(0, this.canvas.getBoundingClientRect().width - 1);
-		const timeSpan = stopSeconds - startSeconds;
-		
-		const roundedStartSeconds = Math.round(startSeconds * this.sampleRate) / this.sampleRate;
-		const startSample = Math.max(0, Math.floor(roundedStartSeconds * this.sampleRate));
-		const visibleSampleCount = Math.max(0, timeSpan * this.sampleRate);
-
-		const markerRadius = Math.max(1.0, Math.min(4, 4 - Math.max(visibleSampleCount / 40, 0)));
-
-		const maxX = Math.max(1, canvasWidth);
-		const roundingOffset = startSeconds * this.sampleRate - startSample;
-		const sampleSpacing = visibleSampleCount > 1 ? (maxX / (visibleSampleCount - 1)) : 0;
-
-		ctx.save();
-		ctx.fillStyle = lineColor;
-		
-		for (let i = 0; i < visibleSampleCount; i += 1) {
-			// Map sample index position to x coordinate using same logic as waveform drawing
-			const sample = channel[startSample + i] ?? 0;
-
-			const x = (i - roundingOffset) * sampleSpacing;
-			const normalized = Math.max(-1, Math.min(1, sample));
-			const y = centerY - normalized * amplitude;
-
-			ctx.beginPath();
-			ctx.arc(x, y, markerRadius, 0, Math.PI * 2);
-			ctx.fill();
-		}
-		ctx.restore();
-	}
-
-	private interpolateLanczosSample(samplePosition: number, channel: Float32Array): number {
-		if (channel.length === 0) {
-			return 0;
-		}
-
-		const a = 3; // Lanczos kernel parameter
-		const startIndex = Math.max(0, Math.floor(samplePosition - a));
-		const endIndex = Math.min(channel.length - 1, Math.ceil(samplePosition + a));
-		let sum = 0;
-		let normalization = 0;
-
-		for (let sampleIndex = startIndex; sampleIndex <= endIndex; sampleIndex += 1) {
-			const distance = samplePosition - sampleIndex;
-			const weight = this.lanczosKernel(distance, a);
-			if (weight === 0) {
-				continue;
-			}
-
-			sum += (channel[sampleIndex] ?? 0) * weight;
-			normalization += weight;
-		}
-
-		if (normalization === 0) {
-			return channel[Math.max(0, Math.min(channel.length - 1, Math.round(samplePosition)))] ?? 0;
-		}
-
-		return sum / normalization;
-	}
-
-	private lanczosKernel(x: number, a: number): number {
-		if (x === 0) {
-			return 1;
-		}
-
-		if (Math.abs(x) >= a) {
-			return 0;
-		}
-
-		return this.sinc(x) * this.sinc(x / a);
-	}
-
-	private sinc(x: number): number {
-		if (x === 0) {
-			return 1;
-		}
-
-		const value = Math.PI * x;
-		return Math.sin(value) / value;
-	}
-
-	private prepareCanvas(): { ctx: CanvasRenderingContext2D; width: number; height: number } | null {
-		const rect = this.canvas.getBoundingClientRect();
-		console.log(this.canvas.getBoundingClientRect().width, this.canvas.getBoundingClientRect().height);
-		const width = Math.max(1, Math.floor(rect.width || 0));
-		const height = Math.max(1, Math.floor(rect.height || 0));
-		const devicePixelRatio = 1;
-
-		console.log(this.canvas.getBoundingClientRect().width, this.xAxis?.getBoundingClientRect().width);
-
-		this.canvas.width = Math.max(1, Math.floor(width * devicePixelRatio));
-		this.canvas.height = Math.max(1, Math.floor(height * devicePixelRatio));
-
-		const context = this.canvas.getContext("2d");
-		if (!context) {
-			return null;
-		}
-
-		context.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
-		return { ctx: context, width, height };
 	}
 
 	private formatXAxisLabel(value: number, visibleSeconds: number): string {
@@ -643,13 +623,6 @@ export class WaveformPlot {
 		this.visibleStopSample = clampedStop;
 		this.rerenderAxis();
 		this.rerenderPlotData();
-	}
-
-	private getTotalDurationSeconds(): number {
-		const sampleCount = this.getSampleCount();
-		return sampleCount > 0 && this.sampleRate > 0
-			? sampleCount / this.sampleRate
-			: 0;
 	}
 
 	getVisibleWindowSeconds(): { startSeconds: number; stopSeconds: number } {

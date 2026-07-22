@@ -315,6 +315,24 @@ body {
 	color: #ef4444;
 }
 
+.tab-loading .tab-icon-waveform::after {
+	content: '';
+	position: absolute;
+	top: 50%;
+	left: 20px;
+	width: 14px;
+	height: 14px;
+	margin: -8px 0 0 -8px;
+	border: 6px solid transparent;
+	border-top: 6px solid var(--text-primary);
+	border-bottom: 6px solid var(--text-primary);
+	border-radius: 50%;
+	animation: spin 2s ease-in-out infinite;
+	display: inline-block;
+	font-weight: 700;
+	color: #ef4444;
+}
+
 .tab-icon-recording::before {
 	margin-right: 8px;
 	display: inline-block;
