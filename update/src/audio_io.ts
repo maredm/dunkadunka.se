@@ -6,6 +6,8 @@ export interface AudioRoutingOptions {
 	inputDeviceId?: string;
 	outputDeviceId?: string;
 	inputChannel?: AudioChannelSelection;
+	referenceInputDeviceId?: string;
+	referenceInputChannel?: AudioChannelSelection;
 	outputChannel?: AudioChannelSelection;
 }
 
@@ -503,6 +505,8 @@ export async function startPlayAndRecord(
 		inputDeviceId,
 		outputDeviceId,
 		inputChannel = "left",
+		referenceInputDeviceId,
+		referenceInputChannel = "left",
 		outputChannel = "left",
 		paddingSeconds = 0,
 	} = options;
@@ -519,7 +523,11 @@ export async function startPlayAndRecord(
 	const recordFrameCount = playback[0].length + recordTailFrames;
 
 	let outputRouter: AudioOutputRouter | null = null;
-	let input: { source: MediaStreamAudioSourceNode; stream: MediaStream } | null = null;
+	let measurementInput: { source: MediaStreamAudioSourceNode; stream: MediaStream } | null = null;
+	let referenceInput: { source: MediaStreamAudioSourceNode; stream: MediaStream } | null = null;
+	let measurementSplitter: ChannelSplitterNode | null = null;
+	let referenceSplitter: ChannelSplitterNode | null = null;
+	let merger: ChannelMergerNode | null = null;
 	let session: AudioProcessingWorkletSession | null = null;
 	let cleanedUp = false;
 
@@ -529,11 +537,36 @@ export async function startPlayAndRecord(
 		}
 		cleanedUp = true;
 
-		if (input) {
-			input.source.disconnect();
-			stopStream(input.stream);
-			input = null;
+		if (measurementInput) {
+			measurementInput.source.disconnect();
 		}
+		if (referenceInput && referenceInput !== measurementInput) {
+			referenceInput.source.disconnect();
+		}
+		if (measurementSplitter) {
+			measurementSplitter.disconnect();
+			measurementSplitter = null;
+		}
+		if (referenceSplitter && referenceSplitter !== measurementSplitter) {
+			referenceSplitter.disconnect();
+			referenceSplitter = null;
+		}
+		if (merger) {
+			merger.disconnect();
+			merger = null;
+		}
+		const streams = new Set<MediaStream>();
+		if (measurementInput) {
+			streams.add(measurementInput.stream);
+		}
+		if (referenceInput) {
+			streams.add(referenceInput.stream);
+		}
+		for (const stream of streams) {
+			stopStream(stream);
+		}
+		measurementInput = null;
+		referenceInput = null;
 
 		if (session) {
 			session.disconnect();
@@ -558,10 +591,39 @@ export async function startPlayAndRecord(
 		});
 		session.node.connect(outputRouter.destination);
 
-		input = await createSelectedInputSource(context, inputDeviceId);
-		input.source.connect(session.node);
+		const measuredChannelIndex = inputChannel === "right" ? 1 : 0;
+		const hasReferenceInput = typeof referenceInputDeviceId === "string" && referenceInputDeviceId.length > 0;
+		if (hasReferenceInput) {
+			const useSharedInput = referenceInputDeviceId === inputDeviceId;
+			measurementInput = await createSelectedInputSource(context, inputDeviceId);
+			referenceInput = useSharedInput ? measurementInput : await createSelectedInputSource(context, referenceInputDeviceId);
 
-		const recorded = session.recorded.then((buffer) => selectRecordedChannel(buffer, inputChannel)).finally(() => {
+			measurementSplitter = context.createChannelSplitter(2);
+			referenceSplitter = useSharedInput ? measurementSplitter : context.createChannelSplitter(2);
+			merger = context.createChannelMerger(2);
+
+			measurementInput.source.connect(measurementSplitter);
+			if (!useSharedInput && referenceInput) {
+				referenceInput.source.connect(referenceSplitter);
+			}
+
+			const referenceChannelIndex = referenceInputChannel === "right" ? 1 : 0;
+			measurementSplitter.connect(merger, measuredChannelIndex, 0);
+			referenceSplitter.connect(merger, referenceChannelIndex, 1);
+			merger.connect(session.node);
+		} else {
+			measurementInput = await createSelectedInputSource(context, inputDeviceId);
+			measurementInput.source.connect(session.node);
+		}
+
+		const recorded = session.recorded.then((buffer) => {
+			if (hasReferenceInput) {
+				const measured = buffer[0];
+				const reference = buffer[1];
+				return [new Float32Array(measured), new Float32Array(reference)] as StereoBuffer;
+			}
+			return selectRecordedChannel(buffer, inputChannel);
+		}).finally(() => {
 			void cleanup();
 		});
 

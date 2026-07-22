@@ -20,6 +20,8 @@ export interface MeasurementControllerOptions {
 	stimulusSelect: HTMLSelectElement;
 	inputDeviceSelect: HTMLSelectElement;
 	inputChannelSelect: HTMLSelectElement;
+	referenceDeviceSelect?: HTMLSelectElement | null;
+	referenceChannelSelect?: HTMLSelectElement | null;
 	outputDeviceSelect: HTMLSelectElement;
 	outputChannelSelect: HTMLSelectElement;
 	commentInput?: HTMLInputElement | null;
@@ -79,6 +81,8 @@ export function createMeasurementController(options: MeasurementControllerOption
 		stimulusSelect,
 		inputDeviceSelect,
 		inputChannelSelect,
+		referenceDeviceSelect,
+		referenceChannelSelect,
 		outputDeviceSelect,
 		outputChannelSelect,
 		commentInput,
@@ -103,6 +107,12 @@ export function createMeasurementController(options: MeasurementControllerOption
 		stimulusSelect.disabled = isBusy;
 		inputDeviceSelect.disabled = isBusy;
 		inputChannelSelect.disabled = isBusy;
+		if (referenceDeviceSelect) {
+			referenceDeviceSelect.disabled = isBusy;
+		}
+		if (referenceChannelSelect) {
+			referenceChannelSelect.disabled = isBusy;
+		}
 		outputDeviceSelect.disabled = isBusy;
 		outputChannelSelect.disabled = isBusy;
 		recordButton.disabled = isBusy;
@@ -121,9 +131,15 @@ export function createMeasurementController(options: MeasurementControllerOption
 				return;
 			}
 			setAudioDeviceSelectOptions(inputDeviceSelect, inputs, "System default input");
+			if (referenceDeviceSelect) {
+				setAudioDeviceSelectOptions(referenceDeviceSelect, inputs, "No reference input");
+			}
 			setAudioDeviceSelectOptions(outputDeviceSelect, outputs, "System default output");
 			if (inputs.length === 0) {
 				inputDeviceSelect.disabled = true;
+				if (referenceDeviceSelect) {
+					referenceDeviceSelect.disabled = true;
+				}
 			}
 			if (outputs.length === 0) {
 				outputDeviceSelect.disabled = true;
@@ -131,6 +147,9 @@ export function createMeasurementController(options: MeasurementControllerOption
 		} catch {
 			if (!destroyed && token === deviceRefreshToken) {
 				inputDeviceSelect.disabled = true;
+				if (referenceDeviceSelect) {
+					referenceDeviceSelect.disabled = true;
+				}
 				outputDeviceSelect.disabled = true;
 			}
 		}
@@ -158,21 +177,35 @@ export function createMeasurementController(options: MeasurementControllerOption
 			const paddedStimulus = new Float32Array(normalizedStimulus.length + ACQUISITION_PREROLL_FRAMES);
 			paddedStimulus.set(normalizedStimulus, ACQUISITION_PREROLL_FRAMES);
 
+			const referenceDeviceId = referenceDeviceSelect?.value?.trim() ?? "";
+			const referenceChannel = normalizeChannelSelection(referenceChannelSelect?.value ?? "left");
+
 			activeSession = await startPlayAndRecord(paddedStimulus, {
 				inputDeviceId: inputDeviceSelect.value || undefined,
 				inputChannel: normalizeChannelSelection(inputChannelSelect.value),
+				referenceInputDeviceId: referenceDeviceId || undefined,
+				referenceInputChannel: referenceChannel,
 				outputDeviceId: outputDeviceSelect.value || undefined,
 				outputChannel: normalizeChannelSelection(outputChannelSelect.value),
 				paddingSeconds: preset.paddingSeconds,
 			});
 			await refreshDeviceLists();
 			const recorded = await activeSession.recorded;
-			const captureChannel = recorded[0].subarray(Math.min(ACQUISITION_PREROLL_FRAMES, recorded[0].length));
+			const captureStart = Math.min(ACQUISITION_PREROLL_FRAMES, recorded[0].length);
+			const captureMeasured = recorded[0].subarray(captureStart);
+			const captureReferenceInput = recorded[1].subarray(captureStart);
+			const hasReferenceInput = referenceDeviceId.length > 0;
 
-			// Export stereo acquisition as: ch1=measured input, ch2=reference sweep.
-			const measured = new Float32Array(captureChannel);
+			// Export stereo acquisition as:
+			// - ch1 = measured input
+			// - ch2 = reference input when configured, otherwise synthetic sweep
+			const measured = new Float32Array(captureMeasured);
 			const reference = new Float32Array(measured.length);
-			reference.set(normalizedStimulus.subarray(0, Math.min(normalizedStimulus.length, reference.length)), 0);
+			if (hasReferenceInput) {
+				reference.set(captureReferenceInput.subarray(0, Math.min(captureReferenceInput.length, reference.length)), 0);
+			} else {
+				reference.set(normalizedStimulus.subarray(0, Math.min(normalizedStimulus.length, reference.length)), 0);
+			}
 
 			const comment = commentInput?.value?.trim() ?? "";
 			const file = new File(

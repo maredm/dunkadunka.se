@@ -88,6 +88,17 @@
 								</select>
 							</div>
 							<div class="acquisition-toolbar-group">
+								<label for="acquisitionReferenceDeviceSelect" class="acquisition-toolbar-label">Reference</label>
+								<select id="acquisitionReferenceDeviceSelect" class="toolbar-select" aria-label="Reference input device selection"></select>
+							</div>
+							<div class="acquisition-toolbar-group acquisition-toolbar-group--compact">
+								<label for="acquisitionReferenceChannelSelect" class="acquisition-toolbar-label">Ref ch</label>
+								<select id="acquisitionReferenceChannelSelect" class="toolbar-select" aria-label="Reference input channel selection">
+									<option value="left" selected>L</option>
+									<option value="right">R</option>
+								</select>
+							</div>
+							<div class="acquisition-toolbar-group">
 								<label for="acquisitionCommentInput" class="acquisition-toolbar-label">Comment</label>
 								<input id="acquisitionCommentInput" class="toolbar-select" type="text" maxlength="80" placeholder="optional" aria-label="Recording comment" />
 							</div>

@@ -59,6 +59,8 @@ const fileTableBody = document.getElementById("fileTableBody") as HTMLTableSecti
 const acquisitionStimulusSelect = document.getElementById("acquisitionStimulusSelect") as HTMLSelectElement | null;
 const acquisitionInputDeviceSelect = document.getElementById("acquisitionInputDeviceSelect") as HTMLSelectElement | null;
 const acquisitionInputChannelSelect = document.getElementById("acquisitionInputChannelSelect") as HTMLSelectElement | null;
+const acquisitionReferenceDeviceSelect = document.getElementById("acquisitionReferenceDeviceSelect") as HTMLSelectElement | null;
+const acquisitionReferenceChannelSelect = document.getElementById("acquisitionReferenceChannelSelect") as HTMLSelectElement | null;
 const acquisitionOutputDeviceSelect = document.getElementById("acquisitionOutputDeviceSelect") as HTMLSelectElement | null;
 const acquisitionOutputChannelSelect = document.getElementById("acquisitionOutputChannelSelect") as HTMLSelectElement | null;
 const acquisitionCommentInput = document.getElementById("acquisitionCommentInput") as HTMLInputElement | null;
@@ -91,6 +93,8 @@ if (
 	!acquisitionStimulusSelect ||
 	!acquisitionInputDeviceSelect ||
 	!acquisitionInputChannelSelect ||
+	!acquisitionReferenceDeviceSelect ||
+	!acquisitionReferenceChannelSelect ||
 	!acquisitionOutputDeviceSelect ||
 	!acquisitionOutputChannelSelect ||
 	!acquisitionCommentInput ||
@@ -1112,6 +1116,17 @@ function createWaveformMarkup(tabId: string): string {
 				</select>
 			</div>
 			<div class="acquisition-toolbar-group">
+				<label for="analysisReferenceDeviceSelect-${tabId}" class="acquisition-toolbar-label">Reference</label>
+				<select id="analysisReferenceDeviceSelect-${tabId}" class="toolbar-select" aria-label="Reference input device selection"></select>
+			</div>
+			<div class="acquisition-toolbar-group acquisition-toolbar-group--compact">
+				<label for="analysisReferenceChannelSelect-${tabId}" class="acquisition-toolbar-label">Ref ch</label>
+				<select id="analysisReferenceChannelSelect-${tabId}" class="toolbar-select" aria-label="Reference input channel selection">
+					<option value="left" selected>L</option>
+					<option value="right">R</option>
+				</select>
+			</div>
+			<div class="acquisition-toolbar-group">
 				<label for="analysisCommentInput-${tabId}" class="acquisition-toolbar-label">Comment</label>
 				<input id="analysisCommentInput-${tabId}" class="toolbar-select" type="text" maxlength="80" placeholder="optional" aria-label="Recording comment" />
 			</div>
@@ -1198,6 +1213,8 @@ async function openWaveformTab(file: File): Promise<void> {
 		const outputChannelSelect = document.getElementById(`analysisOutputChannelSelect-${tabId}`) as HTMLSelectElement | null;
 		const inputDeviceSelect = document.getElementById(`analysisInputDeviceSelect-${tabId}`) as HTMLSelectElement | null;
 		const inputChannelSelect = document.getElementById(`analysisInputChannelSelect-${tabId}`) as HTMLSelectElement | null;
+		const referenceDeviceSelect = document.getElementById(`analysisReferenceDeviceSelect-${tabId}`) as HTMLSelectElement | null;
+		const referenceChannelSelect = document.getElementById(`analysisReferenceChannelSelect-${tabId}`) as HTMLSelectElement | null;
 		const commentInput = document.getElementById(`analysisCommentInput-${tabId}`) as HTMLInputElement | null;
 		const statusText = document.getElementById(`analysisStatusText-${tabId}`) as HTMLParagraphElement | null;
 		const recordButton = document.getElementById(`analysisRecordBtn-${tabId}`) as HTMLButtonElement | null;
@@ -1212,6 +1229,8 @@ async function openWaveformTab(file: File): Promise<void> {
 			!outputChannelSelect ||
 			!inputDeviceSelect ||
 			!inputChannelSelect ||
+			!referenceDeviceSelect ||
+			!referenceChannelSelect ||
 			!commentInput ||
 			!statusText ||
 			!recordButton ||
@@ -1225,6 +1244,8 @@ async function openWaveformTab(file: File): Promise<void> {
 			stimulusSelect,
 			inputDeviceSelect,
 			inputChannelSelect,
+			referenceDeviceSelect,
+			referenceChannelSelect,
 			outputDeviceSelect,
 			outputChannelSelect,
 			commentInput,
@@ -1474,6 +1495,8 @@ acquisitionMeasurementController = createMeasurementController({
 	stimulusSelect: acquisitionStimulusSelect,
 	inputDeviceSelect: acquisitionInputDeviceSelect,
 	inputChannelSelect: acquisitionInputChannelSelect,
+	referenceDeviceSelect: acquisitionReferenceDeviceSelect,
+	referenceChannelSelect: acquisitionReferenceChannelSelect,
 	outputDeviceSelect: acquisitionOutputDeviceSelect,
 	outputChannelSelect: acquisitionOutputChannelSelect,
 	commentInput: acquisitionCommentInput,
