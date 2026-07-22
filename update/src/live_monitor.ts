@@ -207,8 +207,9 @@ function createHistoryPoint(timeSeconds: number, micDb: number, referenceDb: num
 
 const LIVE_PLOTLY_CONFIG = {
 	responsive: true,
-	displayModeBar: false,
-	staticPlot: true,
+	displayModeBar: true,
+	displaylogo: false,
+	staticPlot: false,
 };
 
 function drawEmptyPlot(container: HTMLElement, message: string): void {
@@ -262,7 +263,7 @@ function drawSplHistory(
 			{ x: referenceX, y: referenceY, type: "scattergl", mode: "lines", line: { color: "#38bdf8", width: 2 }, hoverinfo: "skip", name: "Reference" },
 		],
 		{
-			margin: { l: 0, r: 0, t: 0, b: 0, pad: 0 },
+			margin: { l: 45, r: 15, t: 15, b: 35, pad: 0 },
 			paper_bgcolor: "#000",
 			plot_bgcolor: "#000",
 			showlegend: false,
@@ -271,16 +272,22 @@ function drawSplHistory(
 				showgrid: true,
 				gridcolor: "rgba(181, 192, 224, 0.1)",
 				zeroline: false,
+				showline: true,
+				linecolor: "#9aa4b2",
 				tickfont: { color: "#9aa4b2", size: 10 },
 				tickvals: [-60, -50, -40, -30, -20, -10, 0],
 				ticktext: ["-60s", "-50s", "-40s", "-30s", "-20s", "-10s", "now"],
+				title: { text: "Time (seconds)", font: { color: "#9aa4b2", size: 11 } },
 			},
 			yaxis: {
 				range: [MIN_DB, MAX_DB],
 				showgrid: true,
 				gridcolor: "rgba(181, 192, 224, 0.12)",
 				zeroline: false,
+				showline: true,
+				linecolor: "#9aa4b2",
 				tickfont: { color: "#9aa4b2", size: 10 },
+				title: { text: "dBSPL", font: { color: "#9aa4b2", size: 11 } },
 			},
 		},
 		LIVE_PLOTLY_CONFIG,
@@ -336,7 +343,7 @@ function drawSpectrum(
 			},
 		],
 		{
-			margin: { l: 0, r: 0, t: 0, b: 0, pad: 0 },
+			margin: { l: 45, r: 15, t: 15, b: 35, pad: 0 },
 			paper_bgcolor: "#000",
 			plot_bgcolor: "#000",
 			showlegend: false,
@@ -346,14 +353,20 @@ function drawSpectrum(
 				showgrid: true,
 				gridcolor: "rgba(181, 192, 224, 0.1)",
 				zeroline: false,
+				showline: true,
+				linecolor: "#9aa4b2",
 				tickfont: { color: "#9aa4b2", size: 10 },
+				title: { text: "Frequency (Hz)", font: { color: "#9aa4b2", size: 11 } },
 			},
 			yaxis: {
 				range: [SPECTRUM_MIN_DB, SPECTRUM_MAX_DB],
 				showgrid: true,
 				gridcolor: "rgba(181, 192, 224, 0.12)",
 				zeroline: false,
+				showline: true,
+				linecolor: "#9aa4b2",
 				tickfont: { color: "#9aa4b2", size: 10 },
+				title: { text: "dBSPL", font: { color: "#9aa4b2", size: 11 } },
 			},
 		},
 		LIVE_PLOTLY_CONFIG,
