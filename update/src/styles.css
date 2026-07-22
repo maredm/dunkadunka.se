@@ -91,6 +91,7 @@ body {
 	background: var(--bg-color);
 	font-family: 'Outfit', sans-serif;
 	text-rendering: optimizeLegibility;
+	text-shadow: rgba(0, 0, 0, 0.004) 1px 1px 1px;
 }
 
 .right {
