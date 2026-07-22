@@ -90,6 +90,7 @@ body {
 	flex-direction: column;
 	background: var(--bg-color);
 	font-family: 'Outfit', sans-serif;
+	text-rendering: optimizeLegibility;
 }
 
 .right {
