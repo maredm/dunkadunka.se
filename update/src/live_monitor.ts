@@ -1,5 +1,6 @@
 import { listAudioDevices, setAudioDeviceSelectOptions } from "./audio_devices";
 import { startLiveMonitor, type LiveMonitorSession, type AudioChannelSelection } from "./audio_io";
+import Plotly from "plotly.js-dist-min";
 import { fft } from "./fft";
 import { fractionalOctaveSmoothing, getFractionalOctaveFrequencies } from "./fractional_octave_smoothing";
 import {
@@ -12,7 +13,7 @@ import {
 	type LevelMeterState,
 	type LevelMetric,
 } from "./level_meter";
-import { nextPow2 } from "./math";
+import { nextPow2, clamp } from "./math";
 import { calculateTwoChannelImpulseResponse, estimateDelay } from "./signal";
 
 type LiveSpectrumSeries = {
@@ -42,10 +43,8 @@ export interface LiveMonitorControllerOptions {
 	micSplValue: HTMLElement;
 	referenceSplValue: HTMLElement;
 	differenceSplValue: HTMLElement;
-	splHistoryCanvas: HTMLCanvasElement;
-	spectrumCanvas: HTMLCanvasElement;
-	impulseCanvas: HTMLCanvasElement;
-	phaseCanvas: HTMLCanvasElement;
+	splHistoryCanvas: HTMLElement;
+	spectrumCanvas: HTMLElement;
 }
 
 export interface LiveMonitorController {
@@ -104,9 +103,7 @@ function normalizeChannelSelection(value: string): AudioChannelSelection {
 	return value === "right" ? "right" : "left";
 }
 
-function clamp(value: number, minimum: number, maximum: number): number {
-	return Math.max(minimum, Math.min(maximum, value));
-}
+
 
 function formatLevel(value: number | null): string {
 	if (value === null || !Number.isFinite(value)) {
@@ -188,235 +185,159 @@ function createHistoryPoint(timeSeconds: number, micDb: number, referenceDb: num
 	return { timeSeconds, micDb, referenceDb };
 }
 
-function prepareCanvas(canvas: HTMLCanvasElement): { ctx: CanvasRenderingContext2D; width: number; height: number } | null {
-	const rect = canvas.getBoundingClientRect();
-	const width = Math.max(1, Math.floor(rect.width));
-	const height = Math.max(1, Math.floor(rect.height));
-	canvas.width = width;
-	canvas.height = height;
-	const context = canvas.getContext("2d");
-	if (!context) {
-		return null;
-	}
-	context.setTransform(1, 0, 0, 1, 0, 0);
-	return { ctx: context, width, height };
+const LIVE_PLOTLY_CONFIG = {
+	responsive: true,
+	displayModeBar: false,
+	staticPlot: true,
+};
+
+function drawEmptyPlot(container: HTMLElement, message: string): void {
+	void Plotly.react(container, [], {
+		margin: { l: 0, r: 0, t: 0, b: 0, pad: 0 },
+		paper_bgcolor: "#000",
+		plot_bgcolor: "#000",
+		xaxis: { visible: false },
+		yaxis: { visible: false },
+		annotations: [
+			{
+				x: 0.5,
+				y: 0.5,
+				xref: "paper",
+				yref: "paper",
+				text: message,
+				showarrow: false,
+				font: { size: 12, color: "#9aa4b2" },
+			},
+		],
+	}, LIVE_PLOTLY_CONFIG);
 }
 
-function drawChartBackground(ctx: CanvasRenderingContext2D, width: number, height: number): void {
-	ctx.fillStyle = "#000";
-	ctx.fillRect(0, 0, width, height);
-	ctx.strokeStyle = "rgba(181, 192, 224, 0.16)";
-	ctx.lineWidth = 1;
-	ctx.strokeRect(0.5, 0.5, Math.max(0, width - 1), Math.max(0, height - 1));
-}
-
-function drawEmptyPlot(canvas: HTMLCanvasElement, title: string, message: string): void {
-	const prepared = prepareCanvas(canvas);
-	if (!prepared) {
-		return;
-	}
-	const { ctx, width, height } = prepared;
-	drawChartBackground(ctx, width, height);
-	ctx.fillStyle = "#f8fafc";
-	ctx.font = "12px sans-serif";
-	ctx.fillText(title, 10, 18);
-	ctx.fillStyle = "#9aa4b2";
-	ctx.fillText(message, 10, 40);
-}
-
-function drawLinePlot(
-	canvas: HTMLCanvasElement,
-	title: string,
-	xLabel: string,
-	yLabel: string,
-	x: Float32Array,
-	y: Float32Array,
-	lineColor: string,
-	options: { logX?: boolean; yMin?: number; yMax?: number; wrapY?: boolean } = {},
+function drawSplHistory(
+	container: HTMLElement,
+	history: LiveMonitorHistoryPoint[],
+	nowSeconds: number,
 ): void {
-	const prepared = prepareCanvas(canvas);
-	if (!prepared) {
+	const micX: number[] = [];
+	const micY: number[] = [];
+	const referenceX: number[] = [];
+	const referenceY: number[] = [];
+
+	for (const point of history) {
+		const ageSeconds = nowSeconds - point.timeSeconds;
+		const x = -clamp(ageSeconds, 0, HISTORY_SECONDS);
+		if (Number.isFinite(point.micDb)) {
+			micX.push(x);
+			micY.push(point.micDb);
+		}
+		if (point.referenceDb !== null && Number.isFinite(point.referenceDb)) {
+			referenceX.push(x);
+			referenceY.push(point.referenceDb);
+		}
+	}
+
+	void Plotly.react(
+		container,
+		[
+			{ x: micX, y: micY, type: "scattergl", mode: "lines", line: { color: "#f97316", width: 2 }, hoverinfo: "skip", name: "Mic" },
+			{ x: referenceX, y: referenceY, type: "scattergl", mode: "lines", line: { color: "#38bdf8", width: 2 }, hoverinfo: "skip", name: "Reference" },
+		],
+		{
+			margin: { l: 0, r: 0, t: 0, b: 0, pad: 0 },
+			paper_bgcolor: "#000",
+			plot_bgcolor: "#000",
+			showlegend: false,
+			xaxis: {
+				range: [-HISTORY_SECONDS, 0],
+				showgrid: true,
+				gridcolor: "rgba(181, 192, 224, 0.1)",
+				zeroline: false,
+				tickfont: { color: "#9aa4b2", size: 10 },
+				tickvals: [-60, -50, -40, -30, -20, -10, 0],
+				ticktext: ["-60s", "-50s", "-40s", "-30s", "-20s", "-10s", "now"],
+			},
+			yaxis: {
+				range: [MIN_DB, MAX_DB],
+				showgrid: true,
+				gridcolor: "rgba(181, 192, 224, 0.12)",
+				zeroline: false,
+				tickfont: { color: "#9aa4b2", size: 10 },
+			},
+		},
+		LIVE_PLOTLY_CONFIG,
+	);
+}
+
+function drawSpectrum(
+	container: HTMLElement,
+	micSpectrum: LiveSpectrumSeries | null,
+	referenceSpectrum: LiveSpectrumSeries | null,
+	differenceSpectrum: LiveSpectrumSeries | null,
+	nyquist: number,
+): void {
+	const maxFrequency = Math.max(LOG_FREQUENCY_MIN * 2, nyquist);
+	if (!Number.isFinite(maxFrequency) || maxFrequency <= LOG_FREQUENCY_MIN) {
+		drawEmptyPlot(container, "Waiting for spectrum data");
 		return;
 	}
 
-	const { ctx, width, height } = prepared;
-	drawChartBackground(ctx, width, height);
-
-	const left = 48;
-	const right = 12;
-	const top = 24;
-	const bottom = 28;
-	const plotWidth = Math.max(1, width - left - right);
-	const plotHeight = Math.max(1, height - top - bottom);
-
-	let xMin = Number.POSITIVE_INFINITY;
-	let xMax = Number.NEGATIVE_INFINITY;
-	let yMin = Number.POSITIVE_INFINITY;
-	let yMax = Number.NEGATIVE_INFINITY;
-
-	for (let index = 0; index < x.length; index += 1) {
-		const xv = x[index] ?? 0;
-		const yv = y[index] ?? 0;
-		if (!Number.isFinite(xv) || !Number.isFinite(yv)) {
-			continue;
-		}
-		xMin = Math.min(xMin, xv);
-		xMax = Math.max(xMax, xv);
-		yMin = Math.min(yMin, yv);
-		yMax = Math.max(yMax, yv);
+	const targetFrequencies: number[] = [];
+	const targetValues: number[] = [];
+	for (let i = 0; i < 128; i += 1) {
+		const ratio = i / 127;
+		const frequency = Math.pow(10, Math.log10(LOG_FREQUENCY_MIN) + ratio * (Math.log10(maxFrequency) - Math.log10(LOG_FREQUENCY_MIN)));
+		targetFrequencies.push(frequency);
+		targetValues.push(-Math.log10(Math.max(1e-9, frequency) / 1000));
 	}
 
-	if (!Number.isFinite(xMin) || !Number.isFinite(xMax) || !Number.isFinite(yMin) || !Number.isFinite(yMax)) {
-		drawEmptyPlot(canvas, title, "No finite data points.");
-		return;
-	}
+	const toTrace = (series: LiveSpectrumSeries | null, color: string, name: string): { x: number[]; y: number[]; type: string; mode: string; line: { color: string; width: number }; hoverinfo: string; name: string } => ({
+		x: Array.from(series?.frequencies ?? []),
+		y: Array.from(series?.valuesDb ?? []),
+		type: "scattergl",
+		mode: "lines",
+		line: { color, width: 2 },
+		hoverinfo: "skip",
+		name,
+	});
 
-	if (options.yMin !== undefined) {
-		yMin = options.yMin;
-	}
-	if (options.yMax !== undefined) {
-		yMax = options.yMax;
-	}
-	if (yMax <= yMin) {
-		yMax = yMin + 1;
-	}
-
-	const useLogX = options.logX === true;
-	const xMinLog = Math.log10(Math.max(1e-9, xMin));
-	const xMaxLog = Math.log10(Math.max(1e-9, xMax));
-
-	const projectX = (value: number): number => {
-		if (useLogX) {
-			const lv = Math.log10(Math.max(1e-9, value));
-			const frac = (lv - xMinLog) / Math.max(1e-9, xMaxLog - xMinLog);
-			return left + clamp(frac, 0, 1) * plotWidth;
-		}
-		const frac = (value - xMin) / Math.max(1e-12, xMax - xMin);
-		return left + clamp(frac, 0, 1) * plotWidth;
-	};
-
-	const projectY = (value: number): number => {
-		const frac = (value - yMin) / Math.max(1e-12, yMax - yMin);
-		return top + (1 - clamp(frac, 0, 1)) * plotHeight;
-	};
-
-	ctx.strokeStyle = "rgba(181, 192, 224, 0.12)";
-	ctx.lineWidth = 1;
-	for (let i = 0; i <= 5; i += 1) {
-		const yv = yMin + ((yMax - yMin) * i) / 5;
-		const py = projectY(yv);
-		ctx.beginPath();
-		ctx.moveTo(left, py + 0.5);
-		ctx.lineTo(left + plotWidth, py + 0.5);
-		ctx.stroke();
-	}
-
-	ctx.fillStyle = "#9aa4b2";
-	ctx.font = "10px sans-serif";
-	for (let i = 0; i <= 5; i += 1) {
-		const yv = yMin + ((yMax - yMin) * i) / 5;
-		const py = projectY(yv);
-		ctx.fillText(yv.toFixed(1), 4, py + 3);
-	}
-
-	if (useLogX) {
-		const ticks = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000].filter((v) => v >= xMin && v <= xMax);
-		for (const tick of ticks) {
-			const px = projectX(tick);
-			ctx.beginPath();
-			ctx.moveTo(px + 0.5, top);
-			ctx.lineTo(px + 0.5, top + plotHeight);
-			ctx.stroke();
-			ctx.fillText(tick >= 1000 ? `${Math.round(tick / 1000)}k` : `${tick}`, px - 8, height - 8);
-		}
-	} else {
-		for (let i = 0; i <= 5; i += 1) {
-			const xv = xMin + ((xMax - xMin) * i) / 5;
-			const px = projectX(xv);
-			ctx.beginPath();
-			ctx.moveTo(px + 0.5, top);
-			ctx.lineTo(px + 0.5, top + plotHeight);
-			ctx.stroke();
-			ctx.fillText(xv.toFixed(0), px - 8, height - 8);
-		}
-	}
-
-	ctx.beginPath();
-	let hasCurrentPoint = false;
-	let prevX = 0;
-	let prevY = 0;
-	const wrapY = options.wrapY === true;
-	const wrapRange = yMax - yMin;
-	const halfWrapRange = wrapRange * 0.5;
-
-	for (let i = 0; i < x.length; i += 1) {
-		const xv = x[i] ?? 0;
-		const yv = y[i] ?? 0;
-		if (!Number.isFinite(xv) || !Number.isFinite(yv)) {
-			hasCurrentPoint = false;
-			continue;
-		}
-
-		if (!hasCurrentPoint) {
-			ctx.moveTo(projectX(xv), projectY(yv));
-			prevX = xv;
-			prevY = yv;
-			hasCurrentPoint = true;
-			continue;
-		}
-
-		if (wrapY && Number.isFinite(wrapRange) && wrapRange > 0) {
-			const dy = yv - prevY;
-			if (dy > halfWrapRange || dy < -halfWrapRange) {
-				if (dy > halfWrapRange) {
-					const yAdjusted = yv - wrapRange;
-					const denom = yAdjusted - prevY;
-					if (Math.abs(denom) > 1e-12) {
-						const t = clamp((yMin - prevY) / denom, 0, 1);
-						const xEdge = prevX + (xv - prevX) * t;
-						ctx.lineTo(projectX(xEdge), projectY(yMin));
-						ctx.moveTo(projectX(xEdge), projectY(yMax));
-						ctx.lineTo(projectX(xv), projectY(yv));
-					} else {
-						ctx.lineTo(projectX(xv), projectY(yv));
-					}
-				} else {
-					const yAdjusted = yv + wrapRange;
-					const denom = yAdjusted - prevY;
-					if (Math.abs(denom) > 1e-12) {
-						const t = clamp((yMax - prevY) / denom, 0, 1);
-						const xEdge = prevX + (xv - prevX) * t;
-						ctx.lineTo(projectX(xEdge), projectY(yMax));
-						ctx.moveTo(projectX(xEdge), projectY(yMin));
-						ctx.lineTo(projectX(xv), projectY(yv));
-					} else {
-						ctx.lineTo(projectX(xv), projectY(yv));
-					}
-				}
-				prevX = xv;
-				prevY = yv;
-				continue;
-			}
-		}
-
-		ctx.lineTo(projectX(xv), projectY(yv));
-		prevX = xv;
-		prevY = yv;
-	}
-	ctx.strokeStyle = lineColor;
-	ctx.lineWidth = 1.5;
-	ctx.stroke();
-
-	ctx.fillStyle = "#f8fafc";
-	ctx.font = "12px sans-serif";
-	ctx.fillText(title, left, 16);
-	ctx.fillStyle = "#9aa4b2";
-	ctx.fillText(xLabel, left + plotWidth - 80, height - 8);
-	ctx.save();
-	ctx.translate(10, top + plotHeight / 2);
-	ctx.rotate(-Math.PI / 2);
-	ctx.fillText(yLabel, 0, 0);
-	ctx.restore();
+	void Plotly.react(
+		container,
+		[
+			toTrace(micSpectrum, "#f97316", "Mic"),
+			toTrace(referenceSpectrum, "#38bdf8", "Reference"),
+			toTrace(differenceSpectrum, "#a3e635", "Difference"),
+			{
+				x: targetFrequencies,
+				y: targetValues,
+				type: "scattergl",
+				mode: "lines",
+				line: { color: "#ef4444", width: 1.5, dash: "dash" },
+				hoverinfo: "skip",
+				name: "-1 dB/decade",
+			},
+		],
+		{
+			margin: { l: 0, r: 0, t: 0, b: 0, pad: 0 },
+			paper_bgcolor: "#000",
+			plot_bgcolor: "#000",
+			showlegend: false,
+			xaxis: {
+				type: "log",
+				range: [Math.log10(LOG_FREQUENCY_MIN), Math.log10(maxFrequency)],
+				showgrid: true,
+				gridcolor: "rgba(181, 192, 224, 0.1)",
+				zeroline: false,
+				tickfont: { color: "#9aa4b2", size: 10 },
+			},
+			yaxis: {
+				range: [SPECTRUM_MIN_DB, SPECTRUM_MAX_DB],
+				showgrid: true,
+				gridcolor: "rgba(181, 192, 224, 0.12)",
+				zeroline: false,
+				tickfont: { color: "#9aa4b2", size: 10 },
+			},
+		},
+		LIVE_PLOTLY_CONFIG,
+	);
 }
 
 function computeTransferComplexResponse(
@@ -560,288 +481,6 @@ function normalizePhaseAtReference(
 	return normalized;
 }
 
-function smoothPhaseFractional(
-	phasesDeg: Float32Array,
-	smoothingFraction: number,
-	sampleRate: number,
-): { frequencies: Float32Array; phasesDeg: Float32Array } {
-	if (phasesDeg.length === 0 || !Number.isFinite(sampleRate) || sampleRate <= 0) {
-		return { frequencies: new Float32Array(0), phasesDeg: new Float32Array(0) };
-	}
-
-	const nyquist = Math.max(LOG_FREQUENCY_MIN * 2, sampleRate / 2);
-	const frequencies = getFractionalOctaveFrequencies(
-		PLOT_AXIS_FRACTION,
-		LOG_FREQUENCY_MIN,
-		nyquist,
-		phasesDeg.length * 2,
-		sampleRate,
-	);
-	const smoothed = fractionalOctaveSmoothing(phasesDeg, smoothingFraction, frequencies);
-	return { frequencies, phasesDeg: smoothed };
-}
-
-function wrapPhaseToRange(phasesDeg: Float32Array, minDeg = -720, maxDeg = 720): Float32Array {
-	if (phasesDeg.length === 0) {
-		return phasesDeg;
-	}
-
-	const range = maxDeg - minDeg;
-	if (!Number.isFinite(range) || range <= 0) {
-		return Float32Array.from(phasesDeg);
-	}
-
-	const wrapped = new Float32Array(phasesDeg.length);
-	for (let i = 0; i < phasesDeg.length; i += 1) {
-		const value = phasesDeg[i] ?? 0;
-		const normalized = ((value - minDeg) % range + range) % range;
-		wrapped[i] = normalized + minDeg;
-	}
-	return wrapped;
-}
-
-function computeImpulseResponseWindowed(recorded: Float32Array, stimulus: Float32Array, sampleRate: number): ImpulseResponseWindow | null {
-	const n = Math.min(recorded.length, stimulus.length);
-	if (n < 8 || sampleRate <= 0) {
-		return null;
-	}
-
-	const nfft = nextPow2(n);
-	const rec = new Float32Array(nfft);
-	const stim = new Float32Array(nfft);
-	rec.set(recorded.subarray(0, n), 0);
-	stim.set(stimulus.subarray(0, n), 0);
-
-	const ir = calculateTwoChannelImpulseResponse(rec, stim) as Float32Array;
-	if (!ir || ir.length === 0) {
-		return null;
-	}
-
-	let peakIndex = 0;
-	let peakValue = 0;
-	for (let i = 0; i < ir.length; i += 1) {
-		const v = Math.abs(ir[i] ?? 0);
-		if (v > peakValue) {
-			peakValue = v;
-			peakIndex = i;
-		}
-	}
-
-	const before = Math.round(0.05 * sampleRate);
-	const after = Math.round(0.5 * sampleRate);
-	const start = Math.max(0, peakIndex - before);
-	const end = Math.min(ir.length, peakIndex + after);
-	if (end <= start + 2) {
-		return null;
-	}
-
-	const length = end - start;
-	const timeMs = new Float32Array(length);
-	const amplitude = new Float32Array(length);
-	for (let i = 0; i < length; i += 1) {
-		const idx = start + i;
-		timeMs[i] = ((idx - peakIndex) / sampleRate) * 1000;
-		amplitude[i] = ir[idx] ?? 0;
-	}
-
-	return { timeMs, amplitude };
-}
-
-function computeImpulseResponseAlignedWindow(
-	recorded: Float32Array,
-	stimulus: Float32Array,
-	sampleRate: number,
-	delaySamples: number,
-): ImpulseResponseWindow | null {
-	const n = Math.min(recorded.length, stimulus.length);
-	if (n < 8 || sampleRate <= 0) {
-		return null;
-	}
-
-	const nfft = nextPow2(n);
-	const rec = new Float32Array(nfft);
-	const stim = new Float32Array(nfft);
-	rec.set(recorded.subarray(0, n), 0);
-	stim.set(stimulus.subarray(0, n), 0);
-
-	const ir = calculateTwoChannelImpulseResponse(rec, stim) as Float32Array;
-	if (!ir || ir.length === 0) {
-		return null;
-	}
-
-	const center = Math.floor(ir.length / 2) + Math.round(delaySamples);
-	const before = Math.round(0.08 * sampleRate);
-	const after = Math.round(0.45 * sampleRate);
-	const length = before + after;
-	if (length <= 4) {
-		return null;
-	}
-
-	const timeMs = new Float32Array(length);
-	const amplitude = new Float32Array(length);
-	for (let i = 0; i < length; i += 1) {
-		const idx = center - before + i;
-		timeMs[i] = ((i - before) / sampleRate) * 1000;
-		amplitude[i] = (idx >= 0 && idx < ir.length) ? (ir[idx] ?? 0) : 0;
-	}
-
-	return { timeMs, amplitude };
-}
-
-function drawSplHistory(
-	canvas: HTMLCanvasElement,
-	history: LiveMonitorHistoryPoint[],
-	nowSeconds: number,
-): void {
-	const prepared = prepareCanvas(canvas);
-	if (!prepared) {
-		return;
-	}
-
-	const { ctx, width, height } = prepared;
-	drawChartBackground(ctx, width, height);
-
-	ctx.font = "11px sans-serif";
-	ctx.fillStyle = "#9aa4b2";
-	for (const value of LEVEL_GRID_VALUES) {
-		const fraction = (value - MIN_DB) / (MAX_DB - MIN_DB);
-		const y = Math.round((1 - fraction) * (height - 1));
-		ctx.strokeStyle = "rgba(181, 192, 224, 0.12)";
-		ctx.beginPath();
-		ctx.moveTo(0, y + 0.5);
-		ctx.lineTo(width, y + 0.5);
-		ctx.stroke();
-		ctx.fillText(`${value}`, 6, Math.max(12, y - 2));
-	}
-
-	for (let second = 0; second <= HISTORY_SECONDS; second += 10) {
-		const x = Math.round((1 - (second / HISTORY_SECONDS)) * (width - 1));
-		ctx.strokeStyle = "rgba(181, 192, 224, 0.08)";
-		ctx.beginPath();
-		ctx.moveTo(x + 0.5, 0);
-		ctx.lineTo(x + 0.5, height);
-		ctx.stroke();
-		ctx.fillText(`-${second}s`, Math.max(4, x - 16), height - 6);
-	}
-
-	const drawSeries = (color: string, pickValue: (point: LiveMonitorHistoryPoint) => number | null): void => {
-		ctx.beginPath();
-		let started = false;
-		for (const point of history) {
-			const value = pickValue(point);
-			if (value === null || !Number.isFinite(value)) {
-				continue;
-			}
-			const ageSeconds = nowSeconds - point.timeSeconds;
-			const x = Math.round((1 - clamp(ageSeconds / HISTORY_SECONDS, 0, 1)) * (width - 1));
-			const y = Math.round((1 - ((value - MIN_DB) / (MAX_DB - MIN_DB))) * (height - 1));
-			if (!started) {
-				ctx.moveTo(x, y);
-				started = true;
-			} else {
-				ctx.lineTo(x, y);
-			}
-		}
-		ctx.strokeStyle = color;
-		ctx.lineWidth = 2;
-		ctx.stroke();
-	};
-
-	drawSeries("#f97316", (point) => point.micDb);
-	drawSeries("#38bdf8", (point) => point.referenceDb);
-}
-
-function drawSpectrum(
-	canvas: HTMLCanvasElement,
-	micSpectrum: LiveSpectrumSeries | null,
-	referenceSpectrum: LiveSpectrumSeries | null,
-	differenceSpectrum: LiveSpectrumSeries | null,
-	nyquist: number,
-): void {
-	const prepared = prepareCanvas(canvas);
-	if (!prepared) {
-		return;
-	}
-
-	const { ctx, width, height } = prepared;
-	drawChartBackground(ctx, width, height);
-
-	const maxFrequency = Math.max(LOG_FREQUENCY_MIN * 2, nyquist);
-	const logMin = Math.log10(LOG_FREQUENCY_MIN);
-	const logMax = Math.log10(maxFrequency);
-	const projectX = (frequency: number): number => {
-		const clamped = clamp(frequency, LOG_FREQUENCY_MIN, maxFrequency);
-		return ((Math.log10(clamped) - logMin) / Math.max(1e-12, logMax - logMin)) * (width - 1);
-	};
-	const projectY = (valueDb: number): number => (1 - ((valueDb - SPECTRUM_MIN_DB) / (SPECTRUM_MAX_DB - SPECTRUM_MIN_DB))) * (height - 1);
-
-	ctx.font = "11px sans-serif";
-	ctx.fillStyle = "#9aa4b2";
-	for (const frequency of SPECTRUM_GRID_FREQUENCIES) {
-		if (frequency > maxFrequency) {
-			continue;
-		}
-		const x = Math.round(projectX(frequency));
-		ctx.strokeStyle = "rgba(181, 192, 224, 0.1)";
-		ctx.beginPath();
-		ctx.moveTo(x + 0.5, 0);
-		ctx.lineTo(x + 0.5, height);
-		ctx.stroke();
-		ctx.fillText(formatFrequencyLabel(frequency), Math.max(2, x - 14), height - 6);
-	}
-	for (const value of SPECTRUM_LEVEL_GRID_VALUES) {
-		const y = Math.round(projectY(value));
-		ctx.strokeStyle = "rgba(181, 192, 224, 0.12)";
-		ctx.beginPath();
-		ctx.moveTo(0, y + 0.5);
-		ctx.lineTo(width, y + 0.5);
-		ctx.stroke();
-		ctx.fillText(`${value}`, 6, Math.max(12, y - 2));
-	}
-
-	// Draw a -1 dB/decade target with 0 dB at 1 kHz.
-	ctx.beginPath();
-	for (let index = 0; index < width; index += 1) {
-		const ratio = index / Math.max(1, width - 1);
-		const frequency = Math.pow(10, logMin + ratio * (logMax - logMin));
-		const targetDb = -Math.log10(Math.max(1e-9, frequency) / 1000);
-		const y = projectY(targetDb);
-		if (index === 0) {
-			ctx.moveTo(index, y);
-		} else {
-			ctx.lineTo(index, y);
-		}
-	}
-	ctx.strokeStyle = "#ef4444";
-	ctx.lineWidth = 1.5;
-	ctx.setLineDash([6, 4]);
-	ctx.stroke();
-	ctx.setLineDash([]);
-
-	const drawSeries = (series: LiveSpectrumSeries | null, color: string): void => {
-		if (!series || series.frequencies.length === 0) {
-			return;
-		}
-		ctx.beginPath();
-		for (let index = 0; index < series.frequencies.length; index += 1) {
-			const x = projectX(series.frequencies[index] ?? LOG_FREQUENCY_MIN);
-			const y = projectY(series.valuesDb[index] ?? SPECTRUM_MIN_DB);
-			if (index === 0) {
-				ctx.moveTo(x, y);
-			} else {
-				ctx.lineTo(x, y);
-			}
-		}
-		ctx.strokeStyle = color;
-		ctx.lineWidth = 2;
-		ctx.stroke();
-	};
-
-	drawSeries(micSpectrum, "#f97316");
-	drawSeries(referenceSpectrum, "#38bdf8");
-	drawSeries(differenceSpectrum, "#a3e635");
-}
-
 function buildDifferenceSpectrum(
 	micSpectrum: LiveSpectrumSeries | null,
 	referenceSpectrum: LiveSpectrumSeries | null,
@@ -888,8 +527,6 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 		differenceSplValue,
 		splHistoryCanvas,
 		spectrumCanvas,
-		impulseCanvas,
-		phaseCanvas,
 	} = options;
 
 	let destroyed = false;
@@ -907,11 +544,6 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 	let delaySampleRate: number | null = null;
 	let delayStableUpdateCount = 0;
 	let delayAdaptationLocked = false;
-	let averagedPhaseRe: Float32Array | null = null;
-	let averagedPhaseIm: Float32Array | null = null;
-	let phaseFrequencies: Float32Array | null = null;
-	let averagedImpulse: Float32Array | null = null;
-	let impulseTimeMs: Float32Array | null = null;
 
 	const setStatus = (message: string, state: "idle" | "busy" | "success" | "error" = "idle"): void => {
 		statusText.textContent = message;
@@ -923,14 +555,6 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 		micSplValue.textContent = formatMetricLevel(null, metric);
 		referenceSplValue.textContent = formatMetricLevel(null, metric);
 		differenceSplValue.textContent = formatDifferenceLevel(null);
-	};
-
-	const resetDerivedAverages = (): void => {
-		averagedPhaseRe = null;
-		averagedPhaseIm = null;
-		phaseFrequencies = null;
-		averagedImpulse = null;
-		impulseTimeMs = null;
 	};
 
 	const updateDelayUi = (sampleRate: number | null, hasReference: boolean): void => {
@@ -959,7 +583,6 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 		delaySampleRate = null;
 		delayStableUpdateCount = 0;
 		delayAdaptationLocked = false;
-		resetDerivedAverages();
 		updateDelayUi(null, false);
 	};
 
@@ -972,11 +595,9 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 		drawSpectrum(spectrumCanvas, mic, reference, buildDifferenceSpectrum(mic, reference), sampleRate / 2);
 	};
 
-	const renderDerivedPlots = (mic: Float32Array | null, reference: Float32Array | null, sampleRate: number, smoothingFraction: number): void => {
+	const updateDelayAlignment = (mic: Float32Array | null, reference: Float32Array | null, sampleRate: number): void => {
 		if (!mic || !reference) {
 			resetDelayAlignment();
-			drawEmptyPlot(impulseCanvas, "Impulse response (live)", "Select a reference input device.");
-			drawEmptyPlot(phaseCanvas, "Phase response (live)", "Select a reference input device.");
 			return;
 		}
 
@@ -1003,66 +624,6 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 			smoothedDelaySamples = nextDelaySamples;
 		}
 		updateDelayUi(sampleRate, true);
-
-		const alphaLong = computeExponentialAverageAlpha(Math.max(1 / 120, DERIVED_PLOT_MIN_UPDATE_MS / 1000), DERIVED_AVERAGING_SECONDS);
-
-		const aligned = alignSignalsByDelay(mic, reference, smoothedDelaySamples ?? 0);
-		const transferComplex = aligned
-			? computeTransferComplexResponse(aligned.recorded, aligned.stimulus, sampleRate)
-			: null;
-		if (!transferComplex) {
-			drawEmptyPlot(phaseCanvas, "Phase response (live)", "Unable to compute phase response.");
-		} else {
-			if (!averagedPhaseRe || !averagedPhaseIm || !phaseFrequencies || averagedPhaseRe.length !== transferComplex.re.length) {
-				averagedPhaseRe = Float32Array.from(transferComplex.re);
-				averagedPhaseIm = Float32Array.from(transferComplex.im);
-				phaseFrequencies = Float32Array.from(transferComplex.frequencies);
-			} else {
-				for (let i = 0; i < averagedPhaseRe.length; i += 1) {
-					averagedPhaseRe[i] = (1 - alphaLong) * averagedPhaseRe[i] + alphaLong * (transferComplex.re[i] ?? 0);
-					averagedPhaseIm[i] = (1 - alphaLong) * averagedPhaseIm[i] + alphaLong * (transferComplex.im[i] ?? 0);
-				}
-			}
-
-			const phaseUnwrapped = computeUnwrappedPhaseFromComplex(averagedPhaseRe, averagedPhaseIm);
-			const phaseNormalized = normalizePhaseAtReference(phaseFrequencies, phaseUnwrapped, 100);
-			const phaseSmoothed = smoothPhaseFractional(phaseNormalized, smoothingFraction, sampleRate);
-			const phaseWrapped = wrapPhaseToRange(phaseSmoothed.phasesDeg, -1440, 1440);
-			drawLinePlot(
-				phaseCanvas,
-				"Phase response (live, long average, 100 Hz ref)",
-				"Frequency (Hz)",
-				"Phase (deg)",
-				phaseSmoothed.frequencies,
-				phaseWrapped,
-				"#38bdf8",
-					{ logX: true, yMin: -1440, yMax: 1440, wrapY: true },
-			);
-		}
-
-		const impulse = computeImpulseResponseAlignedWindow(mic, reference, sampleRate, smoothedDelaySamples ?? 0);
-		if (!impulse || impulse.amplitude.length === 0) {
-			drawEmptyPlot(impulseCanvas, "Impulse response (live)", "Unable to compute impulse response.");
-		} else {
-			if (!averagedImpulse || !impulseTimeMs || averagedImpulse.length !== impulse.amplitude.length) {
-				averagedImpulse = Float32Array.from(impulse.amplitude);
-				impulseTimeMs = Float32Array.from(impulse.timeMs);
-			} else {
-				for (let i = 0; i < averagedImpulse.length; i += 1) {
-					averagedImpulse[i] = (1 - alphaLong) * averagedImpulse[i] + alphaLong * (impulse.amplitude[i] ?? 0);
-				}
-			}
-
-			drawLinePlot(
-				impulseCanvas,
-				"Impulse response (live, long average)",
-				"Time (ms)",
-				"Amplitude",
-				impulseTimeMs,
-				averagedImpulse,
-				"#f97316",
-			);
-		}
 	};
 
 	const stopLoop = (): void => {
@@ -1169,7 +730,7 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 
 		if ((currentTime - lastDerivedPlotUpdateMs) >= DERIVED_PLOT_MIN_UPDATE_MS) {
 			lastDerivedPlotUpdateMs = currentTime;
-			renderDerivedPlots(snapshot.micWaveform, snapshot.referenceWaveform, snapshot.sampleRate, smoothingFraction);
+			updateDelayAlignment(snapshot.micWaveform, snapshot.referenceWaveform, snapshot.sampleRate);
 		}
 		animationFrame = requestAnimationFrame(step);
 	};
@@ -1245,7 +806,6 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 	updateDelayUi(null, false);
 	renderState();
 	renderSpectrum(null, null, 48000);
-	renderDerivedPlots(null, null, 48000, DEFAULT_SMOOTHING_FRACTION);
 
 	return {
 		destroy: () => {
@@ -1258,6 +818,8 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 			adaptButton.removeEventListener("click", handleDelayButtonClick);
 			weightingSelect.removeEventListener("change", updateLevelPlaceholders);
 			navigator.mediaDevices?.removeEventListener?.("devicechange", refreshDeviceLists);
+			Plotly.purge(splHistoryCanvas);
+			Plotly.purge(spectrumCanvas);
 			void stop();
 		},
 		isRunning: () => runningSession !== null,

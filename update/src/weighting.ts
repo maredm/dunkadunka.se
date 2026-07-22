@@ -1,5 +1,6 @@
 import { fft } from "./fft";
 import { nextPow2 } from "./math";
+import { NumberArray } from "./signal";
 
 export type FrequencyWeighting = "z" | "a" | "c";
 
@@ -9,6 +10,18 @@ const F1 = 20.598997;
 const F2 = 107.65265;
 const F3 = 737.86223;
 const F4 = 12194.217;
+
+interface Coefficients {
+	b: number[];
+	a: number[];
+}
+
+export const A_WEIGHTING_COEFFICIENTS: Coefficients = {
+    b: [0.234301792299513, -0.468603584599026, -0.234301792299513, 0.937207169198054, -0.234301792299515, -0.468603584599025, 0.234301792299513],
+    a: [1.000000000000000, -4.113043408775871, 6.553121752655047, -4.990849294163381, 1.785737302937573, -0.246190595319487, 0.011224250033231],
+};
+
+
 
 export function getFrequencyWeightingGainDb(weighting: FrequencyWeighting, frequencyHz: number): number {
 	if (weighting === "z") {
@@ -79,4 +92,17 @@ export function computeWeightedMeanSquare(samples: Float32Array, sampleRate: num
 	}
 
 	return weightedEnergy / (fftSize * samples.length);
+}
+
+export function applyAWeightingToBuffer(buffer: NumberArray, zi: number[]): {output: Float32Array, zi: number[]} {
+    const b = A_WEIGHTING_COEFFICIENTS.b;
+    const a = A_WEIGHTING_COEFFICIENTS.a;
+    const output = new Float32Array(buffer.length);
+    for (let n = 0; n < buffer.length; n++) {
+        output[n] = b[0] * buffer[n] + zi[0];
+        for (let i = 1; i < b.length; i++) {
+            zi[i - 1] = b[i] * buffer[n] + zi[i] - a[i] * output[n];
+        }
+    }
+    return { output, zi };
 }

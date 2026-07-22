@@ -48,7 +48,7 @@ type MagnitudeResponse = {
 };
 
 const DEFAULT_SMOOTHING_FRACTION = 1 / 6;
-const PLOT_AXIS_FRACTION = 1 / 24;
+const PLOT_AXIS_FRACTION = 1 / 96;
 const LOG_FREQUENCY_MIN = 20;
 
 const tabsOuter = document.getElementById("tabs-outer") as HTMLElement | null;
@@ -80,10 +80,8 @@ const liveMicSplValue = document.getElementById("liveMicSplValue") as HTMLElemen
 const liveReferenceSplValue = document.getElementById("liveReferenceSplValue") as HTMLElement | null;
 const liveDifferenceSplValue = document.getElementById("liveDifferenceSplValue") as HTMLElement | null;
 const liveDelayValue = document.getElementById("liveDelayValue") as HTMLElement | null;
-const liveSplHistoryCanvas = document.getElementById("liveSplHistoryCanvas") as HTMLCanvasElement | null;
-const liveSpectrumCanvas = document.getElementById("liveSpectrumCanvas") as HTMLCanvasElement | null;
-const liveImpulseCanvas = document.getElementById("liveImpulseCanvas") as HTMLCanvasElement | null;
-const livePhaseCanvas = document.getElementById("livePhaseCanvas") as HTMLCanvasElement | null;
+const liveSplHistoryCanvas = document.getElementById("liveSplHistoryCanvas") as HTMLElement | null;
+const liveSpectrumCanvas = document.getElementById("liveSpectrumCanvas") as HTMLElement | null;
 
 if (!tabsOuter || !tabsInner || !tabContents || !uploadInput || !fileTableBody) {
 	throw new Error("Missing required tab UI elements.");
@@ -1505,9 +1503,7 @@ if (
 	liveDifferenceSplValue &&
 	liveDelayValue &&
 	liveSplHistoryCanvas &&
-	liveSpectrumCanvas &&
-	liveImpulseCanvas &&
-	livePhaseCanvas
+	liveSpectrumCanvas
 ) {
 	liveMonitorController = createLiveMonitorController({
 		micDeviceSelect: liveMicDeviceSelect,
@@ -1527,8 +1523,6 @@ if (
 		differenceSplValue: liveDifferenceSplValue,
 		splHistoryCanvas: liveSplHistoryCanvas,
 		spectrumCanvas: liveSpectrumCanvas,
-		impulseCanvas: liveImpulseCanvas,
-		phaseCanvas: livePhaseCanvas,
 	});
 }
 
