@@ -582,7 +582,8 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 
 	const updateLevelPlaceholders = (): void => {
 		const metric = parseLevelMetric(weightingSelect.value);
-		micSplValue.textContent = formatMetricLevel(null, metric);
+		const calibrationDb = parseCalibrationDb(micCalibrationInput.value);
+		micSplValue.textContent = formatCalibratedLevel(null, calibrationDb);
 		referenceSplValue.textContent = formatMetricLevel(null, metric);
 		differenceSplValue.textContent = formatDifferenceLevel(null);
 	};
@@ -689,7 +690,7 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 		setAudioDeviceSelectOptions(micDeviceSelect, inputs, "System default mic");
 		setAudioDeviceSelectOptions(referenceDeviceSelect, inputs, "Reference disabled", "none");
 		restoreCachedFieldValue(micDeviceSelect, MIC_DEVICE_CACHE_KEY);
-		restoreCachedFieldValue(referenceDeviceSelect, REFERENCE_DEVICE_CACHE_KEY);
+		restoreCachedFieldValue(referenceDeviceSelect, REFERENCE_DEVICE_CACHE_KEY, "none");
 		micDeviceSelect.disabled = inputs.length === 0 || !!runningSession;
 		referenceDeviceSelect.disabled = inputs.length === 0 || !!runningSession;
 	};

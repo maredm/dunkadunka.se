@@ -160,7 +160,7 @@ export function createMeasurementController(options: MeasurementControllerOption
 			setAudioDeviceSelectOptions(outputDeviceSelect, outputs, "System default output");
 			restoreCachedFieldValue(inputDeviceSelect, INPUT_DEVICE_CACHE_KEY);
 			if (referenceDeviceSelect) {
-				restoreCachedFieldValue(referenceDeviceSelect, REFERENCE_DEVICE_CACHE_KEY);
+				restoreCachedFieldValue(referenceDeviceSelect, REFERENCE_DEVICE_CACHE_KEY, "none");
 			}
 			restoreCachedFieldValue(outputDeviceSelect, OUTPUT_DEVICE_CACHE_KEY);
 			if (inputs.length === 0) {

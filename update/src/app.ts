@@ -89,6 +89,7 @@ const acquisitionRecordBtn = document.getElementById("acquisitionRecordBtn") as 
 const acquisitionStopBtn = document.getElementById("acquisitionStopBtn") as HTMLButtonElement | null;
 const liveMicDeviceSelect = document.getElementById("liveMicDeviceSelect") as HTMLSelectElement | null;
 const liveMicChannelSelect = document.getElementById("liveMicChannelSelect") as HTMLSelectElement | null;
+const liveMicCalibrationInput = document.getElementById("liveMicCalibrationInput") as HTMLInputElement | null;
 const liveReferenceDeviceSelect = document.getElementById("liveReferenceDeviceSelect") as HTMLSelectElement | null;
 const liveReferenceChannelSelect = document.getElementById("liveReferenceChannelSelect") as HTMLSelectElement | null;
 const liveAverageTimeConstantSelect = document.getElementById("liveAverageTimeConstantSelect") as HTMLSelectElement | null;
@@ -2001,6 +2002,7 @@ acquisitionMeasurementController = createMeasurementController({
 if (
 	liveMicDeviceSelect &&
 	liveMicChannelSelect &&
+	liveMicCalibrationInput &&
 	liveReferenceDeviceSelect &&
 	liveReferenceChannelSelect &&
 	liveAverageTimeConstantSelect &&
@@ -2020,6 +2022,7 @@ if (
 	liveMonitorController = createLiveMonitorController({
 		micDeviceSelect: liveMicDeviceSelect,
 		micChannelSelect: liveMicChannelSelect,
+		micCalibrationInput: liveMicCalibrationInput,
 		referenceDeviceSelect: liveReferenceDeviceSelect,
 		referenceChannelSelect: liveReferenceChannelSelect,
 		averageTimeConstantSelect: liveAverageTimeConstantSelect,
