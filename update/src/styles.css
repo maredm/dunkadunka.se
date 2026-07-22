@@ -26,11 +26,13 @@
 :root {
     --border: #1e1e1e;
 	--bg-color: #161718;
-    --bg-primary: #1d1e1f;
+    --bg-primary: #363738;
     --bg-secondary: #2d2e2f;
+	--bg-tertiary: #262728;
     --bg-hover: #444;
-    --text-primary: #eee;
-    --text-secondary: #ddd;
+    --text-primary: #fbfdff;
+    --text-secondary: #bbbdbf;
+    --text-disabled: #9b9d9f;
 	--color: #1f77b4;
 }
 
@@ -208,7 +210,7 @@ body {
 	display: flex;
 	align-items: stretch;
 	height: 100%;
-	font-size: 0.8125rem;
+	font-size: 1rem;
 }
 
 .toolbar-menu-item {
@@ -260,7 +262,7 @@ body {
 	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
 	z-index: 999;
 	list-style: none;
-	font-size: 0.8125rem;
+	font-size: 1rem;
 }
 
 .toolbar-dropdown li {
@@ -283,7 +285,7 @@ body {
 
 .tabs {
 	display: flex;
-	background: var(--bg-secondary);
+	background: var(--bg-primary);
 	border-top: var(--border) solid 1px;
 	border-bottom: var(--border) solid 1px inset;
 	color: var(--text-secondary);
@@ -318,10 +320,11 @@ body {
 	display: inline-block;
 	font-weight: 700;
 	color: #ef4444;
-	font-size: 12px;
+	font-size: 14px;
 	text-shadow: 0 0 8px rgba(239, 68, 68, 0.45);
 	content: "◉";
 	height: 16px;
+	vertical-align: text-top;
 }
 
 .tab-loading .tab-icon-recording::before {
@@ -329,11 +332,16 @@ body {
 }
 
 .tab-icon-waveform::before {
-	margin-right: 8px;
-	display: inline-block;
-	font-weight: 700;
 	color: #0ea5e9;
 	content: "∿";
+	margin-right: 8px;
+	display: inline-block;
+	font-weight: 100;
+	font-size: 12px;
+	text-shadow: 0 0 8px rgba(239, 68, 68, 0.45);
+	height: 16px;
+	vertical-align: text-top;
+	margin-top: 2px;
 }
 
 .tab-loading .tab-icon-waveform::before {
@@ -345,10 +353,11 @@ body {
 	display: inline-block;
 	font-weight: 700;
 	color: #22c55e;
-	font-size: 12px;
+	font-size: 14px;
 	text-shadow: 0 0 8px rgba(239, 68, 68, 0.45);
 	content: "◉";
 	height: 16px;
+	vertical-align: text-top;
 }
 
 .tab-loading .tab-icon-live::before {
@@ -356,11 +365,16 @@ body {
 }
 
 .tab-icon-analysis::before {
+	content: "⛶";
+	color: #8b5cf6;
 	margin-right: 8px;
 	display: inline-block;
-	font-weight: 700;
-	color: #8b5cf6;
-	content: "⛶";
+	font-weight: 100;
+	font-size: 12px;
+	text-shadow: 0 0 8px rgba(239, 68, 68, 0.45);
+	height: 16px;
+	margin-top: 2px;
+	vertical-align: text-top;
 }
 
 .tab-loading .tab-icon-analysis::before {
@@ -374,23 +388,23 @@ body {
 	padding-block: 4px;
 	cursor: pointer;
 	background: none;
-	font-size: 14px;
 	border-top: 1px solid transparent;
 	white-space: nowrap;
 	color: var(--text-primary);
 	height: 30px;
 	border: 1px solid transparent;
+	font-size: 1rem;
 }
 
 .tab.active:not(.tab-closable) {
-	background: var(--bg-primary);
+	background: var(--bg-secondary);
 	border: 1px solid var(--border);
 }
 
 .tab-loading {
 	position: relative;
 	pointer-events: none;
-	color: #999;
+	color: var(--text-disabled);
 }
 
 .tab-closable {
@@ -409,7 +423,7 @@ body {
 }
 
 .tab-closable.tab.active {
-	background: var(--bg-primary);
+	background: var(--bg-secondary);
 	border-top: 1px solid var(--color);
 	overflow-y: visible;
 }
@@ -420,7 +434,7 @@ body {
 
 .tab-close {
 	margin-left: 8px;
-	color: #999;
+	color: var(--text-disabled);
 	font-weight: bold;
 }
 
@@ -446,7 +460,8 @@ body {
 	position: absolute;
 	inset: 0;
 	display: none;
-	overflow: auto;
+	overflow: clip;
+	height: 100%;
 }
 
 .tab-content.active {
@@ -455,7 +470,8 @@ body {
 
 .tab-inner-content {
 	padding: 16px;
-	height: 100%;
+	overflow: scroll;
+	white-space: normal;
 }
 
 .acquisition-surface {
@@ -469,10 +485,11 @@ body {
 	align-items: center;
 	gap: 8px;
 	padding: 8px 12px;
-	background: color-mix(in hsl, var(--bg-secondary) 88%, black 12%);
+	background: var(--bg-secondary);
 	position: sticky;
 	top: 0;
 	z-index: 5;
+	font-size: .875rem;
 	border-top: 1px solid var(--border);
 }
 
@@ -489,7 +506,6 @@ body {
 }
 
 .acquisition-toolbar-label {
-	font-size: 12px;
 	color: var(--text-secondary);
 	white-space: nowrap;
 }
@@ -506,7 +522,6 @@ body {
 
 .acquisition-status {
 	margin: 0;
-	font-size: 12px;
 	color: var(--text-secondary);
 	flex: 1;
 	white-space: nowrap;
@@ -798,8 +813,7 @@ body {
 }
 
 .waveform-tool-host {
-	height: 100%;
-	min-height: 520px;
+	height: calc(100% - 45px);
 }
 
 .tab-content[data-content="waveform"] .tab-inner-content {
@@ -944,11 +958,10 @@ body {
 }
 
 .toolbar-select {
-	background: var(--bg-secondary);
+	background: var(--bg-tertiary);
 	color: var(--text-primary);
 	border: 1px solid var(--border);
 	padding: 4px 8px;
-	font-size: 12px;
 	height: 28px;
 	margin-right: 8px;
 }
@@ -960,7 +973,6 @@ body {
 	border: 1px solid var(--border);
 	padding: 4px 10px;
 	cursor: pointer;
-	font-size: 12px;
 	height: 28px;
 	display: inline-flex;
 	align-items: center;
