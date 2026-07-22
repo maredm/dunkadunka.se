@@ -1,4 +1,4 @@
-import { listAudioDevices, setAudioDeviceSelectOptions } from "./audio_devices";
+import { bindCachedFieldValue, listAudioDevices, restoreCachedFieldValue, setAudioDeviceSelectOptions } from "./audio_devices";
 import { startLiveMonitor, type LiveMonitorSession, type AudioChannelSelection } from "./audio_io";
 import Plotly from "plotly.js-dist-min";
 import { fft } from "./fft";
@@ -30,6 +30,7 @@ type LiveMonitorHistoryPoint = {
 export interface LiveMonitorControllerOptions {
 	micDeviceSelect: HTMLSelectElement;
 	micChannelSelect: HTMLSelectElement;
+	micCalibrationInput: HTMLInputElement;
 	referenceDeviceSelect: HTMLSelectElement;
 	referenceChannelSelect: HTMLSelectElement;
 	averageTimeConstantSelect: HTMLSelectElement;
@@ -103,6 +104,11 @@ function normalizeChannelSelection(value: string): AudioChannelSelection {
 	return value === "right" ? "right" : "left";
 }
 
+function parseCalibrationDb(value: string): number {
+	const parsed = Number.parseFloat(value);
+	return Number.isFinite(parsed) ? parsed : 0;
+}
+
 
 
 function formatLevel(value: number | null): string {
@@ -125,6 +131,20 @@ function formatDifferenceLevel(value: number | null): string {
 	}
 	return `${value.toFixed(1)} dB`;
 }
+
+function formatCalibratedLevel(value: number | null, calibrationDb: number): string {
+	const unit = calibrationDb === 0 ? "dBFS" : "dBPa";
+	if (value === null || !Number.isFinite(value)) {
+		return `-- ${unit}`;
+	}
+	return `${(value + calibrationDb).toFixed(1)} ${unit}`;
+}
+
+const MIC_DEVICE_CACHE_KEY = "update.live.micDeviceId";
+const MIC_CHANNEL_CACHE_KEY = "update.live.micChannel";
+const MIC_CALIBRATION_CACHE_KEY = "update.live.micCalibrationDb";
+const REFERENCE_DEVICE_CACHE_KEY = "update.live.referenceDeviceId";
+const REFERENCE_CHANNEL_CACHE_KEY = "update.live.referenceChannel";
 
 function formatFrequencyLabel(value: number): string {
 	return value >= 1000 ? `${Math.round(value / 1000)} kHz` : `${Math.round(value)} Hz`;
@@ -512,6 +532,7 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 	const {
 		micDeviceSelect,
 		micChannelSelect,
+		micCalibrationInput,
 		referenceDeviceSelect,
 		referenceChannelSelect,
 		averageTimeConstantSelect,
@@ -528,6 +549,15 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 		splHistoryCanvas,
 		spectrumCanvas,
 	} = options;
+
+	bindCachedFieldValue(micDeviceSelect, MIC_DEVICE_CACHE_KEY);
+	bindCachedFieldValue(micChannelSelect, MIC_CHANNEL_CACHE_KEY);
+	bindCachedFieldValue(micCalibrationInput, MIC_CALIBRATION_CACHE_KEY);
+	bindCachedFieldValue(referenceDeviceSelect, REFERENCE_DEVICE_CACHE_KEY);
+	bindCachedFieldValue(referenceChannelSelect, REFERENCE_CHANNEL_CACHE_KEY);
+	restoreCachedFieldValue(micChannelSelect, MIC_CHANNEL_CACHE_KEY, "left");
+	restoreCachedFieldValue(referenceChannelSelect, REFERENCE_CHANNEL_CACHE_KEY, "left");
+	restoreCachedFieldValue(micCalibrationInput, MIC_CALIBRATION_CACHE_KEY, "0");
 
 	let destroyed = false;
 	let runningSession: LiveMonitorSession | null = null;
@@ -658,6 +688,8 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 		}
 		setAudioDeviceSelectOptions(micDeviceSelect, inputs, "System default mic");
 		setAudioDeviceSelectOptions(referenceDeviceSelect, inputs, "Reference disabled", "none");
+		restoreCachedFieldValue(micDeviceSelect, MIC_DEVICE_CACHE_KEY);
+		restoreCachedFieldValue(referenceDeviceSelect, REFERENCE_DEVICE_CACHE_KEY);
 		micDeviceSelect.disabled = inputs.length === 0 || !!runningSession;
 		referenceDeviceSelect.disabled = inputs.length === 0 || !!runningSession;
 	};
@@ -687,6 +719,7 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 		const alpha = computeExponentialAverageAlpha(elapsedSeconds, parseAveragingSeconds(averageTimeConstantSelect.value));
 		const smoothingFraction = parseSmoothingFraction(smoothingSelect.value);
 		const metric = parseLevelMetric(weightingSelect.value);
+		const calibrationDb = parseCalibrationDb(micCalibrationInput.value);
 		if (!micLevelMeter || micLevelMeter.metric !== metric || micLevelMeter.sampleRate !== snapshot.sampleRate) {
 			micLevelMeter = createLevelMeterState(metric, snapshot.sampleRate);
 		}
@@ -698,10 +731,11 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 		const referenceLevel = snapshot.referenceWaveform && referenceLevelMeter
 			? updateLevelMeter(referenceLevelMeter, snapshot.referenceWaveform, snapshot.sampleRate)
 			: null;
-		const differenceLevel = referenceLevel === null ? null : micLevel - referenceLevel;
-		history.push(createHistoryPoint(currentTime / 1000, micLevel, referenceLevel));
+		const calibratedMicLevel = micLevel + calibrationDb;
+		const differenceLevel = referenceLevel === null ? null : calibratedMicLevel - referenceLevel;
+		history.push(createHistoryPoint(currentTime / 1000, calibratedMicLevel, referenceLevel));
 		history = history.filter((point) => (currentTime / 1000) - point.timeSeconds <= HISTORY_SECONDS);
-		micSplValue.textContent = formatMetricLevel(micLevel, metric);
+		micSplValue.textContent = formatCalibratedLevel(micLevel, calibrationDb);
 		referenceSplValue.textContent = formatMetricLevel(referenceLevel, metric);
 		differenceSplValue.textContent = formatDifferenceLevel(differenceLevel);
 		renderState();
@@ -743,7 +777,8 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 		setControlsBusy(true);
 		setStatus("Starting live monitor...", "busy");
 		const metric = parseLevelMetric(weightingSelect.value);
-		micSplValue.textContent = formatMetricLevel(null, metric);
+		const calibrationDb = parseCalibrationDb(micCalibrationInput.value);
+		micSplValue.textContent = formatCalibratedLevel(null, calibrationDb);
 		referenceSplValue.textContent = formatMetricLevel(null, metric);
 		differenceSplValue.textContent = formatDifferenceLevel(null);
 		history = [];
@@ -762,7 +797,13 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 				referenceDeviceId: referenceDeviceSelect.value && referenceDeviceSelect.value !== "none" ? referenceDeviceSelect.value : undefined,
 				referenceChannel: normalizeChannelSelection(referenceChannelSelect.value),
 			});
-			setStatus(`Live monitor running. Levels are uncalibrated full-scale values using ${getLevelMetricLabel(metric)}.`, "success");
+				const calibrationDb = parseCalibrationDb(micCalibrationInput.value);
+				setStatus(
+					calibrationDb === 0
+						? `Live monitor running. Levels are uncalibrated full-scale values using ${getLevelMetricLabel(metric)}.`
+						: `Live monitor running. Mic levels are offset by ${calibrationDb.toFixed(1)} dBFS/dBPa using ${getLevelMetricLabel(metric)}.`,
+					"success",
+				);
 			await refreshDeviceLists();
 			animationFrame = requestAnimationFrame(step);
 		} catch (error) {

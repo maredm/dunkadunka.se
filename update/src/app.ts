@@ -18,6 +18,8 @@ type AnalysisCurve = {
 	label: string;
 	raw: MagnitudeResponse;
 	smoothed: MagnitudeResponse;
+	phase: PhaseResponse;
+	phaseSmoothed: PhaseResponse;
 };
 
 type HarmonicCurve = {
@@ -53,6 +55,11 @@ type PhaseResponse = {
 type MagnitudeResponse = {
 	frequencies: Float32Array;
 	valuesDb: Float32Array;
+};
+
+type MagnitudeResponseWithStdDev = MagnitudeResponse & {
+	stddevUp: Float32Array;
+	stddevDown: Float32Array;
 };
 
 const DEFAULT_SMOOTHING_FRACTION = 1 / 6;
@@ -452,9 +459,7 @@ function computeTransferPhaseResponse(recorded: Float32Array, stimulus: Float32A
 	let first = true;
 	for (let k = 1; k < nfft / 2; k += 1) {
 		const freq = (k * sampleRate) / nfft;
-		if (freq < minHz || freq > maxHz) {
-			continue;
-		}
+
 		const denom = (xRe[k] * xRe[k]) + (xIm[k] * xIm[k]);
 		if (denom <= 1e-20) {
 			continue;
@@ -515,9 +520,6 @@ function computeTransferMagnitudeResponse(recorded: Float32Array, stimulus: Floa
 
 	for (let k = 1; k < nfft / 2; k += 1) {
 		const freq = (k * sampleRate) / nfft;
-		if (freq < minHz || freq > maxHz) {
-			continue;
-		}
 
 		const denom = (xRe[k] * xRe[k]) + (xIm[k] * xIm[k]);
 		if (denom <= 1e-20) {
@@ -624,9 +626,6 @@ function computeSpectrumDbWithFrequencyScale(samples: Float32Array, sampleRate: 
 	const valuesDb: number[] = [];
 	for (let bin = 1; bin < nfft / 2; bin += 1) {
 		const frequency = ((bin * sampleRate) / nfft) * frequencyScale;
-		if (frequency < LOG_FREQUENCY_MIN || frequency > 20000) {
-			continue;
-		}
 		const magnitude = Math.sqrt((real[bin] ?? 0) ** 2 + (imag[bin] ?? 0) ** 2);
 		frequencies.push(frequency);
 		valuesDb.push(20 * Math.log10(Math.max(magnitude, 1e-12)));
@@ -672,6 +671,7 @@ function computeFarinaLikeHarmonicCurves(
 	label: string,
 	windowSeconds = 0.2,
 	maxHarmonics = 5,
+	smoothingFraction = DEFAULT_SMOOTHING_FRACTION,
 ): HarmonicCurve[] {
 	const n = Math.min(measured.length, reference.length);
 	if (n < 512 || sampleRate <= 0) {
@@ -702,7 +702,7 @@ function computeFarinaLikeHarmonicCurves(
 	const sweepStartHz = 20;
 	const sweepStopHz = 24000;
 	const ell = 2; //durationSeconds / Math.log(sweepStopHz / sweepStartHz);
-	const windowSize = Math.max(256, Math.round(0.25 * sampleRate));
+	const windowSize = Math.max(256, Math.round(windowSeconds * sampleRate));
 
 	const curves: HarmonicCurve[] = [];
 	for (let order = 1; order <= maxHarmonics + 1; order += 1) {
@@ -713,7 +713,9 @@ function computeFarinaLikeHarmonicCurves(
 		if (!magnitude) {
 			continue;
 		}
-		const smoothed = smoothMagnitudeFractional(magnitude.valuesDb, DEFAULT_SMOOTHING_FRACTION, sampleRate);
+		const smoothed = smoothingFraction > 0
+			? smoothMagnitudeFractional(magnitude.valuesDb, smoothingFraction, sampleRate)
+			: magnitude;
 		curves.push({
 			label,
 			order,
@@ -826,6 +828,54 @@ function computeAverageMagnitudeResponse(curves: AnalysisCurve[]): MagnitudeResp
 	};
 }
 
+function computeAverageMagnitudeResponseWithStdDev(curves: AnalysisCurve[]): MagnitudeResponseWithStdDev | null {
+	if (curves.length === 0) {
+		return null;
+	}
+
+	const base = curves[0]?.smoothed;
+	if (!base || base.frequencies.length === 0) {
+		return null;
+	}
+
+	const valuesDb = new Float32Array(base.frequencies.length);
+	const stddevUp = new Float32Array(base.frequencies.length);
+	const stddevDown = new Float32Array(base.frequencies.length);
+
+	for (let index = 0; index < base.frequencies.length; index += 1) {
+		const frequency = base.frequencies[index] ?? 0;
+		const values: number[] = [];
+		for (const curve of curves) {
+			const value = interpolateMagnitudeValue(curve.smoothed, frequency);
+			if (value !== null && Number.isFinite(value)) {
+				values.push(value);
+			}
+		}
+
+		if (values.length === 0) {
+			valuesDb[index] = Number.NaN;
+			stddevUp[index] = Number.NaN;
+			stddevDown[index] = Number.NaN;
+			continue;
+		}
+
+		const mean = values.reduce((a, b) => a + b, 0) / values.length;
+		const variance = values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / values.length;
+		const stddev = Math.sqrt(variance);
+
+		valuesDb[index] = mean;
+		stddevUp[index] = mean + stddev;
+		stddevDown[index] = mean - stddev;
+	}
+
+	return {
+		frequencies: Float32Array.from(base.frequencies),
+		valuesDb,
+		stddevUp,
+		stddevDown,
+	};
+}
+
 function computeTargetMagnitudeResponse(base: MagnitudeResponse, offsetDb: number): MagnitudeResponse {
 	const frequencies = base.frequencies;
 	const baseValues = base.valuesDb;
@@ -869,7 +919,7 @@ function computeTargetMagnitudeResponse(base: MagnitudeResponse, offsetDb: numbe
 function renderAnalysisFrequencyPlot(
 	host: HTMLElement,
 	curves: AnalysisCurve[],
-	averageCurve: MagnitudeResponse | null,
+	averageCurve: MagnitudeResponseWithStdDev | null,
 	targetCurve: MagnitudeResponse | null,
 ): void {
 	const traces: any[] = curves.flatMap((curve, index) => {
@@ -896,15 +946,40 @@ function renderAnalysisFrequencyPlot(
 			},
 		];
 	});
-	if (averageCurve) {
+	if (averageCurve && curves.length > 1) {
+		// Add upper stddev band
+		traces.push({
+			type: "scatter",
+			mode: "lines",
+			name: "Average +1SD",
+			x: Array.from(averageCurve.frequencies),
+			y: Array.from(averageCurve.stddevUp),
+			line: { color: "rgba(248, 250, 252, 0.3)", width: 1 },
+			showlegend: false,
+			hovertemplate: "%{x:.1f} Hz<br>%{y:.2f} dB<extra>+1SD</extra>",
+		});
+
+		// Add average curve
 		traces.push({
 			type: "scatter",
 			mode: "lines",
 			name: "Average",
 			x: Array.from(averageCurve.frequencies),
 			y: Array.from(averageCurve.valuesDb),
-			line: { color: "#f8fafc", width: 3 },
+			line: { color: "#f8fafc", width: 6 },
 			hovertemplate: "%{x:.1f} Hz<br>%{y:.2f} dB<extra>Average</extra>",
+		});
+
+		// Add lower stddev band
+		traces.push({
+			type: "scatter",
+			mode: "lines",
+			name: "Average -1SD",
+			x: Array.from(averageCurve.frequencies),
+			y: Array.from(averageCurve.stddevDown),
+			line: { color: "rgba(248, 250, 252, 0.3)", width: 1 },
+			showlegend: false,
+			hovertemplate: "%{x:.1f} Hz<br>%{y:.2f} dB<extra>-1SD</extra>",
 		});
 	}
 	if (targetCurve) {
@@ -947,6 +1022,80 @@ function renderAnalysisFrequencyPlot(
 			yaxis: {
 				title: { text: "Magnitude (dB)", font: { color: "#9aa4b2", size: 12 } },
 				range: [-40, 20],
+				gridcolor: "rgba(181, 192, 224, 0.12)",
+				zeroline: false,
+				color: "#9aa4b2",
+			},
+		},
+		ANALYSIS_PLOTLY_CONFIG,
+	);
+}
+
+function renderAnalysisPhaseDelayPlot(host: HTMLElement, curves: AnalysisCurve[], delayOffsetMs: number = 0): void {
+	const traces: any[] = curves.flatMap((curve, index) => {
+		const color = ANALYSIS_COLORS[index % ANALYSIS_COLORS.length];
+		// Calculate group delay from phase: gd = -d(phase)/d(freq)
+		const frequencies = Array.from(curve.phaseSmoothed.frequencies);
+		const phases = Array.from(curve.phaseSmoothed.phasesDeg);
+		const groupDelays: number[] = [];
+
+		for (let i = 0; i < phases.length; i += 1) {
+			if (i === 0) {
+				groupDelays.push(Number.NaN);
+				continue;
+			}
+			const df = (frequencies[i] ?? 0) - (frequencies[i - 1] ?? 0);
+			const dp = (phases[i] ?? 0) - (phases[i - 1] ?? 0);
+			if (Math.abs(df) < 0.1) {
+				groupDelays.push(Number.NaN);
+				continue;
+			}
+			// gd = -d(phase_rad) / d(freq) / (2*pi)
+			const phaseRad = dp * (Math.PI / 180);
+			const gd = (-phaseRad / df) / (2 * Math.PI) * 1000; // convert to ms
+			const gdCompensated = gd - delayOffsetMs; // subtract ch3/ch2 delay
+			groupDelays.push(Number.isFinite(gdCompensated) ? gdCompensated : Number.NaN);
+		}
+
+		return [{
+			type: "scatter",
+			mode: "lines",
+			name: curve.label,
+			x: frequencies,
+			y: groupDelays,
+			line: { color, width: 2 },
+			hovertemplate: "%{x:.1f} Hz<br>%{y:.2f} ms<extra>Group delay</extra>",
+		}];
+	});
+
+	void Plotly.react(
+		host,
+		traces,
+		{
+			title: { text: "Group delay (phase)", font: { color: "#f8fafc", size: 14 } },
+			paper_bgcolor: "#000",
+			plot_bgcolor: "#000",
+			margin: { l: 56, r: 180, t: 36, b: 44 },
+			showlegend: true,
+			legend: {
+				orientation: "v",
+				yanchor: "top",
+				y: 1,
+				xanchor: "left",
+				x: 1.02,
+				font: { color: "#cbd5e1", size: 11 },
+			},
+			xaxis: {
+				title: { text: "Frequency (Hz)", font: { color: "#9aa4b2", size: 12 } },
+				type: "log",
+				range: [Math.log10(20), Math.log10(20000)],
+				gridcolor: "rgba(181, 192, 224, 0.12)",
+				zeroline: false,
+				color: "#9aa4b2",
+			},
+			yaxis: {
+				title: { text: "Group delay (ms)", font: { color: "#9aa4b2", size: 12 } },
+				range: [-10, 40],
 				gridcolor: "rgba(181, 192, 224, 0.12)",
 				zeroline: false,
 				color: "#9aa4b2",
@@ -1031,7 +1180,7 @@ function renderThdPlot(host: HTMLElement, seriesList: Array<{ label: string; ser
 			},
 			yaxis: {
 				title: { text: "THD (%)", font: { color: "#9aa4b2", size: 12 } },
-				range: [0, 10],
+				range: [0, 2.5],
 				gridcolor: "rgba(181, 192, 224, 0.12)",
 				zeroline: false,
 				color: "#9aa4b2",
@@ -1150,15 +1299,15 @@ function computeImpulseResponseWindowed(recorded: Float32Array, stimulus: Float3
 	const amplitudeRaw = new Float32Array(length);
 	for (let i = 0; i < length; i += 1) {
 		const idx = start + i;
-		timeMs[i] = (i / sampleRate) * 1000;
+		timeMs[i] = (i / sampleRate) * 500;
 		amplitudeRaw[i] = ir[idx] ?? 0;
 	}
 
 	// Apply a light Gaussian smoothing to match REW-style IR readability.
 	const smoothedAmplitude = smoothImpulseResponse(amplitudeRaw, sampleRate, 0.1);
-	const amplitude = normalizeImpulseToPeak(smoothedAmplitude);
+	const amplitude = normalizeImpulseToPeak(smoothedAmplitude.slice(length / 4, 3 * length / 4));
 
-	return { timeMs, amplitude };
+	return { timeMs: timeMs.slice(length / 4, 3 * length / 4), amplitude };
 }
 
 function smoothImpulseResponse(samples: Float32Array, sampleRate: number, sigmaMs: number): Float32Array {
@@ -1262,7 +1411,7 @@ function computeAlignedImpulseResponse(
 	}
 
 	const alignedTimeMs = new Float32Array(impulse.timeMs.length);
-	const delayMs = delaySeconds * 1000 * 2;
+	const delayMs = delaySeconds * 1000;
 	for (let index = 0; index < impulse.timeMs.length; index += 1) {
 		alignedTimeMs[index] = (impulse.timeMs[index] ?? 0) - delayMs;
 	}
@@ -1347,21 +1496,47 @@ function createWaveformMarkup(tabId: string): string {
 function createAnalysisMarkup(tabId: string, fileName: string, sampleRate: number, channelCount: number, frameCount: number): string {
 	const durationSeconds = sampleRate > 0 ? frameCount / sampleRate : 0;
 	return `
+		<div class="acquisition-toolbar" role="toolbar" aria-label="Analysis plot controls">
+			<div class="acquisition-toolbar-group">
+				<label for="analysisTargetOffset-${tabId}" class="acquisition-toolbar-label">Target offset</label>
+				<input id="analysisTargetOffset-${tabId}" class="toolbar-select analysis-target-input" type="number" value="0" step="0.5" min="-20" max="20" />
+				<span class="acquisition-toolbar-label" style="font-size: 0.85em; color: #9aa4b2;">dB @ 1k</span>
+			</div>
+			<div class="acquisition-toolbar-group">
+				<label for="analysisFarinaWindow-${tabId}" class="acquisition-toolbar-label">Farina window</label>
+				<input id="analysisFarinaWindow-${tabId}" class="toolbar-select analysis-target-input" type="number" value="0.2" step="0.05" min="0.05" max="1" />
+				<span class="acquisition-toolbar-label" style="font-size: 0.85em; color: #9aa4b2;">s</span>
+			</div>
+			<div class="acquisition-toolbar-group">
+				<label for="analysisSmoothingFraction-${tabId}" class="acquisition-toolbar-label">Smoothing</label>
+				<select id="analysisSmoothingFraction-${tabId}" class="toolbar-select">
+					<option value="0">None</option>
+					<option value="0.3333">1/3 octave</option>
+					<option value="0.1667" selected>1/6 octave</option>
+					<option value="0.0833">1/12 octave</option>
+					<option value="0.0417">1/24 octave</option>
+					<option value="0.0208">1/48 octave</option>
+				</select>
+			</div>
+			<div class="acquisition-toolbar-group" style="margin-left: auto;">
+				<button id="analysisUpdateBtn-${tabId}" type="button" class="toolbar-button button acquisition-action-button" style="background-color: #3b82f6; border-color: #2563eb;">Update analysis</button>
+			</div>
+		</div>
 		<div class="tab-inner-content">
 			<div class="loose-container">
 				<p class="info">1/6-octave smoothed transfer magnitude from channel 1 measured against channel 2 reference.</p>
 				<p id="analysisDelaySummary-${tabId}" class="info">Ch3 -> Ch2 delay compensation: unavailable (requires channel 3).</p>
 				<p class="info">${fileName} · ${sampleRate} Hz · ${channelCount} ch · ${durationSeconds.toFixed(2)} s</p>
-				<div class="analysis-target-controls">
-					<label for="analysisTargetOffset-${tabId}" class="acquisition-toolbar-label">Target offset</label>
-					<input id="analysisTargetOffset-${tabId}" class="toolbar-select analysis-target-input" type="number" value="0" step="0.5" min="-20" max="20" />
-					<span class="info">dB @ 1 kHz</span>
-				</div>
 			</div>
+			
 			<div id="analysisExtraPlots-${tabId}" class="analysis-extra-plots">
 				<section class="live-plot-card">
 					<h2>Frequency response</h2>
 					<div id="analysisFrequencyPlot-${tabId}" class="analysis-plot-host"></div>
+				</section>
+				<section class="live-plot-card">
+					<h2>Delay alignment impulse</h2>
+					<div id="analysisAlignmentIrPlot-${tabId}" class="analysis-plot-host"></div>
 				</section>
 				<section class="live-plot-card">
 					<h2>Farina-style distortion</h2>
@@ -1372,8 +1547,8 @@ function createAnalysisMarkup(tabId: string, fileName: string, sampleRate: numbe
 					<div id="analysisThdPlot-${tabId}" class="analysis-plot-host"></div>
 				</section>
 				<section class="live-plot-card">
-					<h2>Delay alignment impulse</h2>
-					<div id="analysisAlignmentIrPlot-${tabId}" class="analysis-plot-host"></div>
+					<h2>Group delay (phase)</h2>
+					<div id="analysisPhaseDelayPlot-${tabId}" class="analysis-plot-host"></div>
 				</section>
 			</div>
 		</div>
@@ -1515,24 +1690,40 @@ async function openAnalysisTab(inputFiles: File[] | File): Promise<void> {
 		content.innerHTML = createAnalysisMarkup(tabId, fileLabel, sampleRate, channelCount, frameCount);
 
 		const frequencyPlot = document.getElementById(`analysisFrequencyPlot-${tabId}`) as HTMLElement | null;
+		const phaseDelayPlot = document.getElementById(`analysisPhaseDelayPlot-${tabId}`) as HTMLElement | null;
 		const distortionPlot = document.getElementById(`analysisDistortionPlot-${tabId}`) as HTMLElement | null;
 		const thdPlot = document.getElementById(`analysisThdPlot-${tabId}`) as HTMLElement | null;
 		const alignmentIrPlot = document.getElementById(`analysisAlignmentIrPlot-${tabId}`) as HTMLElement | null;
 		const analysisExtraPlots = document.getElementById(`analysisExtraPlots-${tabId}`) as HTMLElement | null;
 		const delaySummary = document.getElementById(`analysisDelaySummary-${tabId}`) as HTMLElement | null;
 		const targetOffsetInput = document.getElementById(`analysisTargetOffset-${tabId}`) as HTMLInputElement | null;
+		const farinaWindowInput = document.getElementById(`analysisFarinaWindow-${tabId}`) as HTMLInputElement | null;
+		const smoothingFractionInput = document.getElementById(`analysisSmoothingFraction-${tabId}`) as HTMLInputElement | null;
+		const updateBtn = document.getElementById(`analysisUpdateBtn-${tabId}`) as HTMLButtonElement | null;
 		if (!frequencyPlot) {
 			throw new Error("Failed to create analysis frequency plot.");
 		}
-		if (!distortionPlot || !thdPlot || !alignmentIrPlot || !analysisExtraPlots || !delaySummary) {
+		if (!phaseDelayPlot || !distortionPlot || !thdPlot || !alignmentIrPlot || !analysisExtraPlots || !delaySummary) {
 			throw new Error("Failed to create distortion plots.");
 		}
 		if (!targetOffsetInput) {
 			throw new Error("Failed to create target offset control.");
 		}
+		if (!farinaWindowInput) {
+			throw new Error("Failed to create farina window control.");
+		}
+		if (!smoothingFractionInput) {
+			throw new Error("Failed to create smoothing fraction control.");
+		}
+		if (!updateBtn) {
+			throw new Error("Failed to create update button.");
+		}
 
 		const renderDerivedPlots = (): void => {
+			const smoothingFraction = Number.parseFloat(smoothingFractionInput.value || "0.1667");
 			const curves: AnalysisCurve[] = [];
+			let ch3Ch2DelayMs = 0;
+			
 			for (const { file, parsed } of parsedFiles) {
 				if (parsed.channels.length < 2) {
 					continue;
@@ -1543,11 +1734,43 @@ async function openAnalysisTab(inputFiles: File[] | File): Promise<void> {
 				if (!magnitude) {
 					continue;
 				}
-				const magnitudeSmoothed = smoothMagnitudeFractional(magnitude.valuesDb, DEFAULT_SMOOTHING_FRACTION, parsed.sampleRate);
+				const phase = computeTransferPhaseResponse(measured, reference, parsed.sampleRate);
+				if (!phase) {
+					continue;
+				}
+				
+				// Compute ch3/ch2 delay if channel 3 exists
+				if (parsed.channels.length >= 3 && ch3Ch2DelayMs === 0) {
+					const ch3 = parsed.channels[2] ?? new Float32Array(0);
+					const ch2 = parsed.channels[1] ?? new Float32Array(0);
+					const ch3Ch2Phase = computeTransferPhaseResponse(ch3, ch2, parsed.sampleRate);
+					if (ch3Ch2Phase && ch3Ch2Phase.frequencies.length > 0) {
+						let closest1kIdx = 0;
+						let minDist = Math.abs((ch3Ch2Phase.frequencies[0] ?? 0) - 1000);
+						for (let i = 1; i < ch3Ch2Phase.frequencies.length; i += 1) {
+							const dist = Math.abs((ch3Ch2Phase.frequencies[i] ?? 0) - 1000);
+							if (dist < minDist) {
+								minDist = dist;
+								closest1kIdx = i;
+							}
+						}
+						const phase1k = ch3Ch2Phase.phasesDeg[closest1kIdx] ?? 0;
+						ch3Ch2DelayMs = -phase1k / (360 * 1); // -phase_deg / (360 * freq_kHz)
+					}
+				}
+				
+				const magnitudeSmoothed = smoothingFraction > 0 
+					? smoothMagnitudeFractional(magnitude.valuesDb, smoothingFraction, parsed.sampleRate)
+					: magnitude;
+				const phaseSmoothed = smoothingFraction > 0
+					? smoothPhaseFractional(phase.phasesDeg, smoothingFraction, parsed.sampleRate)
+					: phase;
 				curves.push({
 					label: file.name,
 					raw: magnitude,
 					smoothed: magnitudeSmoothed,
+					phase,
+					phaseSmoothed,
 				});
 			}
 
@@ -1555,7 +1778,7 @@ async function openAnalysisTab(inputFiles: File[] | File): Promise<void> {
 				drawEmptyPlotHost(frequencyPlot, "Frequency response", "Requires a two-channel file.");
 				return;
 			}
-			const averageCurve = computeAverageMagnitudeResponse(curves);
+			const averageCurve = computeAverageMagnitudeResponseWithStdDev(curves);
 			const targetOffsetDb = Number.parseFloat(targetOffsetInput.value || "0");
 			const targetBase = averageCurve ?? curves[0]?.smoothed ?? null;
 			const targetCurve = targetBase
@@ -1563,37 +1786,7 @@ async function openAnalysisTab(inputFiles: File[] | File): Promise<void> {
 				: null;
 			renderAnalysisFrequencyPlot(frequencyPlot, curves, averageCurve, targetCurve);
 
-			const harmonicCurves: HarmonicCurve[] = [];
-			const thdSeries: Array<{ label: string; series: SeriesResponse }> = [];
-			for (const { file, parsed } of parsedFiles) {
-				if (parsed.channels.length < 2) {
-					continue;
-				}
-				const measured = parsed.channels[0] ?? new Float32Array(0);
-				const reference = parsed.channels[1] ?? new Float32Array(0);
-				const harmonics = computeFarinaLikeHarmonicCurves(measured, reference, parsed.sampleRate, file.name, 0.2, 5);
-				if (harmonics.length === 0) {
-					continue;
-				}
-				harmonicCurves.push(...harmonics);
-				const thd = computeThdSeries(harmonics);
-				if (thd) {
-					thdSeries.push({ label: file.name, series: thd });
-				}
-			}
-
-			if (harmonicCurves.length === 0) {
-				drawEmptyPlotHost(distortionPlot, "Farina-style distortion", "Requires a valid two-channel sweep/reference file.");
-			} else {
-				renderFarinaDistortionPlot(distortionPlot, harmonicCurves);
-			}
-
-			if (thdSeries.length === 0) {
-				drawEmptyPlotHost(thdPlot, "THD", "Could not compute THD from the selected files.");
-			} else {
-				renderThdPlot(thdPlot, thdSeries);
-			}
-
+			// Render alignment impulse (second plot)
 			const alignmentTraces: AlignedImpulseTrace[] = [];
 			for (const { file, parsed } of parsedFiles) {
 				if (parsed.channels.length < 3) {
@@ -1629,6 +1822,45 @@ async function openAnalysisTab(inputFiles: File[] | File): Promise<void> {
 			if (alignmentTraces.length > 0) {
 				renderAlignedImpulseResponsePlot(alignmentIrPlot, alignmentTraces);
 			}
+
+			const harmonicCurves: HarmonicCurve[] = [];
+			const thdSeries: Array<{ label: string; series: SeriesResponse }> = [];
+			for (const { file, parsed } of parsedFiles) {
+				if (parsed.channels.length < 2) {
+					continue;
+				}
+				const measured = parsed.channels[0] ?? new Float32Array(0);
+				const reference = parsed.channels[1] ?? new Float32Array(0);
+				const farinaWindow = Number.parseFloat(farinaWindowInput.value || "0.2");
+				const harmonics = computeFarinaLikeHarmonicCurves(measured, reference, parsed.sampleRate, file.name, farinaWindow, 5, smoothingFraction);
+				if (harmonics.length === 0) {
+					continue;
+				}
+				harmonicCurves.push(...harmonics);
+				const thd = computeThdSeries(harmonics);
+				if (thd) {
+					thdSeries.push({ label: file.name, series: thd });
+				}
+			}
+
+			if (harmonicCurves.length === 0) {
+				drawEmptyPlotHost(distortionPlot, "Farina-style distortion", "Requires a valid two-channel sweep/reference file.");
+			} else {
+				renderFarinaDistortionPlot(distortionPlot, harmonicCurves);
+			}
+
+			if (thdSeries.length === 0) {
+				drawEmptyPlotHost(thdPlot, "THD", "Could not compute THD from the selected files.");
+			} else {
+				renderThdPlot(thdPlot, thdSeries);
+			}
+
+			// Render phase delay plot last
+			if (curves.length > 0) {
+				renderAnalysisPhaseDelayPlot(phaseDelayPlot, curves, ch3Ch2DelayMs);
+			} else {
+				drawEmptyPlotHost(phaseDelayPlot, "Group delay (phase)", "Requires a two-channel file.");
+			}
 		};
 
 		const updateAnalysisPlotLayout = (): void => {
@@ -1638,7 +1870,7 @@ async function openAnalysisTab(inputFiles: File[] | File): Promise<void> {
 		layoutObserver.observe(analysisExtraPlots);
 		updateAnalysisPlotLayout();
 
-		targetOffsetInput.addEventListener("input", renderDerivedPlots);
+		updateBtn.addEventListener("click", renderDerivedPlots);
 
 		renderDerivedPlots();
 		plotSessions.set(tabId, { rerenderDerivedPlots: renderDerivedPlots });

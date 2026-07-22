@@ -5,6 +5,22 @@ export type AudioDeviceOption = {
 	label: string;
 };
 
+function getStorage(): Storage | null {
+	try {
+		return globalThis.localStorage;
+	} catch {
+		return null;
+	}
+}
+
+function readCachedValue(key: string): string {
+	return getStorage()?.getItem(key) ?? "";
+}
+
+function writeCachedValue(key: string, value: string): void {
+	getStorage()?.setItem(key, value);
+}
+
 export async function listAudioDevices(kind: AudioDeviceKind): Promise<AudioDeviceOption[]> {
 	if (!navigator.mediaDevices?.enumerateDevices) {
 		return [];
@@ -52,4 +68,18 @@ export function setAudioDeviceSelectOptions(
 	} else {
 		select.value = defaultValue;
 	}
+}
+
+export function restoreCachedFieldValue(field: HTMLInputElement | HTMLSelectElement, key: string, defaultValue = ""): void {
+	const cachedValue = readCachedValue(key);
+	field.value = cachedValue || defaultValue;
+	if (field.value !== cachedValue && field.value !== defaultValue) {
+		field.value = defaultValue;
+	}
+}
+
+export function bindCachedFieldValue(field: HTMLInputElement | HTMLSelectElement, key: string): void {
+	field.addEventListener("change", () => {
+		writeCachedValue(key, field.value);
+	});
 }

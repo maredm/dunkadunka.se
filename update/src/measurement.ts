@@ -1,4 +1,4 @@
-import { setAudioDeviceSelectOptions, listAudioDevices } from "./audio_devices";
+import { bindCachedFieldValue, listAudioDevices, restoreCachedFieldValue, setAudioDeviceSelectOptions } from "./audio_devices";
 import { startPlayAndRecord, type ActiveDuplexSession, type AudioChannelSelection } from "./audio_io";
 import { chirp, normalizeToRMS } from "./signal";
 import { createMultichannelWavBlob } from "./wavfile";
@@ -72,6 +72,13 @@ function normalizeChannelSelection(value: string): AudioChannelSelection {
 	return value === "right" ? "right" : "left";
 }
 
+const INPUT_DEVICE_CACHE_KEY = "update.measurement.inputDeviceId";
+const INPUT_CHANNEL_CACHE_KEY = "update.measurement.inputChannel";
+const REFERENCE_DEVICE_CACHE_KEY = "update.measurement.referenceDeviceId";
+const REFERENCE_CHANNEL_CACHE_KEY = "update.measurement.referenceChannel";
+const OUTPUT_DEVICE_CACHE_KEY = "update.measurement.outputDeviceId";
+const OUTPUT_CHANNEL_CACHE_KEY = "update.measurement.outputChannel";
+
 export function createMeasurementController(options: MeasurementControllerOptions): MeasurementController {
 	const SAMPLE_RATE = 48000;
 	const ACQUISITION_PREROLL_SECONDS = 0.5;
@@ -93,6 +100,22 @@ export function createMeasurementController(options: MeasurementControllerOption
 		onRecordingComplete,
 		presets = DEFAULT_STIMULUS_PRESETS,
 	} = options;
+
+	bindCachedFieldValue(inputDeviceSelect, INPUT_DEVICE_CACHE_KEY);
+	bindCachedFieldValue(inputChannelSelect, INPUT_CHANNEL_CACHE_KEY);
+	if (referenceDeviceSelect) {
+		bindCachedFieldValue(referenceDeviceSelect, REFERENCE_DEVICE_CACHE_KEY);
+	}
+	if (referenceChannelSelect) {
+		bindCachedFieldValue(referenceChannelSelect, REFERENCE_CHANNEL_CACHE_KEY);
+	}
+	bindCachedFieldValue(outputDeviceSelect, OUTPUT_DEVICE_CACHE_KEY);
+	bindCachedFieldValue(outputChannelSelect, OUTPUT_CHANNEL_CACHE_KEY);
+	restoreCachedFieldValue(inputChannelSelect, INPUT_CHANNEL_CACHE_KEY, "left");
+	restoreCachedFieldValue(outputChannelSelect, OUTPUT_CHANNEL_CACHE_KEY, "left");
+	if (referenceChannelSelect) {
+		restoreCachedFieldValue(referenceChannelSelect, REFERENCE_CHANNEL_CACHE_KEY, "left");
+	}
 
 	let activeSession: ActiveDuplexSession | null = null;
 	let destroyed = false;
@@ -135,6 +158,11 @@ export function createMeasurementController(options: MeasurementControllerOption
 				setAudioDeviceSelectOptions(referenceDeviceSelect, inputs, "No reference input");
 			}
 			setAudioDeviceSelectOptions(outputDeviceSelect, outputs, "System default output");
+			restoreCachedFieldValue(inputDeviceSelect, INPUT_DEVICE_CACHE_KEY);
+			if (referenceDeviceSelect) {
+				restoreCachedFieldValue(referenceDeviceSelect, REFERENCE_DEVICE_CACHE_KEY);
+			}
+			restoreCachedFieldValue(outputDeviceSelect, OUTPUT_DEVICE_CACHE_KEY);
 			if (inputs.length === 0) {
 				inputDeviceSelect.disabled = true;
 				if (referenceDeviceSelect) {
