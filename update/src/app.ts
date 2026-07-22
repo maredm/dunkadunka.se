@@ -7,7 +7,7 @@ import { readMultichannelWavFile } from "./wavfile";
 import { fft } from "./fft";
 import { nextPow2 } from "./math";
 import { fractionalOctaveSmoothing, getFractionalOctaveFrequencies } from "./fractional_octave_smoothing";
-import { calculateTwoChannelImpulseResponse } from "./signal";
+import { calculateTwoChannelImpulseResponse, estimateDelay } from "./signal";
 
 type LoadedAudioFile = {
 	id: string;
@@ -31,6 +31,14 @@ type SeriesResponse = {
 	values: Float32Array;
 };
 
+type AlignedImpulseTrace = {
+	label: string;
+	timeMs: Float32Array;
+	amplitude: Float32Array;
+	delayMs: number;
+	delaySamples: number;
+};
+
 type PlotSession = {
 	tool?: WaveformToolHandle | null;
 	measurement?: MeasurementController | null;
@@ -50,6 +58,11 @@ type MagnitudeResponse = {
 const DEFAULT_SMOOTHING_FRACTION = 1 / 6;
 const PLOT_AXIS_FRACTION = 1 / 96;
 const LOG_FREQUENCY_MIN = 20;
+const ANALYSIS_PLOTLY_CONFIG = {
+	responsive: true,
+	displayModeBar: true,
+	displaylogo: false,
+};
 
 const tabsOuter = document.getElementById("tabs-outer") as HTMLElement | null;
 const tabsInner = document.getElementById("tabs") as HTMLElement | null;
@@ -813,12 +826,40 @@ function computeAverageMagnitudeResponse(curves: AnalysisCurve[]): MagnitudeResp
 	};
 }
 
-function computeTargetMagnitudeResponse(frequencies: Float32Array, offsetDb: number): MagnitudeResponse {
+function computeTargetMagnitudeResponse(base: MagnitudeResponse, offsetDb: number): MagnitudeResponse {
+	const frequencies = base.frequencies;
+	const baseValues = base.valuesDb;
 	const valuesDb = new Float32Array(frequencies.length);
+
+	let baseBandSum = 0;
+	let baseBandCount = 0;
+	let targetBandSum = 0;
+	let targetBandCount = 0;
+
 	for (let index = 0; index < frequencies.length; index += 1) {
 		const frequency = frequencies[index] ?? 1000;
-		valuesDb[index] = -Math.log10(Math.max(1e-9, frequency) / 1000) + offsetDb;
+		const targetRaw = -Math.log10(Math.max(1e-9, frequency) / 1000);
+		valuesDb[index] = targetRaw;
+
+		if (frequency >= 250 && frequency <= 2000) {
+			targetBandSum += targetRaw;
+			targetBandCount += 1;
+			const baseValue = baseValues[index];
+			if (baseValue !== undefined && Number.isFinite(baseValue)) {
+				baseBandSum += baseValue;
+				baseBandCount += 1;
+			}
+		}
 	}
+
+	const baseBandMean = baseBandCount > 0 ? (baseBandSum / baseBandCount) : 0;
+	const targetBandMean = targetBandCount > 0 ? (targetBandSum / targetBandCount) : 0;
+	const alignmentOffset = (baseBandMean - targetBandMean) + offsetDb;
+
+	for (let index = 0; index < valuesDb.length; index += 1) {
+		valuesDb[index] += alignmentOffset;
+	}
+
 	return {
 		frequencies: Float32Array.from(frequencies),
 		valuesDb,
@@ -911,10 +952,7 @@ function renderAnalysisFrequencyPlot(
 				color: "#9aa4b2",
 			},
 		},
-		{
-			responsive: true,
-			displayModeBar: false,
-		},
+		ANALYSIS_PLOTLY_CONFIG,
 	);
 }
 
@@ -958,7 +996,7 @@ function renderFarinaDistortionPlot(host: HTMLElement, harmonics: HarmonicCurve[
 				color: "#9aa4b2",
 			},
 		},
-		{ responsive: true, displayModeBar: false },
+		ANALYSIS_PLOTLY_CONFIG,
 	);
 }
 
@@ -999,7 +1037,58 @@ function renderThdPlot(host: HTMLElement, seriesList: Array<{ label: string; ser
 				color: "#9aa4b2",
 			},
 		},
-		{ responsive: true, displayModeBar: false },
+		ANALYSIS_PLOTLY_CONFIG,
+	);
+}
+
+function renderAlignedImpulseResponsePlot(host: HTMLElement, traces: AlignedImpulseTrace[]): void {
+	const plotTraces = traces.map((entry, index) => ({
+		type: "scatter",
+		mode: "lines",
+		name: `${entry.label} (${entry.delayMs.toFixed(3)} ms)`,
+		x: Array.from(entry.timeMs),
+		y: Array.from(entry.amplitude),
+		line: { color: ANALYSIS_COLORS[index % ANALYSIS_COLORS.length], width: 2 },
+		hovertemplate: "%{x:.3f} ms<br>%{y:.5f}<extra></extra>",
+	}));
+
+	void Plotly.react(
+		host,
+		plotTraces,
+		{
+			title: { text: "Aligned impulse response (ch1 / ch2, aligned by ch3 / ch2)", font: { color: "#f8fafc", size: 14 } },
+			paper_bgcolor: "#000",
+			plot_bgcolor: "#000",
+			margin: { l: 56, r: 180, t: 36, b: 44 },
+			showlegend: true,
+			legend: { orientation: "v", yanchor: "top", y: 1, xanchor: "left", x: 1.02, font: { color: "#cbd5e1", size: 11 } },
+			xaxis: {
+				title: { text: "Time (ms)", font: { color: "#9aa4b2", size: 12 } },
+				range: [-10, 40],
+				gridcolor: "rgba(181, 192, 224, 0.12)",
+				zeroline: false,
+				color: "#9aa4b2",
+			},
+			yaxis: {
+				title: { text: "Amplitude", font: { color: "#9aa4b2", size: 12 } },
+				gridcolor: "rgba(181, 192, 224, 0.12)",
+				zeroline: false,
+				color: "#9aa4b2",
+			},
+			shapes: [
+				{
+					type: "line",
+					x0: 0,
+					x1: 0,
+					y0: 0,
+					y1: 1,
+					xref: "x",
+					yref: "paper",
+					line: { color: "rgba(248,250,252,0.6)", width: 1, dash: "dot" },
+				},
+			],
+		},
+		ANALYSIS_PLOTLY_CONFIG,
 	);
 }
 
@@ -1049,9 +1138,8 @@ function computeImpulseResponseWindowed(recorded: Float32Array, stimulus: Float3
 		}
 	}
 
-	const before = Math.round(0.05 * sampleRate);
 	const after = Math.round(0.5 * sampleRate);
-	const start = Math.max(0, peakIndex - before);
+	const start = peakIndex;
 	const end = Math.min(ir.length, peakIndex + after);
 	if (end <= start + 2) {
 		return null;
@@ -1059,14 +1147,132 @@ function computeImpulseResponseWindowed(recorded: Float32Array, stimulus: Float3
 
 	const length = end - start;
 	const timeMs = new Float32Array(length);
-	const amplitude = new Float32Array(length);
+	const amplitudeRaw = new Float32Array(length);
 	for (let i = 0; i < length; i += 1) {
 		const idx = start + i;
-		timeMs[i] = ((idx - peakIndex) / sampleRate) * 1000;
-		amplitude[i] = ir[idx] ?? 0;
+		timeMs[i] = (i / sampleRate) * 1000;
+		amplitudeRaw[i] = ir[idx] ?? 0;
 	}
 
+	// Apply a light Gaussian smoothing to match REW-style IR readability.
+	const smoothedAmplitude = smoothImpulseResponse(amplitudeRaw, sampleRate, 0.1);
+	const amplitude = normalizeImpulseToPeak(smoothedAmplitude);
+
 	return { timeMs, amplitude };
+}
+
+function smoothImpulseResponse(samples: Float32Array, sampleRate: number, sigmaMs: number): Float32Array {
+	if (samples.length === 0 || sampleRate <= 0 || !Number.isFinite(sigmaMs) || sigmaMs <= 0) {
+		return Float32Array.from(samples);
+	}
+
+	const sigmaSamples = (sigmaMs / 1000) * sampleRate;
+	if (!Number.isFinite(sigmaSamples) || sigmaSamples <= 0.5) {
+		return Float32Array.from(samples);
+	}
+
+	const radius = Math.max(1, Math.min(512, Math.ceil(3 * sigmaSamples)));
+	const kernelSize = (radius * 2) + 1;
+	const kernel = new Float32Array(kernelSize);
+	let kernelSum = 0;
+	for (let index = 0; index < kernelSize; index += 1) {
+		const x = index - radius;
+		const weight = Math.exp(-0.5 * ((x / sigmaSamples) ** 2));
+		kernel[index] = weight;
+		kernelSum += weight;
+	}
+	if (kernelSum <= 0 || !Number.isFinite(kernelSum)) {
+		return Float32Array.from(samples);
+	}
+	for (let index = 0; index < kernelSize; index += 1) {
+		kernel[index] /= kernelSum;
+	}
+
+	const output = new Float32Array(samples.length);
+	for (let sampleIndex = 0; sampleIndex < samples.length; sampleIndex += 1) {
+		let value = 0;
+		let norm = 0;
+		for (let kernelIndex = 0; kernelIndex < kernelSize; kernelIndex += 1) {
+			const sourceIndex = sampleIndex + kernelIndex - radius;
+			if (sourceIndex < 0 || sourceIndex >= samples.length) {
+				continue;
+			}
+			const weight = kernel[kernelIndex] ?? 0;
+			value += (samples[sourceIndex] ?? 0) * weight;
+			norm += weight;
+		}
+		output[sampleIndex] = norm > 0 ? value / norm : (samples[sampleIndex] ?? 0);
+	}
+
+	return output;
+}
+
+function normalizeImpulseToPeak(samples: Float32Array): Float32Array {
+	if (samples.length === 0) {
+		return Float32Array.from(samples);
+	}
+
+	let peak = 0;
+	for (let index = 0; index < samples.length; index += 1) {
+		const magnitude = Math.abs(samples[index] ?? 0);
+		if (magnitude > peak) {
+			peak = magnitude;
+		}
+	}
+
+	if (!Number.isFinite(peak) || peak <= 1e-12) {
+		return Float32Array.from(samples);
+	}
+
+	const normalized = new Float32Array(samples.length);
+	for (let index = 0; index < samples.length; index += 1) {
+		normalized[index] = (samples[index] ?? 0) / peak;
+	}
+
+	return normalized;
+}
+
+function computeAlignedImpulseResponse(
+	measured: Float32Array,
+	stimulus: Float32Array,
+	recordedStimulus: Float32Array,
+	sampleRate: number,
+): { timeMs: Float32Array; amplitude: Float32Array; delayMs: number; delaySamples: number } | null {
+	if (sampleRate <= 0) {
+		return null;
+	}
+
+	const frameCount = Math.min(measured.length, stimulus.length, recordedStimulus.length);
+	if (frameCount < 8) {
+		return null;
+	}
+
+	const stimulusReference = stimulus.subarray(0, frameCount);
+	const stimulusRecorded = recordedStimulus.subarray(0, frameCount);
+	const delaySeconds = estimateDelay(stimulusRecorded, stimulusReference, sampleRate);
+	console.log(delaySeconds, "delaySeconds");
+	const delaySamples = 0;
+	// Compute IR first from ch1/ch2, then time-align the IR using the ch2/ch3 delay.
+	const impulse = computeImpulseResponseWindowed(measured.subarray(0, frameCount), stimulusReference, sampleRate);
+	if (impulse) {
+		impulse.amplitude = impulse.amplitude.map(v => -v);
+	}
+	if (!impulse) {
+		return null;
+	}
+
+	const alignedTimeMs = new Float32Array(impulse.timeMs.length);
+	const delayMs = delaySeconds * 1000 * 2;
+	for (let index = 0; index < impulse.timeMs.length; index += 1) {
+		alignedTimeMs[index] = (impulse.timeMs[index] ?? 0) - delayMs;
+	}
+
+	return {
+		timeMs: alignedTimeMs,
+		amplitude: impulse.amplitude,
+		delayMs,
+		delaySamples,
+	};
 }
 
 function closeDynamicTab(tabId: string): void {
@@ -1144,6 +1350,7 @@ function createAnalysisMarkup(tabId: string, fileName: string, sampleRate: numbe
 		<div class="tab-inner-content">
 			<div class="loose-container">
 				<p class="info">1/6-octave smoothed transfer magnitude from channel 1 measured against channel 2 reference.</p>
+				<p id="analysisDelaySummary-${tabId}" class="info">Ch3 -> Ch2 delay compensation: unavailable (requires channel 3).</p>
 				<p class="info">${fileName} · ${sampleRate} Hz · ${channelCount} ch · ${durationSeconds.toFixed(2)} s</p>
 				<div class="analysis-target-controls">
 					<label for="analysisTargetOffset-${tabId}" class="acquisition-toolbar-label">Target offset</label>
@@ -1151,7 +1358,7 @@ function createAnalysisMarkup(tabId: string, fileName: string, sampleRate: numbe
 					<span class="info">dB @ 1 kHz</span>
 				</div>
 			</div>
-			<div class="analysis-extra-plots">
+			<div id="analysisExtraPlots-${tabId}" class="analysis-extra-plots">
 				<section class="live-plot-card">
 					<h2>Frequency response</h2>
 					<div id="analysisFrequencyPlot-${tabId}" class="analysis-plot-host"></div>
@@ -1163,6 +1370,10 @@ function createAnalysisMarkup(tabId: string, fileName: string, sampleRate: numbe
 				<section class="live-plot-card">
 					<h2>THD</h2>
 					<div id="analysisThdPlot-${tabId}" class="analysis-plot-host"></div>
+				</section>
+				<section class="live-plot-card">
+					<h2>Delay alignment impulse</h2>
+					<div id="analysisAlignmentIrPlot-${tabId}" class="analysis-plot-host"></div>
 				</section>
 			</div>
 		</div>
@@ -1306,11 +1517,14 @@ async function openAnalysisTab(inputFiles: File[] | File): Promise<void> {
 		const frequencyPlot = document.getElementById(`analysisFrequencyPlot-${tabId}`) as HTMLElement | null;
 		const distortionPlot = document.getElementById(`analysisDistortionPlot-${tabId}`) as HTMLElement | null;
 		const thdPlot = document.getElementById(`analysisThdPlot-${tabId}`) as HTMLElement | null;
+		const alignmentIrPlot = document.getElementById(`analysisAlignmentIrPlot-${tabId}`) as HTMLElement | null;
+		const analysisExtraPlots = document.getElementById(`analysisExtraPlots-${tabId}`) as HTMLElement | null;
+		const delaySummary = document.getElementById(`analysisDelaySummary-${tabId}`) as HTMLElement | null;
 		const targetOffsetInput = document.getElementById(`analysisTargetOffset-${tabId}`) as HTMLInputElement | null;
 		if (!frequencyPlot) {
 			throw new Error("Failed to create analysis frequency plot.");
 		}
-		if (!distortionPlot || !thdPlot) {
+		if (!distortionPlot || !thdPlot || !alignmentIrPlot || !analysisExtraPlots || !delaySummary) {
 			throw new Error("Failed to create distortion plots.");
 		}
 		if (!targetOffsetInput) {
@@ -1345,7 +1559,7 @@ async function openAnalysisTab(inputFiles: File[] | File): Promise<void> {
 			const targetOffsetDb = Number.parseFloat(targetOffsetInput.value || "0");
 			const targetBase = averageCurve ?? curves[0]?.smoothed ?? null;
 			const targetCurve = targetBase
-				? computeTargetMagnitudeResponse(targetBase.frequencies, Number.isFinite(targetOffsetDb) ? targetOffsetDb : 0)
+				? computeTargetMagnitudeResponse(targetBase, Number.isFinite(targetOffsetDb) ? targetOffsetDb : 0)
 				: null;
 			renderAnalysisFrequencyPlot(frequencyPlot, curves, averageCurve, targetCurve);
 
@@ -1379,7 +1593,50 @@ async function openAnalysisTab(inputFiles: File[] | File): Promise<void> {
 			} else {
 				renderThdPlot(thdPlot, thdSeries);
 			}
+
+			const alignmentTraces: AlignedImpulseTrace[] = [];
+			for (const { file, parsed } of parsedFiles) {
+				if (parsed.channels.length < 3) {
+					continue;
+				}
+				const measured = parsed.channels[0] ?? new Float32Array(0);
+				const stimulus = parsed.channels[1] ?? new Float32Array(0);
+				const recordedStimulus = parsed.channels[2] ?? new Float32Array(0);
+				const alignedImpulse = computeAlignedImpulseResponse(measured, stimulus, recordedStimulus, parsed.sampleRate);
+				if (!alignedImpulse) {
+					continue;
+				}
+				alignmentTraces.push({
+					label: file.name,
+					timeMs: alignedImpulse.timeMs,
+					amplitude: alignedImpulse.amplitude,
+					delayMs: alignedImpulse.delayMs,
+					delaySamples: alignedImpulse.delaySamples,
+				});
+			}
+
+			if (alignmentTraces.length === 0) {
+				drawEmptyPlotHost(alignmentIrPlot, "Delay alignment impulse", "Requires files with channel 3 (recorded stimulus).");
+				delaySummary.textContent = "Ch3 -> Ch2 delay compensation: unavailable (requires channel 3).";
+			} else if (alignmentTraces.length === 1) {
+				const entry = alignmentTraces[0];
+				delaySummary.textContent = `Ch3 -> Ch2 delay compensation: ${entry.delayMs.toFixed(3)} ms (${entry.delaySamples.toFixed(1)} samples).`;
+			} else {
+				const averageMs = alignmentTraces.reduce((sum, entry) => sum + entry.delayMs, 0) / alignmentTraces.length;
+				delaySummary.textContent = `Ch3 -> Ch2 delay compensation: average ${averageMs.toFixed(3)} ms across ${alignmentTraces.length} files.`;
+			}
+
+			if (alignmentTraces.length > 0) {
+				renderAlignedImpulseResponsePlot(alignmentIrPlot, alignmentTraces);
+			}
 		};
+
+		const updateAnalysisPlotLayout = (): void => {
+			analysisExtraPlots.classList.toggle("analysis-extra-plots--wide", analysisExtraPlots.clientWidth > 2400);
+		};
+		const layoutObserver = new ResizeObserver(updateAnalysisPlotLayout);
+		layoutObserver.observe(analysisExtraPlots);
+		updateAnalysisPlotLayout();
 
 		targetOffsetInput.addEventListener("input", renderDerivedPlots);
 

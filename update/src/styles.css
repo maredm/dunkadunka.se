@@ -652,13 +652,15 @@ body {
 	display: grid;
 	grid-template-columns: repeat(2, minmax(0, 1fr));
 	gap: 12px;
-	padding: 12px;
-	background: var(--bg-primary);
-	border-top: 1px solid var(--border);
+	margin-top: 12px;
 }
 
 .analysis-extra-plots > .live-plot-card {
 	grid-column: 1 / -1;
+}
+
+.analysis-extra-plots.analysis-extra-plots--wide > .live-plot-card {
+	grid-column: auto;
 }
 
 .analysis-plot-canvas {
