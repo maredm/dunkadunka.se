@@ -530,6 +530,33 @@ function computeUnwrappedPhaseFromComplex(re: Float32Array, im: Float32Array): F
 	return phases;
 }
 
+function normalizePhaseAtReference(
+	frequencies: Float32Array,
+	phasesDeg: Float32Array,
+	referenceHz = 1000,
+): Float32Array {
+	if (frequencies.length === 0 || phasesDeg.length === 0) {
+		return phasesDeg;
+	}
+
+	let bestIndex = 0;
+	let bestDiff = Number.POSITIVE_INFINITY;
+	for (let i = 0; i < frequencies.length; i += 1) {
+		const diff = Math.abs((frequencies[i] ?? 0) - referenceHz);
+		if (diff < bestDiff) {
+			bestDiff = diff;
+			bestIndex = i;
+		}
+	}
+
+	const refPhase = phasesDeg[bestIndex] ?? 0;
+	const normalized = new Float32Array(phasesDeg.length);
+	for (let i = 0; i < phasesDeg.length; i += 1) {
+		normalized[i] = (phasesDeg[i] ?? 0) - refPhase;
+	}
+	return normalized;
+}
+
 function computeImpulseResponseWindowed(recorded: Float32Array, stimulus: Float32Array, sampleRate: number): ImpulseResponseWindow | null {
 	const n = Math.min(recorded.length, stimulus.length);
 	if (n < 8 || sampleRate <= 0) {
@@ -896,21 +923,22 @@ export function createLiveMonitorController(options: LiveMonitorControllerOption
 			}
 
 			const phaseUnwrapped = computeUnwrappedPhaseFromComplex(averagedPhaseRe, averagedPhaseIm);
+			const phaseNormalized = normalizePhaseAtReference(phaseFrequencies, phaseUnwrapped, 1000);
 			let phaseMin = Number.POSITIVE_INFINITY;
 			let phaseMax = Number.NEGATIVE_INFINITY;
-			for (let i = 0; i < phaseUnwrapped.length; i += 1) {
-				const v = phaseUnwrapped[i] ?? 0;
+			for (let i = 0; i < phaseNormalized.length; i += 1) {
+				const v = phaseNormalized[i] ?? 0;
 				phaseMin = Math.min(phaseMin, v);
 				phaseMax = Math.max(phaseMax, v);
 			}
 			const padding = 15;
 			drawLinePlot(
 				phaseCanvas,
-				"Phase response (live, long average)",
+				"Phase response (live, long average, 1 kHz ref)",
 				"Frequency (Hz)",
 				"Phase (deg)",
 				phaseFrequencies,
-				phaseUnwrapped,
+				phaseNormalized,
 				"#38bdf8",
 				{ logX: true, yMin: phaseMin - padding, yMax: phaseMax + padding },
 			);
