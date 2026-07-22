@@ -471,7 +471,7 @@ body {
 .tab-inner-content {
 	padding: 16px;
 	overflow: scroll;
-	white-space: normal;
+	height: stretch;
 }
 
 .acquisition-surface {
