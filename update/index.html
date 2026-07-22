@@ -7,42 +7,17 @@
 		<link rel="stylesheet" href="static/app.css" />
 	</head>
 	<body>
-		<div class="split-view-container vertical">
-			<!--div class="split-view titlebar visible">
-				<p>dunkadunka.se - The open sound tool</p>
-			</div>
-			<div class="split-view toolbar main visible">
-				<a class="toolbar-button">
-					File
+		<nav class="navbar">
+			<div class="navbar-container flex items-center justify-left">
+				<img src="https://norrmalms.se/favicon.ico" alt="Norrmalms logo" class="h-8 w-8">
+				<a href="https://norrmalms.se">
+					<span class="pl-1">dunkadunka.se</span>
 				</a>
-			</div-->
-			<div class="split-view bar toolbar visible">
-                <nav class="toolbar-menu">
-					<a class="toolbar-item" href="https://norrmalms.se">
-                		<img src="https://norrmalms.se/favicon.ico" alt="Norrmalms logo" class="toolbar-logo">
-						<span>dunkadunka.se</span>
-					</a>
-                    <!-- <details class="toolbar-menu-item">
-                        <summary>File</summary>
-                        <ul class="toolbar-dropdown">
-                            <li><a href="#">New</a></li>
-                            <li><a href="#">Open…</a></li>
-                            <li><a href="#">Save</a></li>
-                            <li><a href="#">Export</a></li>
-                        </ul>
-                    </details>
-                    <details class="toolbar-menu-item">
-                        <summary>Settings</summary>
-                        <ul class="toolbar-dropdown">
-                            <li><a href="#">Preferences</a></li>
-                            <li><a href="#">Theme</a></li>
-                            <li><a href="#">About</a></li>
-                        </ul>
-                    </details> -->
-                </nav>
-            </div>
-			<div class="split-view tabs" id="tabs-outer">
-				<div id="tabs">
+			</div>
+			<div class="hidden" id="statusMessage">-</div>
+		</nav>
+		<div class="tabs" id="tabs-outer">
+			<div id="tabs">
 				<button class="tab active" data-tab="upload">
 					Files
 				</button>
@@ -52,10 +27,9 @@
 				<button class="tab" data-tab="live">
 					<span class="tab-icon-live"></span>Live
 				</button>
-				</div>
 			</div>
-			<div class="split-view main visible">
-				<div id="tab-contents" style="height: 100%;">
+		</div>
+		<div id="tab-contents">
 					<div class="tab-content active" data-content="upload">
 						<div class="tab-inner-content">
 							<div class="loose-container">
@@ -231,9 +205,6 @@
 							</div>
 						</div>
 					</div>
-				</div>
-			</div>
-			<div class="split-view footer visible">Footer</div>
 		</div>
 		<script src="static/app.js"></script>
 	</body>
