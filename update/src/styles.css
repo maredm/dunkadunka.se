@@ -36,6 +36,12 @@
 
 * {
 	box-sizing: border-box;
+	font-family: 'Outfit', sans-serif;
+	text-rendering: optimizeLegibility;
+	text-shadow: rgba(0, 0, 0, 0.004) 1px 1px 1px;
+	text-size-adjust: 100%;
+	font-variant-ligatures: none;
+	-webkit-font-smoothing: antialiased;
 }
 
 a {
@@ -49,12 +55,6 @@ body {
 	display: flex;
 	flex-direction: column;
 	background: var(--bg-color);
-	font-family: 'Outfit', sans-serif;
-	text-rendering: optimizeLegibility;
-	text-shadow: rgba(0, 0, 0, 0.004) 1px 1px 1px;
-	text-size-adjust: 100%;
-	font-variant-ligatures: none;
-	-webkit-font-smoothing: antialiased;
     scrollbar-color: color-mix(in lab, var(--color) 20%, #000000 80%) color-mix(in lab, var(--color) 10%, #000000 90%);
     scrollbar-width: thin;
 }
