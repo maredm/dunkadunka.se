@@ -2177,6 +2177,18 @@ function appendFileRow(entry: LoadedAudioFile, options: { selected?: boolean } =
 	fileTableBodyEl.append(row);
 }
 
+function registerPwaServiceWorker(): void {
+	if (!("serviceWorker" in navigator)) {
+		return;
+	}
+
+	window.addEventListener("load", () => {
+		void navigator.serviceWorker.register("./sw.js").catch((error) => {
+			console.warn("Service worker registration failed", error);
+		});
+	});
+}
+
 tabsOuter.addEventListener("click", (event: MouseEvent) => {
 	const target = event.target as HTMLElement;
 	const tab = target.closest(".tab") as HTMLElement | null;
@@ -2294,3 +2306,4 @@ window.addEventListener("beforeunload", () => {
 
 switchTab("upload");
 updateSelectedAnalysisButtonState();
+registerPwaServiceWorker();
