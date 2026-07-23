@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Native Volume Demo</title>
+    <style>
+        body {
+            margin: 12px;
+            font-family: Arial, sans-serif;
+            min-width: 280px;
+        }
+
+        h1 {
+            margin: 0 0 10px;
+            font-size: 16px;
+        }
+
+        .row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        button,
+        input[type="range"] {
+            width: 100%;
+        }
+
+        .status {
+            font-size: 12px;
+            color: #444;
+            min-height: 18px;
+        }
+
+        code {
+            background: #f4f4f4;
+            padding: 2px 4px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>OS Volume</h1>
+
+    <div class="row">
+        <button id="refresh">Get Current Volume</button>
+    </div>
+
+    <div class="row">
+        <button id="down">-10%</button>
+        <button id="up">+10%</button>
+    </div>
+
+    <div class="row">
+        <input id="slider" type="range" min="0" max="100" value="50" />
+    </div>
+
+    <div class="row">
+        <button id="apply">Set Volume</button>
+    </div>
+
+    <div class="status" id="status">Waiting for command.</div>
+    <div class="status">Host: <code>com.dunkadunka.volume_host</code></div>
+
+    <script src="popup.js"></script>
+</body>
+
+</html>

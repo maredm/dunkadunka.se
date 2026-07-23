@@ -1,53 +1,151 @@
-/**
- * Level Meter Module (Class Version)
- * Handles the visualization of audio levels.
- * Usage:
- *   import { LevelMeter } from './modules/level_meter.ts';
- *   const meter = new LevelMeter('levelMeter');
- *   meter.update(0.5);
- */
+import {
+	computeWeightedMeanSquare,
+	type FrequencyWeighting,
+} from "./weighting";
 
-export class LevelMeter {
-    canvas: HTMLCanvasElement;
-    ctx: CanvasRenderingContext2D | null;
+export type LevelMetric =
+	| "laeq"
+	| "dba-fast"
+	| "dba-slow"
+	| "dba-instant"
+	| "lcmax"
+	| "dbc-fast"
+	| "dbc-slow";
 
-    constructor(canvasId: string = 'levelMeter') {
-        const element = document.getElementById(canvasId);
-        if (element instanceof HTMLCanvasElement) {
-            this.canvas = element;
-        } else {
-            this.canvas = document.createElement('canvas');
-            this.canvas.id = canvasId;
-            this.canvas.width = 200;
-            this.canvas.height = 20;
-            document.body.appendChild(this.canvas);
-        }
-        this.ctx = this.canvas.getContext('2d');
-        this.clear();
-    }
+export interface LevelMeterState {
+	metric: LevelMetric;
+	sampleRate: number;
+	smoothedMeanSquare: number | null;
+	equivalentEnergySum: number;
+	equivalentSampleCount: number;
+	maximumLevelDb: number | null;
+}
 
-    update(level: number): void {
-        if (!this.ctx) return;
-        const width = this.canvas.width;
-        const height = this.canvas.height;
-        // Clamp level between 0 and 1
-        level = Math.max(0, Math.min(1, level));
+const MIN_DB = -96;
+const MIN_MEAN_SQUARE = 1e-12;
+const FAST_TIME_CONSTANT_SECONDS = 0.125;
+const SLOW_TIME_CONSTANT_SECONDS = 1;
 
-        // Clear
-        this.ctx.clearRect(0, 0, width, height);
+type LevelMetricDefinition = {
+	weighting: FrequencyWeighting;
+	label: string;
+	mode: "instant" | "exponential" | "equivalent" | "maximum";
+	timeConstantSeconds?: number;
+};
 
-        // Draw background
-        this.ctx.fillStyle = '#222';
-        this.ctx.fillRect(0, 0, width, height);
+const LEVEL_METRIC_DEFINITIONS: Record<LevelMetric, LevelMetricDefinition> = {
+	laeq: { weighting: "a", label: "LAeq", mode: "equivalent" },
+	"dba-fast": { weighting: "a", label: "dBA(F)", mode: "exponential", timeConstantSeconds: FAST_TIME_CONSTANT_SECONDS },
+	"dba-slow": { weighting: "a", label: "dBA(S)", mode: "exponential", timeConstantSeconds: SLOW_TIME_CONSTANT_SECONDS },
+	"dba-instant": { weighting: "a", label: "dBA(I)", mode: "instant" },
+	lcmax: { weighting: "c", label: "LCmax", mode: "maximum" },
+	"dbc-fast": { weighting: "c", label: "dBC(F)", mode: "exponential", timeConstantSeconds: FAST_TIME_CONSTANT_SECONDS },
+	"dbc-slow": { weighting: "c", label: "dBC(S)", mode: "exponential", timeConstantSeconds: SLOW_TIME_CONSTANT_SECONDS },
+};
 
-        // Draw level
-        const meterWidth = width * level;
-        this.ctx.fillStyle = level > 0.8 ? '#e74c3c' : (level > 0.5 ? '#f1c40f' : '#2ecc71');
-        this.ctx.fillRect(0, 0, meterWidth, height);
-    }
+export function computeWaveformDecibels(samples: Float32Array): number {
+	return decibelsFromMeanSquare(computeMeanSquare(samples));
+}
 
-    clear(): void {
-        if (!this.ctx) return;
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    }
+export function computeExponentialAverageAlpha(elapsedSeconds: number, timeConstantSeconds: number): number {
+	if (!Number.isFinite(elapsedSeconds) || elapsedSeconds <= 0) {
+		return 1;
+	}
+	if (!Number.isFinite(timeConstantSeconds) || timeConstantSeconds <= 0) {
+		return 1;
+	}
+	return 1 - Math.exp(-elapsedSeconds / timeConstantSeconds);
+}
+
+export function parseLevelMetric(value: string): LevelMetric {
+	return value in LEVEL_METRIC_DEFINITIONS ? (value as LevelMetric) : "laeq";
+}
+
+export function getLevelMetricLabel(metric: LevelMetric): string {
+	return LEVEL_METRIC_DEFINITIONS[metric].label;
+}
+
+export function getLevelMetricWeighting(metric: LevelMetric): FrequencyWeighting {
+	return LEVEL_METRIC_DEFINITIONS[metric].weighting;
+}
+
+export function createLevelMeterState(metric: LevelMetric, sampleRate: number): LevelMeterState {
+	const definition = LEVEL_METRIC_DEFINITIONS[metric];
+	return {
+		metric,
+		sampleRate,
+		smoothedMeanSquare: null,
+		equivalentEnergySum: 0,
+		equivalentSampleCount: 0,
+		maximumLevelDb: null,
+	};
+}
+
+export function updateLevelMeter(state: LevelMeterState, samples: Float32Array, sampleRate: number): number {
+	if (sampleRate !== state.sampleRate) {
+		const resetState = createLevelMeterState(state.metric, sampleRate);
+		state.sampleRate = resetState.sampleRate;
+		state.smoothedMeanSquare = resetState.smoothedMeanSquare;
+		state.equivalentEnergySum = resetState.equivalentEnergySum;
+		state.equivalentSampleCount = resetState.equivalentSampleCount;
+		state.maximumLevelDb = resetState.maximumLevelDb;
+	}
+
+	const definition = LEVEL_METRIC_DEFINITIONS[state.metric];
+	const meanSquare = computeWeightedMeanSquare(samples, sampleRate, definition.weighting);
+	if (definition.mode === "instant") {
+		return decibelsFromMeanSquare(meanSquare);
+	}
+
+	if (definition.mode === "exponential") {
+		const durationSeconds = sampleRate > 0 ? samples.length / sampleRate : 0;
+		const alpha = computeExponentialAverageAlpha(durationSeconds, definition.timeConstantSeconds ?? FAST_TIME_CONSTANT_SECONDS);
+		state.smoothedMeanSquare = state.smoothedMeanSquare === null
+			? meanSquare
+			: ((1 - alpha) * state.smoothedMeanSquare) + (alpha * meanSquare);
+		return decibelsFromMeanSquare(state.smoothedMeanSquare);
+	}
+
+	if (definition.mode === "equivalent") {
+		state.equivalentEnergySum += meanSquare * samples.length;
+		state.equivalentSampleCount += samples.length;
+		if (state.equivalentSampleCount <= 0) {
+			return MIN_DB;
+		}
+		return decibelsFromMeanSquare(state.equivalentEnergySum / state.equivalentSampleCount);
+	}
+
+	const currentLevelDb = decibelsFromMeanSquare(meanSquare);
+	state.maximumLevelDb = state.maximumLevelDb === null
+		? currentLevelDb
+		: Math.max(state.maximumLevelDb, currentLevelDb);
+	return state.maximumLevelDb;
+}
+
+export function computeWeightedWaveformDecibels(
+	samples: Float32Array,
+	weighting: FrequencyWeighting,
+	sampleRate: number,
+): number {
+	return decibelsFromMeanSquare(computeWeightedMeanSquare(samples, sampleRate, weighting));
+}
+
+function computeMeanSquare(samples: Float32Array): number {
+	if (samples.length === 0) {
+		return 0;
+	}
+
+	let sumSquares = 0;
+	for (let index = 0; index < samples.length; index += 1) {
+		const value = samples[index] ?? 0;
+		sumSquares += value * value;
+	}
+	return sumSquares / Math.max(1, samples.length);
+}
+
+function decibelsFromMeanSquare(meanSquare: number): number {
+	if (!Number.isFinite(meanSquare) || meanSquare <= 0) {
+		return MIN_DB;
+	}
+	return 10 * Math.log10(Math.max(meanSquare, MIN_MEAN_SQUARE));
 }

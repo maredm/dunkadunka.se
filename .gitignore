@@ -1,5 +1,4 @@
-package-lock.json
-package.json
-tailwind.config.js
-node_modules/*
-.vscode/settings.json
+node_modules
+dist
+dist-electron
+node_modules

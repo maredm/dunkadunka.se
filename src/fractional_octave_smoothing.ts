@@ -1,8 +1,7 @@
-import { average, closest, logspace, linspace } from './math';
+import { logspace } from './math';
 
-console.debug("Fractional Octave Smoothing module loaded");
 
-export function getFractionalOctaveFrequencies(fraction: number, f_low: number = 20, f_high: number = 24000, fftSize: number): Float32Array {
+export function getFractionalOctaveFrequencies(fraction: number, f_low: number = 20, f_high: number = 24000, fftSize: number, sampleRate = 48000): Float32Array {
     if (fraction <= 0) {
         throw new Error("Fraction must be greater than 0");
     }
@@ -16,7 +15,7 @@ export function getFractionalOctaveFrequencies(fraction: number, f_low: number =
 
     let frequencies = logspace(f_low, f_high, num_points);
 
-    const frequency_resolution = 48000 / fftSize; // Assuming a sample rate of 48000 Hz
+    const frequency_resolution = sampleRate / fftSize;
 
     for (let i = 0; i < frequencies.length; i++) {
         frequencies[i] = Math.round(frequencies[i] / frequency_resolution) * frequency_resolution;

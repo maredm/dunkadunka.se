@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light">
+    <title>Waveform Frequency Response Analyzer</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <link rel="stylesheet" href="static/styles.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="navbar-container flex items-center justify-left">
+                <img src="https://norrmalms.se/favicon.ico" alt="Norrmalms logo" class="h-8 w-8">
+                <a href="https://norrmalms.se">
+                <span class="pl-1">dunkadunka.se</span>
+            </a>
+        </div>
+        <div class="hidden" id="statusMessage">-</div>
+    </nav>
+    <div class="tabs" id="tabs-outer">
+        <div id="tabs">
+        <button class="tab active" data-tab="upload">
+            Files
+        </button>
+        <button class="tab" data-tab="acquisition">
+            <span class="tab-icon-recording"></span>Acquisition
+        </button>
+        </div>
+    </div>
+
+    <div id="tab-contents">
+        <div class="tab-content active" data-content="upload">
+            <div class="tab-inner-content">
+                <div class="loose-container">
+                    <h2>Files</h2>
+                    <p class="info">Upload an audio file to analyze its frequency content and optionally compare it to a reference/stimulus file.</p>
+                    
+                    <div class="upload-section">
+                        <p>
+                            <input type="file" id="responseFileUpload" accept="audio/*,.wav,.mp3,.flac,.ogg" multiple>
+                            <label for="responseFileUpload" style="display: inline-block; margin-top: 1rem;" class="button-custom button-custom-secondary">Select files to upload</label>
+                        </p>
+                        <p class="info">Select one or more audio files. Then pick which file is the Response and optionally which is the Reference.</p>
+
+                        <ul id="fileList" class="file-list" style="list-style:none;padding:0;margin-top:8px;"></ul>
+                    </div>
+                    <button id="analyzeUploadBtn" class="button-custom button-custom-primary" disabled>Analyze Frequency Response</button>
+                </div>
+            </div>
+        </div>
+        <div class="tab-content" data-content="acquisition">
+
+            <div class="tab-inner-content">
+                <div class="loose-container">
+                    <h2>Audio Acquisition</h2>
+                    <p class="info">Record your microphone while a frequency sweep is played back. Use this to capture your system's frequency response.</p>
+                    
+                    <div class="upload-section">
+                        <h3>Sweep Parameters</h3>
+                        <div class="param-row">
+                            <label for="sweepStartFreq">Start Frequency (Hz):</label>
+                            <input type="number" id="sweepStartFreq" min="10" max="20000" value="20" class="param-input">
+                        </div>
+                        <div class="param-row">
+                            <label for="sweepEndFreq">End Frequency (Hz):</label>
+                            <input type="number" id="sweepEndFreq" min="10" max="20000" value="20000" class="param-input">
+                        </div>
+                        <div class="param-row">
+                            <label for="sweepDuration">Duration (seconds):</label>
+                            <input type="number" id="sweepDuration" min="0.1" max="120" step="0.1" value="6" class="param-input">
+                        </div>
+                        <div class="param-row" id="channelSelectionContainer" style="display: none;">
+                            <label for="channelSelect">Channel:</label>
+                            <select id="channelSelect" class="param-input">
+                                <option value="0">Channel 1 (Left)</option>
+                            </select>
+                        </div>
+                        <button id="downloadSweepBtn" class="button-custom button-custom-secondary" type="button">Download Sweep</button>
+                    </div>
+
+                    <div class="upload-section">
+                        <h3>Recording Controls</h3>
+                        <div class="controls-group">
+                            <button id="startBtn" class="button-custom button-custom-primary">Start Recording & Playback</button>
+                            <button id="stopBtn" class="button-custom button-custom-secondary" disabled>Stop Recording</button>
+                            <button id="playBtn" class="button-custom button-custom-secondary" disabled>Play Sweep Only</button>
+                            <button id="stopPlayBtn" class="button-custom button-custom-secondary" disabled>Stop Playback</button>
+                        </div>
+                        <p class="info" id="recordingStatus" style="margin-top: 12px; font-weight: bold; color: #0366d6;"></p>
+                    </div>
+
+                    <div class="upload-section">
+                        <h3>Metadata</h3>
+                        <div class="grid grid-2-col gap-12px">
+                            <div class="param-row grid-col-span-1">
+                                <label for="measurementLocation">Measurement Location:</label>
+                                <input type="text" id="measurementLocation" class="param-input">
+                            </div>
+                            <div class="param-row grid-col-span-1">
+                                <label for="measurementAngle">Measurement Angle (degrees):</label>
+                                <input type="number" id="measurementAngle" min="0" max="360" value="0" class="param-input">
+                            </div>
+                            <div class="param-row grid-col-span-1">
+                                <label for="measurementComment">Comment:</label>
+                                <input type="text" id="measurementComment" class="param-input">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="upload-section">
+                        <div id="recordedAudioContainer" style="display: none;">
+                            <h3>Recorded Audio</h3>
+                            <p class="info">Recorded audio:</p>
+                            <div class="controls-group">
+                                <button id="downloadRecordingBtn" class="button-custom button-custom-primary">Download</button>
+                                <button id="analyzeRecordingBtn" class="button-custom button-custom-secondary">Analyze</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>var exports = {};</script>
+    <script type="module" src="dist/app.js"></script>
+</body>
+</html>

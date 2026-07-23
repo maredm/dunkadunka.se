@@ -1,0 +1,29 @@
+{
+    "manifest_version": 3,
+    "name": "FFmpeg Device Controller",
+    "description": "Lists video devices and records video for a fixed duration through a native host.",
+    "version": "1.0.0",
+    "permissions": [
+        "nativeMessaging"
+    ],
+    "action": {
+        "default_title": "FFmpeg Controller",
+        "default_popup": "popup.html"
+    },
+    "background": {
+        "service_worker": "background.js"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "file://*/*",
+                "http://*/*",
+                "https://*/*"
+            ],
+            "js": [
+                "content-bridge.js"
+            ],
+            "run_at": "document_idle"
+        }
+    ]
+}

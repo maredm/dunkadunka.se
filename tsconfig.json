@@ -1,17 +1,15 @@
 {
-    // Visit https://aka.ms/tsconfig to read more about this file
-    "compilerOptions": {
-        "module": "commonjs",
-        "target": "ES6",
-        "outDir": "static",
-        "rootDir": "src",
-        "lib": [
-            "es2017",
-            "dom"
-        ],
-        "esModuleInterop": true,
-        "forceConsistentCasingInFileNames": true,
-        "strict": true,
-        "skipLibCheck": true
-    }
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowArbitraryExtensions": true,
+    "types": ["bun-types"],
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "isolatedModules": true
+  },
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "test/**/*.ts"]
 }
