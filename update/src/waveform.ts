@@ -438,7 +438,7 @@ function bootstrapWaveformPlot(root: ParentNode = document): WaveformToolHandle 
 		for (const channelIndex of selectedChannelIndices) {
 			const channel = currentChannels[channelIndex];
 			if (channel) {
-				channels[channelIndex] = channel;
+				channels[channelIndex] = Float32Array.from(channel);
 			}
 		}
 

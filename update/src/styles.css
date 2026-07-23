@@ -362,6 +362,16 @@ body {
 	margin-top: 2px;
 }
 
+.tab-waveform-playing .tab-icon-waveform::before {
+	content: "▶";
+	color: #3b82f6;
+	font-weight: 700;
+	font-size: 11px;
+	margin-top: 1px;
+	text-shadow: 0 0 8px rgba(59, 130, 246, 0.55);
+	animation: tab-icon-soft-blink 1.4s ease-in-out infinite;
+}
+
 .tab-loading .tab-icon-waveform::before {
 	opacity: 0 !important;
 }
@@ -380,6 +390,25 @@ body {
 
 .tab-loading .tab-icon-live::before {
 	opacity: 0 !important;
+}
+
+.tab-running-blink.tab[data-tab="acquisition"] .tab-icon-recording::before,
+.tab-running-blink.tab[data-tab="live"] .tab-icon-live::before {
+	animation: tab-icon-soft-blink 1.4s ease-in-out infinite;
+}
+
+@keyframes tab-icon-soft-blink {
+	0%,
+	100% {
+		opacity: 1;
+		transform: scale(1);
+		filter: brightness(1);
+	}
+	50% {
+		opacity: 0.45;
+		transform: scale(0.95);
+		filter: brightness(1.15);
+	}
 }
 
 .tab-icon-analysis::before {

@@ -135,6 +135,8 @@ const tabsInnerEl: HTMLElement = tabsInner;
 const tabContentsEl: HTMLElement = tabContents;
 const fileTableBodyEl: HTMLTableSectionElement = fileTableBody;
 const openSelectedAnalysisBtn = document.getElementById("openSelectedAnalysisBtn") as HTMLButtonElement | null;
+const acquisitionTabButton = document.querySelector('.tab[data-tab="acquisition"]') as HTMLButtonElement | null;
+const liveTabButton = document.querySelector('.tab[data-tab="live"]') as HTMLButtonElement | null;
 
 const files = new Map<string, LoadedAudioFile>();
 const plotSessions = new Map<string, PlotSession>();
@@ -142,7 +144,13 @@ const selectedFileIds = new Set<string>();
 let tabCounter = 0;
 let acquisitionMeasurementController: MeasurementController | null = null;
 let liveMonitorController: LiveMonitorController | null = null;
+let runningTabIndicatorTimer: ReturnType<typeof setInterval> | null = null;
 const ANALYSIS_COLORS = ["#a3e635", "#38bdf8", "#f97316", "#f472b6", "#facc15", "#22c55e", "#fb7185", "#60a5fa"];
+
+function updateRunningTabIndicators(): void {
+	acquisitionTabButton?.classList.toggle("tab-running-blink", acquisitionMeasurementController?.isRunning() ?? false);
+	liveTabButton?.classList.toggle("tab-running-blink", liveMonitorController?.isRunning() ?? false);
+}
 
 function formatBytes(bytes: number): string {
 	if (!Number.isFinite(bytes) || bytes <= 0) {
@@ -1825,6 +1833,7 @@ async function openWaveformTab(file: File): Promise<void> {
 			isWaveformPlaying = isPlaying;
 			playButton.classList.toggle("is-active", isPlaying);
 			playButton.setAttribute("aria-pressed", isPlaying ? "true" : "false");
+			tabButton.classList.toggle("tab-waveform-playing", isPlaying);
 			updateWaveformStatusText();
 		});
 
@@ -1868,6 +1877,7 @@ async function openWaveformTab(file: File): Promise<void> {
 			tool,
 			cleanup: () => {
 				destroyed = true;
+				tabButton.classList.remove("tab-waveform-playing");
 				unsubscribePlaybackState();
 				unsubscribePlaybackGainMaxDb();
 				unsubscribeDisplayedChannels();
@@ -2296,6 +2306,10 @@ window.addEventListener("resize", () => {
 });
 
 window.addEventListener("beforeunload", () => {
+	if (runningTabIndicatorTimer !== null) {
+		clearInterval(runningTabIndicatorTimer);
+		runningTabIndicatorTimer = null;
+	}
 	acquisitionMeasurementController?.destroy();
 	liveMonitorController?.destroy();
 	plotSessions.forEach((session) => {
@@ -2307,3 +2321,5 @@ window.addEventListener("beforeunload", () => {
 switchTab("upload");
 updateSelectedAnalysisButtonState();
 registerPwaServiceWorker();
+updateRunningTabIndicators();
+runningTabIndicatorTimer = setInterval(updateRunningTabIndicators, 160);
