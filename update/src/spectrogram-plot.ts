@@ -8,7 +8,9 @@ type SpectrogramPlotAxes = {
 	yAxis?: HTMLElement | null;
 };
 
-const SPECTROGRAM_WINDOW_SIZE = 2048;
+const DEFAULT_SPECTROGRAM_WINDOW_SIZE = 2048;
+const MIN_SPECTROGRAM_WINDOW_SIZE = 256;
+const MAX_SPECTROGRAM_WINDOW_SIZE = 8192;
 const SPECTROGRAM_DYNAMIC_RANGE_DB = 80;
 const SPECTROGRAM_SCALE_STEPS = 20;
 const SPECTROGRAM_MAX_SCALE_STEP = SPECTROGRAM_SCALE_STEPS - 1;
@@ -52,6 +54,7 @@ export class SpectrogramPlot {
 	private visibleStartSample = 0;
 	private visibleStopSample = 0;
 	private frequencyScaleStep = SPECTROGRAM_MAX_SCALE_STEP;
+	private windowSize = DEFAULT_SPECTROGRAM_WINDOW_SIZE;
 	private wheelRenderTimer: ReturnType<typeof setTimeout> | null = null;
 
 	constructor(canvas: HTMLCanvasElement, axes: SpectrogramPlotAxes = {}) {
@@ -81,6 +84,30 @@ export class SpectrogramPlot {
 		this.frequencyScaleStep = clampedStep;
 		this.rerenderAxis();
 		this.rerenderPlotData();
+	}
+
+	setWindowSize(windowSize: number): void {
+		if (!Number.isFinite(windowSize)) {
+			return;
+		}
+
+		const clamped = Math.max(
+			MIN_SPECTROGRAM_WINDOW_SIZE,
+			Math.min(MAX_SPECTROGRAM_WINDOW_SIZE, Math.round(windowSize)),
+		);
+		const powerOfTwo = 2 ** Math.round(Math.log2(clamped));
+		const nextWindowSize = Math.max(MIN_SPECTROGRAM_WINDOW_SIZE, Math.min(MAX_SPECTROGRAM_WINDOW_SIZE, powerOfTwo));
+		if (nextWindowSize === this.windowSize) {
+			return;
+		}
+
+		this.windowSize = nextWindowSize;
+		this.rerenderAxis();
+		this.rerenderPlotData();
+	}
+
+	getWindowSize(): number {
+		return this.windowSize;
 	}
 
 	getFrequencyScaleStep(): number {
@@ -274,15 +301,15 @@ export class SpectrogramPlot {
 	}
 
 	private buildMagnitudeColumns(width: number, startSample: number, visibleSampleCount: number): Float32Array[] {
-		const halfWindow = SPECTROGRAM_WINDOW_SIZE / 2;
+		const halfWindow = this.windowSize / 2;
 		const maxX = Math.max(1, width - 1);
-		const window = this.createHannWindow(SPECTROGRAM_WINDOW_SIZE);
+		const window = this.createHannWindow(this.windowSize);
 		const columns: Float32Array[] = new Array(width);
 
 		for (let x = 0; x < width; x += 1) {
 			const centerSample = Math.round(startSample + (x / maxX) * (visibleSampleCount - 1));
-			const frame = new Array<number>(SPECTROGRAM_WINDOW_SIZE).fill(0);
-			for (let i = 0; i < SPECTROGRAM_WINDOW_SIZE; i += 1) {
+			const frame = new Array<number>(this.windowSize).fill(0);
+			for (let i = 0; i < this.windowSize; i += 1) {
 				const sampleIndex = centerSample + i - halfWindow;
 				if (sampleIndex >= 0 && sampleIndex < this.samples.length) {
 					frame[i] = (this.samples[sampleIndex] ?? 0) * window[i];
@@ -408,7 +435,7 @@ export class SpectrogramPlot {
 	}
 
 	private getMagnitudeBinCount(): number {
-		return SPECTROGRAM_WINDOW_SIZE / 2;
+		return this.windowSize / 2;
 	}
 
 	private getFrequencyBinRange(rowIndexFromBottom: number, axisHeight: number, binCount: number): { startBin: number; endBin: number } {
@@ -465,7 +492,7 @@ export class SpectrogramPlot {
 
 		const focusFraction = Math.max(0, Math.min(1, pointerFraction));
 		const zoomFactor = Math.pow(1.003, deltaY);
-		const minimumVisibleSamples = SPECTROGRAM_WINDOW_SIZE;
+		const minimumVisibleSamples = this.windowSize;
 		const nextVisibleSamples = Math.max(minimumVisibleSamples, Math.min(this.samples.length, visibleSamples * zoomFactor));
 		const focalSample = startSample + (focusFraction * visibleSamples);
 

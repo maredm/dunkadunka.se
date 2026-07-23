@@ -19,6 +19,14 @@ const lineColorOptions = [
 	"#BCBD22",
 ];
 
+export function getWaveformLineColor(channelIndex: number): string {
+	if (!Number.isFinite(channelIndex)) {
+		return lineColorOptions[0];
+	}
+	const index = Math.max(0, Math.floor(channelIndex));
+	return lineColorOptions[index % lineColorOptions.length];
+}
+
 const PLOTLY_CONFIG = {
 	responsive: true,
 	displayModeBar: false,
@@ -36,6 +44,7 @@ export class WaveformPlot {
 	private visibleStopSample = 0;
 	private visibleAmplitudeScale = 1;
 	private xAxisDisplayMode: XAxisDisplayMode = "time";
+	private channelDrawOrder: number[] = [];
 
 	constructor(canvas: HTMLCanvasElement, axes: WaveformPlotAxes = {}) {
 		this.canvas = canvas;
@@ -94,6 +103,19 @@ export class WaveformPlot {
 		this.renderXAxis();
 	}
 
+	setChannelDrawOrder(channelIndices: number[]): void {
+		const nextOrder: number[] = [];
+		const seen = new Set<number>();
+		for (const channelIndex of channelIndices) {
+			if (!Number.isInteger(channelIndex) || channelIndex < 0 || seen.has(channelIndex)) {
+				continue;
+			}
+			seen.add(channelIndex);
+			nextOrder.push(channelIndex);
+		}
+		this.channelDrawOrder = nextOrder;
+	}
+
 	rerenderPlotData(samples: NumberArray | MultichannelBuffer | null = null): void {
 		if (samples !== null) {
 			this.samples = this.normalizeSamples(samples);
@@ -108,17 +130,32 @@ export class WaveformPlot {
 
 		const traces: any[] = [];
 		const channelCount = this.samples.length;
+		const visibleChannelIndices: number[] = [];
+		for (let channelIndex = 0; channelIndex < channelCount; channelIndex += 1) {
+			const channel = this.samples[channelIndex];
+			if (channel && channel.length > 0) {
+				visibleChannelIndices.push(channelIndex);
+			}
+		}
+
+		const preferredOrder = this.channelDrawOrder.filter((channelIndex) => {
+			return channelIndex >= 0 && channelIndex < channelCount && (this.samples[channelIndex]?.length ?? 0) > 0;
+		});
+		const missingOrder = visibleChannelIndices.filter((channelIndex) => !preferredOrder.includes(channelIndex));
+		const renderOrder = preferredOrder.length > 0
+			? [...missingOrder, ...preferredOrder]
+			: [...visibleChannelIndices].sort((left, right) => right - left);
 
 		if (visibleSampleCount > 0 && this.sampleRate > 0) {
 			const maxPoints = Math.max(256, Math.min(6000, axisWidth * 2));
 			const samplesPerPixel = visibleSampleCount / Math.max(1, axisWidth);
-			for (let channelIndex = channelCount - 1; channelIndex >= 0; channelIndex -= 1) {
+			for (const channelIndex of renderOrder) {
 				const channel = this.samples[channelIndex];
 				if (!channel || channel.length === 0) {
 					continue;
 				}
 
-				const lineColor = lineColorOptions[channelIndex % lineColorOptions.length];
+				const lineColor = getWaveformLineColor(channelIndex);
 				const shouldHighlightSamples = visibleSampleCount < 2000;
 				if (samplesPerPixel > 10) {
 					const [upperTrace, lowerTrace] = this.createEnvelopeTraces(
@@ -343,7 +380,12 @@ export class WaveformPlot {
 			return 0;
 		}
 
-		return this.samples.reduce((minimum, channel) => Math.min(minimum, channel.length), this.samples[0].length);
+		const visibleChannels = this.samples.filter((channel) => channel.length > 0);
+		if (visibleChannels.length === 0) {
+			return 0;
+		}
+
+		return visibleChannels.reduce((minimum, channel) => Math.min(minimum, channel.length), visibleChannels[0].length);
 	}
 
 	private renderYAxis(): void {

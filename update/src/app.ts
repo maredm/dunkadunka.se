@@ -2,12 +2,14 @@ import "./styles.css";
 import { createLiveMonitorController, type LiveMonitorController } from "./live_monitor";
 import { mountWaveformTool, type WaveformToolHandle } from "./waveform";
 import { createMeasurementController, type MeasurementController } from "./measurement";
+import { bindCachedFieldValue, listAudioDevices, restoreCachedFieldValue, setAudioDeviceSelectOptions } from "./audio_devices";
 import Plotly from "plotly.js-dist-min";
 import { readMultichannelWavFile } from "./wavfile";
 import { fft } from "./fft";
 import { nextPow2 } from "./math";
 import { fractionalOctaveSmoothing, getFractionalOctaveFrequencies } from "./fractional_octave_smoothing";
 import { calculateTwoChannelImpulseResponse, estimateDelay } from "./signal";
+import { getWaveformLineColor } from "./waveform-plot";
 
 type LoadedAudioFile = {
 	id: string;
@@ -46,6 +48,7 @@ type DelayDisplayUnit = "ms" | "m";
 type PlotSession = {
 	tool?: WaveformToolHandle | null;
 	measurement?: MeasurementController | null;
+	cleanup?: (() => void) | null;
 };
 
 type PhaseResponse = {
@@ -1470,6 +1473,7 @@ function closeDynamicTab(tabId: string): void {
 	}
 
 	const session = plotSessions.get(tabId);
+	session?.cleanup?.();
 	session?.measurement?.destroy();
 	session?.tool?.destroy();
 
@@ -1480,56 +1484,39 @@ function closeDynamicTab(tabId: string): void {
 
 function createWaveformMarkup(tabId: string): string {
 	return `
-		<div class="acquisition-toolbar" role="toolbar" aria-label="Acquisition controls">
+		<div class="acquisition-toolbar" role="toolbar" aria-label="Waveform plot controls">
 			<div class="acquisition-toolbar-group">
-				<label for="analysisStimulusSelect-${tabId}" class="acquisition-toolbar-label">Stimulus</label>
-				<select id="analysisStimulusSelect-${tabId}" class="toolbar-select" aria-label="Stimulus selection">
-				<option value="swept-20-24000" selected>20-24000 Hz swept-sine</option>
-				<option value="swept-20-20000">20-20000 Hz swept-sine</option>
+				<label for="analysisPlaybackDeviceSelect-${tabId}" class="acquisition-toolbar-label">Playback</label>
+				<select id="analysisPlaybackDeviceSelect-${tabId}" class="toolbar-select" aria-label="Playback device selection"></select>
+			</div>
+			<div class="acquisition-toolbar-group">
+				<label class="acquisition-toolbar-label">Channels</label>
+				<div id="analysisChannelButtons-${tabId}" class="waveform-channel-buttons" role="group" aria-label="Displayed channels"></div>
+			</div>
+			<div class="acquisition-toolbar-group">
+				<label for="analysisSpectrogramFftSelect-${tabId}" class="acquisition-toolbar-label">FFT</label>
+				<select id="analysisSpectrogramFftSelect-${tabId}" class="toolbar-select" aria-label="Spectrogram FFT size">
+					<option value="512">512</option>
+					<option value="1024">1024</option>
+					<option value="2048" selected>2048</option>
+					<option value="4096">4096</option>
+					<option value="8192">8192</option>
 				</select>
 			</div>
-			<div class="acquisition-toolbar-group">
-				<label for="analysisOutputDeviceSelect-${tabId}" class="acquisition-toolbar-label">Output</label>
-				<select id="analysisOutputDeviceSelect-${tabId}" class="toolbar-select" aria-label="Output device selection"></select>
+			<div class="acquisition-toolbar-group waveform-toolbar-actions">
+				<button id="analysisPlayBtn-${tabId}" type="button" class="toolbar-button button acquisition-action-button waveform-play-action-button">Play</button>
+				<button id="analysisStopBtn-${tabId}" type="button" class="toolbar-button button acquisition-action-button">Stop</button>
 			</div>
-			<div class="acquisition-toolbar-group acquisition-toolbar-group--compact">
-				<label for="analysisOutputChannelSelect-${tabId}" class="acquisition-toolbar-label">Out ch</label>
-				<select id="analysisOutputChannelSelect-${tabId}" class="toolbar-select" aria-label="Output channel selection">
-					<option value="left" selected>L</option>
-					<option value="right">R</option>
-				</select>
-			</div>
-			<div class="acquisition-toolbar-group">
-				<label for="analysisInputDeviceSelect-${tabId}" class="acquisition-toolbar-label">Input</label>
-				<select id="analysisInputDeviceSelect-${tabId}" class="toolbar-select" aria-label="Input device selection"></select>
-			</div>
-			<div class="acquisition-toolbar-group acquisition-toolbar-group--compact">
-				<label for="analysisInputChannelSelect-${tabId}" class="acquisition-toolbar-label">In ch</label>
-				<select id="analysisInputChannelSelect-${tabId}" class="toolbar-select" aria-label="Input channel selection">
-					<option value="left" selected>L</option>
-					<option value="right">R</option>
-				</select>
-			</div>
-			<div class="acquisition-toolbar-group">
-				<label for="analysisReferenceDeviceSelect-${tabId}" class="acquisition-toolbar-label">Reference</label>
-				<select id="analysisReferenceDeviceSelect-${tabId}" class="toolbar-select" aria-label="Reference input device selection"></select>
-			</div>
-			<div class="acquisition-toolbar-group acquisition-toolbar-group--compact">
-				<label for="analysisReferenceChannelSelect-${tabId}" class="acquisition-toolbar-label">Ref ch</label>
-				<select id="analysisReferenceChannelSelect-${tabId}" class="toolbar-select" aria-label="Reference input channel selection">
-					<option value="left" selected>L</option>
-					<option value="right">R</option>
-				</select>
-			</div>
-			<div class="acquisition-toolbar-group">
-				<label for="analysisCommentInput-${tabId}" class="acquisition-toolbar-label">Comment</label>
-				<input id="analysisCommentInput-${tabId}" class="toolbar-select" type="text" maxlength="80" placeholder="optional" aria-label="Recording comment" />
-			</div>
-			<p id="analysisStatusText-${tabId}" class="acquisition-status" data-state="idle" aria-live="polite">Ready</p>
-			<button id="analysisRecordBtn-${tabId}" type="button" class="toolbar-button button acquisition-action-button">Record</button>
-			<button id="analysisStopBtn-${tabId}" type="button" class="toolbar-button button acquisition-action-button" disabled>Stop</button>
 		</div>
 		<div id="waveform-tool-${tabId}" class="waveform-tool-host"></div>
+		<div class="waveform-statusbar" role="status" aria-live="polite">
+			<p id="analysisWaveformStatusText-${tabId}" class="waveform-statusbar-text">Ready</p>
+			<div class="waveform-statusbar-gain">
+				<label for="analysisPlaybackGainSlider-${tabId}" class="waveform-statusbar-label">Volume</label>
+				<input id="analysisPlaybackGainSlider-${tabId}" class="waveform-gain-slider" type="range" min="0" max="0" step="0.1" value="0" aria-label="Playback gain" />
+				<span id="analysisPlaybackGainValue-${tabId}" class="waveform-statusbar-value">+0.0 dB</span>
+			</div>
+		</div>
 	`;
 }
 
@@ -1641,58 +1628,259 @@ async function openWaveformTab(file: File): Promise<void> {
 		content.innerHTML = createWaveformMarkup(tabId);
 
 		const mountHost = document.getElementById(`waveform-tool-${tabId}`) as HTMLElement | null;
-		const stimulusSelect = document.getElementById(`analysisStimulusSelect-${tabId}`) as HTMLSelectElement | null;
-		const outputDeviceSelect = document.getElementById(`analysisOutputDeviceSelect-${tabId}`) as HTMLSelectElement | null;
-		const outputChannelSelect = document.getElementById(`analysisOutputChannelSelect-${tabId}`) as HTMLSelectElement | null;
-		const inputDeviceSelect = document.getElementById(`analysisInputDeviceSelect-${tabId}`) as HTMLSelectElement | null;
-		const inputChannelSelect = document.getElementById(`analysisInputChannelSelect-${tabId}`) as HTMLSelectElement | null;
-		const referenceDeviceSelect = document.getElementById(`analysisReferenceDeviceSelect-${tabId}`) as HTMLSelectElement | null;
-		const referenceChannelSelect = document.getElementById(`analysisReferenceChannelSelect-${tabId}`) as HTMLSelectElement | null;
-		const commentInput = document.getElementById(`analysisCommentInput-${tabId}`) as HTMLInputElement | null;
-		const statusText = document.getElementById(`analysisStatusText-${tabId}`) as HTMLParagraphElement | null;
-		const recordButton = document.getElementById(`analysisRecordBtn-${tabId}`) as HTMLButtonElement | null;
+		const playbackDeviceSelect = document.getElementById(`analysisPlaybackDeviceSelect-${tabId}`) as HTMLSelectElement | null;
+		const channelButtonsHost = document.getElementById(`analysisChannelButtons-${tabId}`) as HTMLDivElement | null;
+		const fftSelect = document.getElementById(`analysisSpectrogramFftSelect-${tabId}`) as HTMLSelectElement | null;
+		const playButton = document.getElementById(`analysisPlayBtn-${tabId}`) as HTMLButtonElement | null;
 		const stopButton = document.getElementById(`analysisStopBtn-${tabId}`) as HTMLButtonElement | null;
+		const waveformStatusText = document.getElementById(`analysisWaveformStatusText-${tabId}`) as HTMLParagraphElement | null;
+		const playbackGainSlider = document.getElementById(`analysisPlaybackGainSlider-${tabId}`) as HTMLInputElement | null;
+		const playbackGainValue = document.getElementById(`analysisPlaybackGainValue-${tabId}`) as HTMLSpanElement | null;
 
 		if (!mountHost) {
 			throw new Error("Failed to create waveform tool host.");
 		}
 		if (
-			!stimulusSelect ||
-			!outputDeviceSelect ||
-			!outputChannelSelect ||
-			!inputDeviceSelect ||
-			!inputChannelSelect ||
-			!referenceDeviceSelect ||
-			!referenceChannelSelect ||
-			!commentInput ||
-			!statusText ||
-			!recordButton ||
-			!stopButton
+			!playbackDeviceSelect ||
+			!channelButtonsHost ||
+			!fftSelect ||
+			!playButton ||
+			!stopButton ||
+			!waveformStatusText ||
+			!playbackGainSlider ||
+			!playbackGainValue
 		) {
-			throw new Error("Failed to create analysis acquisition toolbar.");
+			throw new Error("Failed to create waveform toolbar.");
 		}
 
 		const tool = mountWaveformTool(mountHost);
-		const measurement = createMeasurementController({
-			stimulusSelect,
-			inputDeviceSelect,
-			inputChannelSelect,
-			referenceDeviceSelect,
-			referenceChannelSelect,
-			outputDeviceSelect,
-			outputChannelSelect,
-			commentInput,
-			statusText,
-			recordButton,
-			stopButton,
-			onRecordedFile: (recordedFile) => {
-				registerRecordedFile(recordedFile);
-				void openAnalysisTab(recordedFile);
+		const WAVEFORM_PLAYBACK_DEVICE_CACHE_KEY = "update.waveform.playbackDeviceId";
+		let destroyed = false;
+		let deviceRefreshToken = 0;
+		let loadingOperations = 0;
+		const selectedChannels = new Set<number>();
+		let isWaveformPlaying = false;
+
+		const formatGainDb = (valueDb: number): string => {
+			if (!Number.isFinite(valueDb) || valueDb <= -200) {
+				return "-inf dB";
+			}
+			return `${valueDb >= 0 ? "+" : ""}${valueDb.toFixed(1)} dB`;
+		};
+
+		const updateWaveformStatusText = (): void => {
+			const selectedCount = selectedChannels.size;
+			const totalCount = tool.getChannelCount();
+			const stateText = isWaveformPlaying ? "Playing" : "Stopped";
+			waveformStatusText.textContent = `${stateText} · ${selectedCount}/${totalCount} channels · max ${formatGainDb(tool.getPlaybackGainMaxDb())}`;
+		};
+
+		const syncPlaybackGainUi = (): void => {
+			const maxGainDb = tool.getPlaybackGainMaxDb();
+			const maxGainLinear = tool.getPlaybackGainMaxLinear();
+			const gainLinear = tool.getPlaybackGainLinear();
+			const gainDb = tool.getPlaybackGainDb();
+			playbackGainSlider.min = "0";
+			playbackGainSlider.max = maxGainLinear.toFixed(4);
+			playbackGainSlider.step = "0.001";
+			playbackGainSlider.value = gainLinear.toFixed(4);
+			playbackGainValue.textContent = `${formatGainDb(gainDb)} (${gainLinear.toFixed(3)}x)`;
+			playbackGainSlider.disabled = selectedChannels.size === 0;
+		};
+
+		const setTabLoading = (loading: boolean): void => {
+			tabButton.classList.toggle("tab-loading", loading);
+		};
+
+		const runWithTabLoading = async <T>(work: () => Promise<T> | T): Promise<T> => {
+			loadingOperations += 1;
+			setTabLoading(true);
+			try {
+				return await work();
+			} finally {
+				loadingOperations = Math.max(0, loadingOperations - 1);
+				if (loadingOperations === 0) {
+					setTabLoading(false);
+				}
+			}
+		};
+
+		const ensureSelectedChannels = (channelCount: number): void => {
+			for (const channelIndex of [...selectedChannels]) {
+				if (channelIndex < 0 || channelIndex >= channelCount) {
+					selectedChannels.delete(channelIndex);
+				}
+			}
+			if (selectedChannels.size === 0) {
+				for (let channelIndex = 0; channelIndex < channelCount; channelIndex += 1) {
+					selectedChannels.add(channelIndex);
+				}
+			}
+		};
+
+		const syncSelectedChannels = (): void => {
+			tool.setDisplayedChannels([...selectedChannels]);
+		};
+
+		const renderChannelButtons = (channelCount: number): void => {
+			channelButtonsHost.replaceChildren();
+			if (channelCount <= 0) {
+				return;
+			}
+			for (let channelIndex = 0; channelIndex < channelCount; channelIndex += 1) {
+				const button = document.createElement("button");
+				button.type = "button";
+				button.className = "toolbar-button button waveform-channel-button";
+				button.textContent = String(channelIndex + 1);
+				button.setAttribute("aria-label", `Toggle channel ${channelIndex + 1}`);
+				button.style.setProperty("--channel-color", getWaveformLineColor(channelIndex));
+				if (selectedChannels.has(channelIndex)) {
+					button.classList.add("is-active");
+				}
+				button.addEventListener("click", () => {
+					let changed = false;
+					if (selectedChannels.has(channelIndex)) {
+						selectedChannels.delete(channelIndex);
+						changed = true;
+					} else {
+						selectedChannels.add(channelIndex);
+						changed = true;
+					}
+					if (!changed) {
+						return;
+					}
+					renderChannelButtons(channelCount);
+					void runWithTabLoading(() => {
+						syncSelectedChannels();
+					});
+				});
+				channelButtonsHost.append(button);
+			}
+		};
+
+		const refreshPlaybackDevices = async (): Promise<void> => {
+			if (destroyed) {
+				return;
+			}
+			const token = ++deviceRefreshToken;
+			try {
+				const outputs = await listAudioDevices("audiooutput");
+				if (destroyed || token !== deviceRefreshToken) {
+					return;
+				}
+				setAudioDeviceSelectOptions(playbackDeviceSelect, outputs, "System default output");
+				restoreCachedFieldValue(playbackDeviceSelect, WAVEFORM_PLAYBACK_DEVICE_CACHE_KEY);
+				playbackDeviceSelect.disabled = outputs.length === 0;
+				await tool.setPlaybackDeviceId(playbackDeviceSelect.value || "");
+			} catch {
+				if (!destroyed && token === deviceRefreshToken) {
+					playbackDeviceSelect.disabled = true;
+				}
+			}
+		};
+
+		const handlePlay = (): void => {
+			void tool.play();
+		};
+		const handleStop = (): void => {
+			tool.stop();
+		};
+		const handlePlaybackDeviceChange = (): void => {
+			void runWithTabLoading(async () => {
+				await tool.setPlaybackDeviceId(playbackDeviceSelect.value || "");
+			});
+		};
+		const handleFftChange = (): void => {
+			const fftSize = Number.parseInt(fftSelect.value, 10);
+			if (Number.isFinite(fftSize) && fftSize > 0) {
+				void runWithTabLoading(() => {
+					tool.setSpectrogramFftSize(fftSize);
+				});
+			}
+		};
+		const handlePlaybackGainInput = (): void => {
+			const gainLinear = Number.parseFloat(playbackGainSlider.value);
+			const unityGain = 1;
+			const snapThreshold = 0.01;
+			const requestedGainLinear = Number.isFinite(gainLinear) ? gainLinear : unityGain;
+			const snappedGainLinear = Math.abs(requestedGainLinear - unityGain) <= snapThreshold
+				? unityGain
+				: requestedGainLinear;
+			const appliedGainLinear = tool.setPlaybackGainLinear(snappedGainLinear);
+			const appliedGainDb = tool.getPlaybackGainDb();
+			playbackGainSlider.value = appliedGainLinear.toFixed(4);
+			playbackGainValue.textContent = `${formatGainDb(appliedGainDb)} (${appliedGainLinear.toFixed(3)}x)`;
+			updateWaveformStatusText();
+		};
+
+		bindCachedFieldValue(playbackDeviceSelect, WAVEFORM_PLAYBACK_DEVICE_CACHE_KEY);
+		playButton.addEventListener("click", handlePlay);
+		stopButton.addEventListener("click", handleStop);
+		playbackDeviceSelect.addEventListener("change", handlePlaybackDeviceChange);
+		fftSelect.addEventListener("change", handleFftChange);
+		playbackGainSlider.addEventListener("input", handlePlaybackGainInput);
+		navigator.mediaDevices?.addEventListener?.("devicechange", refreshPlaybackDevices);
+
+		const unsubscribePlaybackState = tool.onPlaybackStateChanged((isPlaying) => {
+			isWaveformPlaying = isPlaying;
+			playButton.classList.toggle("is-active", isPlaying);
+			playButton.setAttribute("aria-pressed", isPlaying ? "true" : "false");
+			updateWaveformStatusText();
+		});
+
+		const unsubscribePlaybackGainMaxDb = tool.onPlaybackGainMaxDbChanged(() => {
+			syncPlaybackGainUi();
+			updateWaveformStatusText();
+		});
+
+		const unsubscribeDisplayedChannels = tool.onDisplayedChannelsChanged((channelIndices) => {
+			selectedChannels.clear();
+			for (const channelIndex of channelIndices) {
+				selectedChannels.add(channelIndex);
+			}
+			renderChannelButtons(tool.getChannelCount());
+			syncPlaybackGainUi();
+			updateWaveformStatusText();
+		});
+
+		const unsubscribeChannelCount = tool.onChannelCountChanged((channelCount) => {
+			ensureSelectedChannels(channelCount);
+			renderChannelButtons(channelCount);
+			syncSelectedChannels();
+			syncPlaybackGainUi();
+			updateWaveformStatusText();
+		});
+
+		const initialFftSize = tool.getSpectrogramFftSize();
+		fftSelect.value = String(initialFftSize);
+		tool.setSpectrogramFftSize(initialFftSize);
+		syncPlaybackGainUi();
+		updateWaveformStatusText();
+		await runWithTabLoading(async () => {
+			await Promise.all([
+				tool.openFile(file),
+				refreshPlaybackDevices(),
+			]);
+		});
+		syncPlaybackGainUi();
+		updateWaveformStatusText();
+		plotSessions.set(tabId, {
+			tool,
+			cleanup: () => {
+				destroyed = true;
+				unsubscribePlaybackState();
+				unsubscribePlaybackGainMaxDb();
+				unsubscribeDisplayedChannels();
+				unsubscribeChannelCount();
+				navigator.mediaDevices?.removeEventListener?.("devicechange", refreshPlaybackDevices);
+				playButton.removeEventListener("click", handlePlay);
+				stopButton.removeEventListener("click", handleStop);
+				playbackDeviceSelect.removeEventListener("change", handlePlaybackDeviceChange);
+				fftSelect.removeEventListener("change", handleFftChange);
+				playbackGainSlider.removeEventListener("input", handlePlaybackGainInput);
 			},
 		});
-		await tool.openFile(file);
-		plotSessions.set(tabId, { tool, measurement });
-		tabButton.classList.remove("tab-loading");
+		setTabLoading(false);
 		switchTab(tabId);
 		rerenderAllPlots();
 	} catch (error) {

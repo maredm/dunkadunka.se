@@ -564,6 +564,95 @@ body {
 	cursor: not-allowed;
 }
 
+.waveform-channel-buttons {
+	display: inline-flex;
+	gap: 4px;
+	flex-wrap: wrap;
+}
+
+.toolbar-button.button.waveform-channel-button {
+	min-width: 32px;
+	height: 32px;
+	padding: 0 8px;
+	font-weight: 600;
+	line-height: 1;
+	background: var(--bg-primary);
+	color: var(--channel-color, var(--text-secondary));
+}
+
+.toolbar-button.button.waveform-channel-button.is-active,
+.toolbar-button.button.waveform-channel-button:active {
+	background: var(--channel-color, #2563eb);
+	color: #f8fafc;
+	box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.35);
+	transform: translateY(1px);
+}
+
+.waveform-toolbar-actions {
+	margin-left: auto;
+}
+
+.waveform-statusbar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 6px 12px;
+	border-top: 1px solid var(--border);
+	border-bottom: 1px solid var(--border);
+	background: color-mix(in hsl, var(--bg-secondary) 72%, black 28%);
+	font-size: 12px;
+	color: var(--text-secondary);
+}
+
+.waveform-statusbar-text {
+	margin: 0;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.waveform-statusbar-gain {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	margin-left: auto;
+}
+
+.waveform-statusbar-label {
+	white-space: nowrap;
+	color: var(--text-secondary);
+}
+
+.waveform-gain-slider {
+	width: 180px;
+}
+
+.waveform-statusbar-value {
+	min-width: 62px;
+	text-align: right;
+	color: var(--text-primary);
+	font-variant-numeric: tabular-nums;
+}
+
+.waveform-play-action-button {
+	background: #166534;
+	border-color: #16a34a;
+	color: #ecfdf3;
+}
+
+.waveform-play-action-button:hover:not([disabled]) {
+	background: #15803d;
+	border-color: #22c55e;
+}
+
+.waveform-play-action-button.is-active {
+	background: #14532d;
+	border-color: #15803d;
+	box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.35);
+	transform: translateY(1px);
+}
+
 #acquisitionRecordBtn {
 	background: #b91c1c;
 	border-color: #dc2626;
@@ -833,7 +922,7 @@ body {
 }
 
 .waveform-tool-host {
-	height: calc(100% - 45px);
+	height: calc(100% - 89px);
 }
 
 .tab-content[data-content="waveform"] .tab-inner-content {
@@ -973,7 +1062,7 @@ body {
 	text-align: center;
 	font-size: 12px;
 	line-height: 12px;
-	color: color-mix(in lab, var(--color) 90%, var(--bg-color) 10%);
+	color: var(--text-secondary);
 	user-select: none;
 }
 

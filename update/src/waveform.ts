@@ -1,15 +1,31 @@
 
 
 import "./styles.css";
-import { play, record, playAndRecord } from "./audio_io";
-import { calculateTwoChannelImpulseResponse, estimateDelay, type NumberArray, type MultichannelBuffer, chirp, normalizeToRMS } from "./signal";
-import { downloadStereoWav, readMultichannelWavFile } from "./wavfile";
+import { type MultichannelBuffer, chirp, normalizeToRMS } from "./signal";
+import { readMultichannelWavFile } from "./wavfile";
 import { WaveformPlot } from "./waveform-plot";
 import { SpectrogramPlot } from "./spectrogram-plot";
 
 export interface WaveformToolHandle {
 	openFile(file: File): Promise<void>;
 	rerender(): void;
+	play(startSample?: number): Promise<void>;
+	stop(): void;
+	onPlaybackStateChanged(listener: (isPlaying: boolean) => void): () => void;
+	setPlaybackGainDb(gainDb: number): number;
+	getPlaybackGainDb(): number;
+	setPlaybackGainLinear(gainLinear: number): number;
+	getPlaybackGainLinear(): number;
+	getPlaybackGainMaxLinear(): number;
+	getPlaybackGainMaxDb(): number;
+	onPlaybackGainMaxDbChanged(listener: (maxGainDb: number) => void): () => void;
+	setDisplayedChannels(channelIndices: number[]): void;
+	onDisplayedChannelsChanged(listener: (channelIndices: number[]) => void): () => void;
+	setSpectrogramFftSize(size: number): void;
+	getSpectrogramFftSize(): number;
+	setPlaybackDeviceId(deviceId: string): Promise<void>;
+	getChannelCount(): number;
+	onChannelCountChanged(listener: (channelCount: number) => void): () => void;
 	destroy(): void;
 }
 
@@ -136,12 +152,20 @@ function bootstrapWaveformPlot(root: ParentNode = document): WaveformToolHandle 
 	let isPlaying = false;
 	let playbackAudioContext: AudioContext | null = null;
 	let playbackSource: AudioBufferSourceNode | null = null;
+	let playbackGainNode: GainNode | null = null;
 	let playbackStartedAt = 0;
 	let playbackStartSample = 0;
 	let playbackAnimation: number | null = null;
 	let playbackToken = 0;
 	let playheadInitialized = false;
-	let displayedChannelIndex: number | null = null;
+	let selectedChannelIndices = new Set<number>();
+	let playbackDeviceId = "";
+	let playbackGainLinear = 1;
+	let playbackGainMaxDb = 0;
+	const channelCountListeners = new Set<(channelCount: number) => void>();
+	const playbackStateListeners = new Set<(isPlaying: boolean) => void>();
+	const displayedChannelsListeners = new Set<(channelIndices: number[]) => void>();
+	const playbackGainMaxDbListeners = new Set<(maxGainDb: number) => void>();
 
 	const setPlayheadColor = (color: string): void => {
 		playhead.style.setProperty("--playhead-color", color);
@@ -160,6 +184,99 @@ function bootstrapWaveformPlot(root: ParentNode = document): WaveformToolHandle 
 		return currentChannels.reduce((minimum, channel) => Math.min(minimum, channel.length), currentChannels[0].length);
 	};
 
+	const getChannelCount = (): number => currentChannels.length;
+
+	const notifyChannelCountChanged = (): void => {
+		const channelCount = getChannelCount();
+		for (const listener of channelCountListeners) {
+			listener(channelCount);
+		}
+	};
+
+	const notifyDisplayedChannelsChanged = (): void => {
+		const channelIndices = [...selectedChannelIndices];
+		for (const listener of displayedChannelsListeners) {
+			listener(channelIndices);
+		}
+	};
+
+	const notifyPlaybackGainMaxDbChanged = (): void => {
+		for (const listener of playbackGainMaxDbListeners) {
+			listener(playbackGainMaxDb);
+		}
+	};
+
+	const dbToLinear = (valueDb: number): number => Math.pow(10, valueDb / 20);
+	const linearToDb = (valueLinear: number): number => {
+		if (!Number.isFinite(valueLinear) || valueLinear <= 0) {
+			return Number.NEGATIVE_INFINITY;
+		}
+		return 20 * Math.log10(valueLinear);
+	};
+
+	const computePlaybackGainMaxDb = (): number => {
+		let peak = 0;
+		for (const channelIndex of selectedChannelIndices) {
+			const channel = currentChannels[channelIndex];
+			if (!channel) {
+				continue;
+			}
+			for (let frame = 0; frame < channel.length; frame += 1) {
+				const magnitude = Math.abs(channel[frame] ?? 0);
+				if (magnitude > peak) {
+					peak = magnitude;
+				}
+			}
+		}
+
+		if (!Number.isFinite(peak) || peak <= 1e-9) {
+			return 0;
+		}
+
+		const maxDb = 20 * Math.log10(1 / peak);
+		if (!Number.isFinite(maxDb)) {
+			return 0;
+		}
+
+		return Math.max(0, maxDb);
+	};
+
+	const updatePlaybackGainLimits = (): void => {
+		playbackGainMaxDb = computePlaybackGainMaxDb();
+		const maxLinear = dbToLinear(playbackGainMaxDb);
+		if (playbackGainLinear > maxLinear) {
+			playbackGainLinear = maxLinear;
+		}
+		if (playbackGainNode) {
+			playbackGainNode.gain.value = playbackGainLinear;
+		}
+		notifyPlaybackGainMaxDbChanged();
+	};
+
+	const setPlaybackGainLinearValue = (gainLinear: number): number => {
+		if (!Number.isFinite(gainLinear)) {
+			return playbackGainLinear;
+		}
+		const maxLinear = dbToLinear(playbackGainMaxDb);
+		playbackGainLinear = Math.max(0, Math.min(maxLinear, gainLinear));
+		if (playbackGainNode) {
+			playbackGainNode.gain.value = playbackGainLinear;
+		}
+		return playbackGainLinear;
+	};
+
+	const setPlaybackGainDbValue = (gainDb: number): number => {
+		if (gainDb === Number.NEGATIVE_INFINITY) {
+			setPlaybackGainLinearValue(0);
+			return linearToDb(playbackGainLinear);
+		}
+		if (!Number.isFinite(gainDb)) {
+			return linearToDb(playbackGainLinear);
+		}
+		setPlaybackGainLinearValue(dbToLinear(gainDb));
+		return linearToDb(playbackGainLinear);
+	};
+
 	const clampSample = (value: number): number => {
 		const frameCount = getFrameCount();
 		if (!Number.isFinite(value)) {
@@ -170,6 +287,9 @@ function bootstrapWaveformPlot(root: ParentNode = document): WaveformToolHandle 
 
 	const updatePlaybackVisualState = (): void => {
 		updatePlayheadColor();
+		for (const listener of playbackStateListeners) {
+			listener(isPlaying);
+		}
 	};
 
 	const hidePlayheadVisual = (): void => {
@@ -288,6 +408,13 @@ function bootstrapWaveformPlot(root: ParentNode = document): WaveformToolHandle 
 		if (playbackAudioContext.state === "suspended") {
 			await playbackAudioContext.resume();
 		}
+		if (playbackDeviceId && "setSinkId" in playbackAudioContext) {
+			try {
+				await (playbackAudioContext as AudioContext & { setSinkId: (id: string) => Promise<void> }).setSinkId(playbackDeviceId);
+			} catch {
+				// Keep default output when sink selection is unsupported or fails.
+			}
+		}
 		return playbackAudioContext;
 	};
 
@@ -303,21 +430,42 @@ function bootstrapWaveformPlot(root: ParentNode = document): WaveformToolHandle 
 	};
 
 	const getDisplayedWaveformChannels = (): Float32Array[] => {
-		if (displayedChannelIndex === null) {
-			return currentChannels;
+		if (currentChannels.length === 0) {
+			return [new Float32Array(0)];
 		}
 
-		const selected = currentChannels[displayedChannelIndex];
-		return selected ? [selected] : [new Float32Array(0)];
+		const channels = currentChannels.map(() => new Float32Array(0));
+		for (const channelIndex of selectedChannelIndices) {
+			const channel = currentChannels[channelIndex];
+			if (channel) {
+				channels[channelIndex] = channel;
+			}
+		}
+
+		const hasVisibleChannel = channels.some((channel) => channel.length > 0);
+		return hasVisibleChannel ? channels : [new Float32Array(0)];
 	};
 
 	const getDisplayedSpectrogramChannel = (): Float32Array => {
-		if (displayedChannelIndex === null) {
-			return mixMultichannelToMono(currentChannels);
+		const selected = [...selectedChannelIndices]
+			.map((index) => currentChannels[index])
+			.filter((channel): channel is Float32Array => channel instanceof Float32Array);
+		if (selected.length === 0) {
+			return new Float32Array(0);
 		}
+		if (selected.length === 1) {
+			return Float32Array.from(selected[0]);
+		}
+		return mixMultichannelToMono(selected);
+	};
 
-		const selected = currentChannels[displayedChannelIndex];
-		return selected ? Float32Array.from(selected) : new Float32Array(0);
+	const selectAllChannels = (): void => {
+		selectedChannelIndices = new Set<number>();
+		for (let channelIndex = 0; channelIndex < currentChannels.length; channelIndex += 1) {
+			selectedChannelIndices.add(channelIndex);
+		}
+		updatePlaybackGainLimits();
+		notifyDisplayedChannelsChanged();
 	};
 
 	const pausePlayback = (): void => {
@@ -343,6 +491,10 @@ function bootstrapWaveformPlot(root: ParentNode = document): WaveformToolHandle 
 			playbackSource.disconnect();
 			playbackSource = null;
 		}
+		if (playbackGainNode) {
+			playbackGainNode.disconnect();
+			playbackGainNode = null;
+		}
 
 		stopPlayheadAnimation();
 		updatePlayheadVisual();
@@ -367,7 +519,10 @@ function bootstrapWaveformPlot(root: ParentNode = document): WaveformToolHandle 
 		const context = await ensureAudioContext();
 		const source = context.createBufferSource();
 		source.buffer = buildPlaybackBuffer(context);
-		source.connect(context.destination);
+		const gainNode = context.createGain();
+		gainNode.gain.value = playbackGainLinear;
+		source.connect(gainNode);
+		gainNode.connect(context.destination);
 
 		const token = playbackToken + 1;
 		playbackToken = token;
@@ -377,6 +532,7 @@ function bootstrapWaveformPlot(root: ParentNode = document): WaveformToolHandle 
 			}
 			isPlaying = false;
 			playbackSource = null;
+			playbackGainNode = null;
 			playheadSample = frameCount;
 			playheadInitialized = false;
 			stopPlayheadAnimation();
@@ -390,6 +546,7 @@ function bootstrapWaveformPlot(root: ParentNode = document): WaveformToolHandle 
 		playheadInitialized = true;
 		isPlaying = true;
 		playbackSource = source;
+		playbackGainNode = gainNode;
 		source.start(0, clampedStart / currentSampleRate);
 
 		updatePlaybackVisualState();
@@ -493,6 +650,7 @@ function bootstrapWaveformPlot(root: ParentNode = document): WaveformToolHandle 
 	const applyDisplayedChannelSelection = (resetZoom = false): void => {
 		const waveformChannels = getDisplayedWaveformChannels();
 		const spectrogramSamples = getDisplayedSpectrogramChannel();
+		waveformPlot.setChannelDrawOrder([...selectedChannelIndices]);
 		if (resetZoom) {
 			waveformPlot.setData(waveformChannels, currentSampleRate);
 			spectrogramPlot.setData(spectrogramSamples, currentSampleRate);
@@ -536,12 +694,23 @@ function bootstrapWaveformPlot(root: ParentNode = document): WaveformToolHandle 
 			const button = document.createElement("button");
 			button.type = "button";
 			button.className = "app-context-menu__item";
-			if (displayedChannelIndex === channelIndex) {
+			const isSelected = channelIndex === null
+				? selectedChannelIndices.size === currentChannels.length
+				: selectedChannelIndices.has(channelIndex);
+			if (isSelected) {
 				button.classList.add("is-selected");
 			}
 			button.textContent = label;
 			button.addEventListener("click", () => {
-				displayedChannelIndex = channelIndex;
+				if (channelIndex === null) {
+					selectAllChannels();
+				} else if (selectedChannelIndices.has(channelIndex)) {
+					selectedChannelIndices.delete(channelIndex);
+					notifyDisplayedChannelsChanged();
+				} else {
+					selectedChannelIndices.add(channelIndex);
+					notifyDisplayedChannelsChanged();
+				}
 				applyDisplayedChannelSelection(false);
 				renderChannelMenu();
 				hideContextMenu();
@@ -592,12 +761,12 @@ function bootstrapWaveformPlot(root: ParentNode = document): WaveformToolHandle 
 			pausePlayback();
 			currentChannels = channels.map((channel) => Float32Array.from(channel));
 			currentSampleRate = sampleRate;
-			if (displayedChannelIndex !== null && displayedChannelIndex >= currentChannels.length) {
-				displayedChannelIndex = null;
-			}
+			selectAllChannels();
 			playheadSample = 0;
 			playheadInitialized = false;
 			applyDisplayedChannelSelection(true);
+			notifyChannelCountChanged();
+			updatePlaybackGainLimits();
 		} catch (error) {
 			console.error(error);
 			window.alert(error instanceof Error ? error.message : "Unable to open that file.");
@@ -685,10 +854,12 @@ function bootstrapWaveformPlot(root: ParentNode = document): WaveformToolHandle 
 	const waveformSamples = normalizeToRMS(chirpSamples);
 	currentChannels = [Float32Array.from(waveformSamples)];
 	currentSampleRate = sampleRate;
-	displayedChannelIndex = null;
+	selectAllChannels();
 	playheadSample = 0;
 	playheadInitialized = false;
 	applyDisplayedChannelSelection(true);
+	notifyChannelCountChanged();
+	updatePlaybackGainLimits();
 	updatePlaybackVisualState();
 	updatePlayheadVisual();
 
@@ -812,6 +983,73 @@ function bootstrapWaveformPlot(root: ParentNode = document): WaveformToolHandle 
 	return {
 		openFile,
 		rerender,
+		play: async (startSample?: number) => {
+			const sample = typeof startSample === "number" ? startSample : playheadSample >= getFrameCount() ? 0 : playheadSample;
+			await startPlayback(sample);
+		},
+		stop: pausePlayback,
+		onPlaybackStateChanged: (listener: (isPlaying: boolean) => void) => {
+			playbackStateListeners.add(listener);
+			listener(isPlaying);
+			return () => {
+				playbackStateListeners.delete(listener);
+			};
+		},
+		setDisplayedChannels: (channelIndices: number[]) => {
+			const maxChannelIndex = Math.max(0, getChannelCount() - 1);
+			const sanitized = new Set<number>();
+			for (const index of channelIndices) {
+				if (Number.isInteger(index) && index >= 0 && index <= maxChannelIndex) {
+					sanitized.add(index);
+				}
+			}
+			selectedChannelIndices = sanitized;
+			updatePlaybackGainLimits();
+			notifyDisplayedChannelsChanged();
+			applyDisplayedChannelSelection(false);
+		},
+		onDisplayedChannelsChanged: (listener: (channelIndices: number[]) => void) => {
+			displayedChannelsListeners.add(listener);
+			listener([...selectedChannelIndices]);
+			return () => {
+				displayedChannelsListeners.delete(listener);
+			};
+		},
+		setPlaybackGainDb: (gainDb: number) => setPlaybackGainDbValue(gainDb),
+		getPlaybackGainDb: () => linearToDb(playbackGainLinear),
+		setPlaybackGainLinear: (gainLinear: number) => setPlaybackGainLinearValue(gainLinear),
+		getPlaybackGainLinear: () => playbackGainLinear,
+		getPlaybackGainMaxLinear: () => dbToLinear(playbackGainMaxDb),
+		getPlaybackGainMaxDb: () => playbackGainMaxDb,
+		onPlaybackGainMaxDbChanged: (listener: (maxGainDb: number) => void) => {
+			playbackGainMaxDbListeners.add(listener);
+			listener(playbackGainMaxDb);
+			return () => {
+				playbackGainMaxDbListeners.delete(listener);
+			};
+		},
+		setSpectrogramFftSize: (size: number) => {
+			spectrogramPlot.setWindowSize(size);
+		},
+		getSpectrogramFftSize: () => spectrogramPlot.getWindowSize(),
+		setPlaybackDeviceId: async (deviceId: string) => {
+			playbackDeviceId = deviceId.trim();
+			if (playbackAudioContext && "setSinkId" in playbackAudioContext) {
+				try {
+					await (playbackAudioContext as AudioContext & { setSinkId: (id: string) => Promise<void> }).setSinkId(playbackDeviceId);
+				} catch {
+					// Keep default output when sink selection is unsupported or fails.
+				}
+			}
+		},
+		getChannelCount,
+		onChannelCountChanged: (listener: (channelCount: number) => void) => {
+			channelCountListeners.add(listener);
+			listener(getChannelCount());
+			return () => {
+				channelCountListeners.delete(listener);
+			};
+		},
 		destroy,
 	};
 }
