@@ -1,4 +1,4 @@
-import { type MultichannelBuffer, type StereoBuffer } from "./signal";
+import { type MultichannelBuffer, type StereoBuffer } from "./signal/signal";
 
 export type WavFileData = {
 	sampleRate: number;
@@ -35,7 +35,7 @@ function requireMultichannelBuffer(buffer: MultichannelBuffer): MultichannelBuff
 	}
 
 	const frameCount = buffer[0].length;
-	if (buffer.some((channel) => channel.length !== frameCount)) {
+	if (buffer.some((channel: Float32Array) => channel.length !== frameCount)) {
 		throw new Error("All channels must have the same length");
 	}
 

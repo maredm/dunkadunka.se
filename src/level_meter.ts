@@ -1,7 +1,7 @@
 import {
 	computeWeightedMeanSquare,
 	type FrequencyWeighting,
-} from "./weighting";
+} from "./signal/weighting";
 
 export type LevelMetric =
 	| "laeq"

@@ -1,4 +1,5 @@
-import { type NumberArray, type StereoBuffer, numberArrayToStereoBuffer, concatStereoBuffers } from "./signal";
+import { type StereoBuffer, numberArrayToStereoBuffer, concatStereoBuffers } from "./signal/signal";
+import { type NumberArray } from "./math";
 
 export type AudioChannelSelection = "left" | "right";
 

@@ -5,7 +5,7 @@ import {
 	buildSmoothedSpectrum,
 } from "../src/live_monitor";
 import { computeExponentialAverageAlpha, computeWaveformDecibels } from "../src/level_meter";
-import { getFrequencyWeightingGainDb } from "../src/weighting";
+import { getFrequencyWeightingGainDb } from "../src/signal/weighting";
 
 test("computeWaveformDecibels returns 0 dBFS for unity sine RMS scaled to full scale square", () => {
 	const samples = new Float32Array([1, -1, 1, -1]);

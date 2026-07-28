@@ -1,19 +1,30 @@
-console.debug("Math module loaded");
+export type FloatArray = number[] | Float32Array | Float64Array;
+export type IntegerArray = number[] | Int32Array | Int16Array;
+export type NumberArray = FloatArray | IntegerArray;
 
-export function logspace(start: number, end: number, num: number): Float32Array {
+export type ComplexNumberArray = {
+	real: NumberArray;
+	imag: NumberArray;
+};
+
+export const isNumberArray = (arr: any): arr is NumberArray => {
+    return Array.isArray(arr) || arr instanceof Float32Array || arr instanceof Float64Array || arr instanceof Int32Array || arr instanceof Int16Array;
+}
+
+export const logspace = (start: number, end: number, num: number): Float32Array => {
     const logStart = Math.log10(start);
     const logEnd = Math.log10(end);
     const logStep = (logEnd - logStart) / (num - 1);
     return Float32Array.from({ length: num }, (_, i) => Math.pow(10, logStart + i * logStep));
-}
+};
 
-export function linspace(start: number, end: number, num: number): Float32Array {
+export const linspace = (start: number, end: number, num: number): Float32Array => {
     if (num === 1) return Float32Array.from([start]);
     const step = (end - start) / (num - 1);
     return Float32Array.from({ length: num }, (_, i) => start + i * step);
-}
+};
 
-export function closest(num: number, arr: Float32Array): number {
+export const closest = (num: number, arr: Float32Array): number => {
     let curr = arr[0];
     let diff = Math.abs(num - curr);
     let index = 0;
@@ -26,11 +37,11 @@ export function closest(num: number, arr: Float32Array): number {
         }
     }
     return index;
-}
+};
 
-export function clamp(v: number, lower: number, upper: number): number {
+export const clamp = (v: number, lower: number, upper: number): number => {
     return Math.max(lower, Math.min(upper, v));
-}
+};
 
 export const average = (array: Float32Array): number => array.reduce((a, b) => a + b) / array.length;
 
@@ -38,16 +49,26 @@ export const abs = (re: number, im: number = 0): number => Math.sqrt(re * re + i
 
 export const mod = (n: number, m: number): number => ((n % m) + m) % m;
 
-export const nextPow2 = (v: number): number => {
-        let p = 1;
-        while (p < v) p <<= 1;
-        return p;
-    };
-
-export function max(arr: Float32Array): number {
+export const max = (arr: Float32Array): number => {
     let maxVal = -Infinity;
     for (let i = 0; i < arr.length; i++) {
         if (arr[i] > maxVal) maxVal = Math.abs(arr[i]);
     }
     return maxVal;
+};
+
+export const rms = (arr: Float32Array): number => {
+    let sumSquares = 0;
+    for (let i = 0; i < arr.length; i++) {
+        sumSquares += arr[i] * arr[i];
+    }
+    return Math.sqrt(sumSquares / arr.length);
+};
+
+export const sum = (arr: Float32Array): number => {
+    let total = 0;
+    for (let i = 0; i < arr.length; i++) {
+        total += arr[i];
+    }
+    return total;
 }

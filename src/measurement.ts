@@ -1,6 +1,7 @@
 import { bindCachedFieldValue, listAudioDevices, restoreCachedFieldValue, setAudioDeviceSelectOptions } from "./audio_devices";
 import { startPlayAndRecord, type ActiveDuplexSession, type AudioChannelSelection } from "./audio_io";
-import { chirp, normalizeToRMS } from "./signal";
+import { normalizeToRMS } from "./signal/signal";
+import { chirp } from "./signal/generator";
 import { createMultichannelWavBlob } from "./wavfile";
 
 export type MeasurementStimulusPreset = {

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { WaveformPlot } from "../src/waveform-plot";
+import { WaveformPlot } from "../src/plotting/waveform-plot";
 
 type DrawOperation =
 	| { type: "lineTo"; x: number; y: number }

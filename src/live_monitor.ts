@@ -1,20 +1,19 @@
 import { bindCachedFieldValue, listAudioDevices, restoreCachedFieldValue, setAudioDeviceSelectOptions } from "./audio_devices";
 import { startLiveMonitor, type LiveMonitorSession, type AudioChannelSelection } from "./audio_io";
 import Plotly from "plotly.js-dist-min";
-import { fft } from "./fft";
-import { fractionalOctaveSmoothing, getFractionalOctaveFrequencies } from "./fractional_octave_smoothing";
+import { fft, nextPow2 } from "./signal/fft";
+import { fractionalOctaveSmoothing, getFractionalOctaveFrequencies } from "./signal/fractional_octave_smoothing";
 import {
 	createLevelMeterState,
 	computeExponentialAverageAlpha,
-	computeWaveformDecibels,
 	getLevelMetricLabel,
 	parseLevelMetric,
 	updateLevelMeter,
 	type LevelMeterState,
 	type LevelMetric,
 } from "./level_meter";
-import { nextPow2, clamp } from "./math";
-import { calculateTwoChannelImpulseResponse, estimateDelay } from "./signal";
+import { clamp } from "./math";
+import { estimateDelay } from "./signal/delay";
 
 type LiveSpectrumSeries = {
 	frequencies: Float32Array;
@@ -169,7 +168,7 @@ function computeSpectrumMagnitudes(samples: Float32Array, useWindow = true): Flo
 		windowed[index] = (samples[index] ?? 0) * window;
 	}
 
-	const [real, imag] = fft(windowed);
+	const { real, imag } = fft(windowed);
 	const half = fftSize / 2;
 	const magnitudes = new Float32Array(half);
 	for (let index = 0; index < half; index += 1) {
@@ -392,8 +391,8 @@ function computeTransferComplexResponse(
 		stim[i] = stimulus[i] ?? 0;
 	}
 
-	const [yRe, yIm] = fft(rec);
-	const [xRe, xIm] = fft(stim);
+	const { real: yRe, imag: yIm } = fft(rec);
+	const { real: xRe, imag: xIm } = fft(stim);
 
 	const nyquist = sampleRate / 2;
 	const minHz = 20;
