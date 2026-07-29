@@ -16,7 +16,7 @@
 }
 
 :root {
-	color-scheme: dark;
+	color-scheme: light dark;
     font-family: 'Outfit', sans-serif;
     --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
       "Courier New", monospace;
@@ -34,6 +34,72 @@
     --text-secondary: #bbbdbf;
     --text-disabled: #9b9d9f;
 	--color: #1f77b4;
+	--plot-paper-bg: #000;
+	--plot-bg: #000;
+	--plot-title-color: #f8fafc;
+	--plot-axis-color: #9aa4b2;
+	--plot-grid-color: rgba(181, 192, 224, 0.12);
+	--plot-legend-bg: rgba(0, 0, 0, 0.45);
+	--plot-reference-line-color: rgba(248, 250, 252, 0.6);
+}
+
+@media (prefers-color-scheme: light) {
+	:root {
+		--border: #cbd5e1;
+		--bg-color: #f4f6fb;
+		--bg-primary: #ffffff;
+		--bg-secondary: #eef2f9;
+		--bg-tertiary: #e2e8f0;
+		--bg-hover: #dbe4f2;
+		--text-primary: #0f172a;
+		--text-secondary: #334155;
+		--text-disabled: #64748b;
+		--plot-paper-bg: #ffffff;
+		--plot-bg: #ffffff;
+		--plot-title-color: #0f172a;
+		--plot-axis-color: #334155;
+		--plot-grid-color: rgba(51, 65, 85, 0.2);
+		--plot-legend-bg: rgba(255, 255, 255, 0.75);
+		--plot-reference-line-color: rgba(15, 23, 42, 0.45);
+	}
+}
+
+:root[data-theme="light"] {
+	--border: #cbd5e1;
+	--bg-color: #f4f6fb;
+	--bg-primary: #ffffff;
+	--bg-secondary: #eef2f9;
+	--bg-tertiary: #e2e8f0;
+	--bg-hover: #dbe4f2;
+	--text-primary: #0f172a;
+	--text-secondary: #334155;
+	--text-disabled: #64748b;
+	--plot-paper-bg: #ffffff;
+	--plot-bg: #ffffff;
+	--plot-title-color: #0f172a;
+	--plot-axis-color: #334155;
+	--plot-grid-color: rgba(51, 65, 85, 0.2);
+	--plot-legend-bg: rgba(255, 255, 255, 0.75);
+	--plot-reference-line-color: rgba(15, 23, 42, 0.45);
+}
+
+:root[data-theme="dark"] {
+	--border: #1e1e1e;
+	--bg-color: #161718;
+	--bg-primary: #363738;
+	--bg-secondary: #2d2e2f;
+	--bg-tertiary: #262728;
+	--bg-hover: #444;
+	--text-primary: #fbfdff;
+	--text-secondary: #bbbdbf;
+	--text-disabled: #9b9d9f;
+	--plot-paper-bg: #000;
+	--plot-bg: #000;
+	--plot-title-color: #f8fafc;
+	--plot-axis-color: #9aa4b2;
+	--plot-grid-color: rgba(181, 192, 224, 0.12);
+	--plot-legend-bg: rgba(0, 0, 0, 0.45);
+	--plot-reference-line-color: rgba(248, 250, 252, 0.6);
 }
 
 * {
@@ -48,7 +114,7 @@
 
 a {
     text-decoration: none;
-    color: #EEE !important;
+	color: var(--text-primary) !important;
 }
 
 body {
@@ -516,7 +582,7 @@ body {
 }
 
 .tab-inner-content {
-	padding: 16px;
+	padding: 0;
 	overflow: scroll;
 	height: stretch;
 }
@@ -725,13 +791,11 @@ body {
 .live-plot-card {
 	background: var(--bg-secondary);
 	border: 1px solid var(--border);
-	border-radius: 8px;
-	padding: 14px;
 }
 
 .live-summary-card h2,
 .live-plot-card h2 {
-	margin: 0 0 6px;
+	margin: 0 0 0px;
 	font-size: 14px;
 	font-weight: 600;
 }
@@ -769,8 +833,6 @@ body {
 .analysis-extra-plots {
 	display: grid;
 	grid-template-columns: repeat(2, minmax(0, 1fr));
-	gap: 12px;
-	margin-top: 12px;
 }
 
 .analysis-extra-plots > .live-plot-card {
@@ -794,10 +856,7 @@ body {
 .analysis-plot-host {
 	width: 100%;
 	height: 480px;
-	margin-top: 10px;
 	background: #000;
-	border: 1px solid var(--border);
-	border-radius: 6px;
 	overflow: hidden;
 }
 
@@ -832,7 +891,7 @@ body {
 	font-size: 12px;
 }
 
-@media (max-width: 860px) {
+@media (max-width: 112rem) {
 	.acquisition-toolbar {
 		flex-wrap: wrap;
 		align-items: flex-start;

@@ -1,7 +1,7 @@
 /** Audio processing utility module providing functions for audio signal analysis and manipulation. */
 
 import { rms } from "../math";
-import type { FloatArray, IntegerArray, NumberArray } from "../math";
+import type { ComplexFloat32Array, FloatArray, IntegerArray, NumberArray } from "../math";
 import { fft, nextPow2 } from "./fft";
 
 export type { FloatArray, IntegerArray, NumberArray, ComplexNumberArray } from "../math";
@@ -99,15 +99,6 @@ export function transpose(arr: MultichannelNumberArray): MultichannelNumberArray
         }
     }
     return transposed;
-}
-
-export function normalize(input: Float32Array, peak: boolean = false): Float32Array {
-    const rms_value = rms(input);
-    if (rms_value === 0) return input; // avoid division by zero, return original (silence)
-
-    const factor = (1 / rms_value) * (peak ? 1 : Math.SQRT2);
-
-    return input.map(v => v * factor);
 }
 
 export function db(value: Float32Array): Float32Array;

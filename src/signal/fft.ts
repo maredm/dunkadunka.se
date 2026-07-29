@@ -1,19 +1,19 @@
-import { ComplexNumberArray, NumberArray, isNumberArray } from "../math";
+import { ComplexFloatArray, FloatArray, isNumberArray, ComplexFloat32Array, NumberArray } from "../math";
 
 /**
  * Compute the Fast Fourier Transform (FFT) of a signal.
  *
- * The input can be either a real-valued NumberArray, which is treated as the real part,
- * or a ComplexNumberArray containing both real and imaginary components.
+ * The input can be either a real-valued FloatArray, which is treated as the real part,
+ * or a ComplexFloatArray containing both real and imaginary components.
  *
  * @param signal The input signal as either a real-valued array or a complex-number object.
  * @param inverse If true, computes the inverse FFT. Defaults to false.
  * @returns An object containing the real and imaginary parts of the FFT result.
  */
-export function fft(signal: NumberArray, inverse?: boolean): ComplexNumberArray;
-export function fft(signal: ComplexNumberArray, inverse?: boolean): ComplexNumberArray;
-export function fft(signal: ComplexNumberArray | NumberArray, inverse = false): ComplexNumberArray {
-	let real: NumberArray, imag: NumberArray;
+export function fft(signal: FloatArray, inverse?: boolean): ComplexFloatArray;
+export function fft(signal: ComplexFloatArray, inverse?: boolean): ComplexFloatArray;
+export function fft(signal: ComplexFloatArray | FloatArray, inverse = false): ComplexFloatArray {
+	let real: FloatArray, imag: FloatArray;
 	if (isNumberArray(signal)) {
 		real = Array.from(signal);
 		imag = new Array(real.length).fill(0);
@@ -77,20 +77,29 @@ export function fft(signal: ComplexNumberArray | NumberArray, inverse = false): 
 	return { real, imag };
 }
 
-export function rfft(signal: NumberArray, inverse = false): Float32Array {
-	const n = signal.length;
-	if (n === 0) return new Float32Array();
-	if ((n & (n - 1)) !== 0) {
-		throw new Error('rfft input length must be a power of two');
+export function rfft(signal: FloatArray): ComplexFloatArray {
+	const { real, imag } = fft(signal);
+	const halfN = Math.floor(real.length / 2);
+	return {
+		real: real.slice(0, halfN + 1),
+		imag: imag.slice(0, halfN + 1),
+	};
+}
+
+export function irfft(signal: FloatArray, n: number): FloatArray {
+	const real = signal.slice();
+	const fullReal = new Array(n).fill(0);
+	const fullImag = new Array(n).fill(0);
+
+	for (let i = 0; i < real.length; i++) {
+		fullReal[i] = real[i];
+		if (i > 0 && i < n / 2) {
+			fullReal[n - i] = real[i];
+		}
 	}
 
-	const { real, imag } = fft(signal, inverse);
-	const halfN = n / 2;
-	const rfftResult = new Float32Array(halfN + 1);
-	for (let i = 0; i <= halfN; i++) {
-		rfftResult[i] = Math.sqrt(real[i] ** 2 + imag[i] ** 2);
-	}
-	return rfftResult;
+	const { real: timeDomainReal } = fft({ real: fullReal, imag: fullImag }, true);
+	return timeDomainReal;
 }
 
 /** Returns frequency axis for the FFT of a signal */

@@ -11,6 +11,7 @@ import { estimateDelay } from "./signal/delay";
 import { calculateTwoChannelImpulseResponse } from "./signal/signal";
 import { getWaveformLineColor } from "./plotting/waveform-plot";
 import { computeFarinaLikeHarmonicCurves, computeThdSeries, renderFarinaDistortionPlot, renderThdPlot, type HarmonicCurve, type SeriesResponse } from "./signal/farina";
+import { computeCoherenceResponse } from "./signal/spectrum";
 
 type LoadedAudioFile = {
 	id: string;
@@ -65,6 +66,32 @@ const ANALYSIS_PLOTLY_CONFIG = {
 	displayModeBar: true,
 	displaylogo: false,
 };
+const DEFAULT_ANALYSIS_PLOT_THEME = {
+	paperBackground: "#000",
+	plotBackground: "#000",
+	titleColor: "#f8fafc",
+	axisColor: "#9aa4b2",
+	gridColor: "rgba(181, 192, 224, 0.12)",
+	legendBackground: "rgba(0, 0, 0, 0.45)",
+	referenceLineColor: "rgba(248,250,252,0.6)",
+};
+
+function getThemeVar(name: string, fallback: string): string {
+	const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+	return value || fallback;
+}
+
+function getAnalysisPlotTheme() {
+	return {
+		paperBackground: getThemeVar("--plot-paper-bg", DEFAULT_ANALYSIS_PLOT_THEME.paperBackground),
+		plotBackground: getThemeVar("--plot-bg", DEFAULT_ANALYSIS_PLOT_THEME.plotBackground),
+		titleColor: getThemeVar("--plot-title-color", DEFAULT_ANALYSIS_PLOT_THEME.titleColor),
+		axisColor: getThemeVar("--plot-axis-color", DEFAULT_ANALYSIS_PLOT_THEME.axisColor),
+		gridColor: getThemeVar("--plot-grid-color", DEFAULT_ANALYSIS_PLOT_THEME.gridColor),
+		legendBackground: getThemeVar("--plot-legend-bg", DEFAULT_ANALYSIS_PLOT_THEME.legendBackground),
+		referenceLineColor: getThemeVar("--plot-reference-line-color", DEFAULT_ANALYSIS_PLOT_THEME.referenceLineColor),
+	};
+}
 
 const tabsOuter = document.getElementById("tabs-outer") as HTMLElement | null;
 const tabsInner = document.getElementById("tabs") as HTMLElement | null;
@@ -190,6 +217,7 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function drawEmptyPlot(canvas: HTMLCanvasElement, title: string, message: string): void {
+	const plotTheme = getAnalysisPlotTheme();
 	const rect = canvas.getBoundingClientRect();
 	const width = Math.max(1, Math.floor(rect.width || canvas.width || 1));
 	const height = Math.max(1, Math.floor(rect.height || canvas.height || 1));
@@ -200,15 +228,15 @@ function drawEmptyPlot(canvas: HTMLCanvasElement, title: string, message: string
 		return;
 	}
 
-	ctx.fillStyle = "#000";
+	ctx.fillStyle = plotTheme.paperBackground;
 	ctx.fillRect(0, 0, width, height);
-	ctx.strokeStyle = "rgba(181, 192, 224, 0.16)";
+	ctx.strokeStyle = plotTheme.gridColor;
 	ctx.strokeRect(0.5, 0.5, Math.max(0, width - 1), Math.max(0, height - 1));
 
-	ctx.fillStyle = "#f8fafc";
+	ctx.fillStyle = plotTheme.titleColor;
 	ctx.font = "12px sans-serif";
 	ctx.fillText(title, 10, 18);
-	ctx.fillStyle = "#9aa4b2";
+	ctx.fillStyle = plotTheme.axisColor;
 	ctx.fillText(message, 10, 40);
 }
 
@@ -269,10 +297,11 @@ function drawLinePlot(
 	if (!ctx) {
 		return;
 	}
+	const plotTheme = getAnalysisPlotTheme();
 
-	ctx.fillStyle = "#000";
+	ctx.fillStyle = plotTheme.paperBackground;
 	ctx.fillRect(0, 0, width, height);
-	ctx.strokeStyle = "rgba(181, 192, 224, 0.16)";
+	ctx.strokeStyle = plotTheme.gridColor;
 	ctx.strokeRect(0.5, 0.5, Math.max(0, width - 1), Math.max(0, height - 1));
 
 	const left = 48;
@@ -333,7 +362,7 @@ function drawLinePlot(
 		return top + (1 - clamp(frac, 0, 1)) * plotHeight;
 	};
 
-	ctx.strokeStyle = "rgba(181, 192, 224, 0.12)";
+	ctx.strokeStyle = plotTheme.gridColor;
 	ctx.lineWidth = 1;
 	for (let i = 0; i <= 5; i += 1) {
 		const yv = yMin + ((yMax - yMin) * i) / 5;
@@ -344,7 +373,7 @@ function drawLinePlot(
 		ctx.stroke();
 	}
 
-	ctx.fillStyle = "#9aa4b2";
+	ctx.fillStyle = plotTheme.axisColor;
 	ctx.font = "10px sans-serif";
 	for (let i = 0; i <= 5; i += 1) {
 		const yv = yMin + ((yMax - yMin) * i) / 5;
@@ -440,10 +469,10 @@ function drawLinePlot(
 	ctx.lineWidth = 1.5;
 	ctx.stroke();
 
-	ctx.fillStyle = "#f8fafc";
+	ctx.fillStyle = plotTheme.titleColor;
 	ctx.font = "12px sans-serif";
 	ctx.fillText(title, left, 16);
-	ctx.fillStyle = "#9aa4b2";
+	ctx.fillStyle = plotTheme.axisColor;
 	ctx.fillText(xLabel, left + plotWidth - 80, height - 8);
 	ctx.save();
 	ctx.translate(10, top + plotHeight / 2);
@@ -793,6 +822,7 @@ function renderAnalysisFrequencyPlot(
 	averageCurve: MagnitudeResponseWithStdDev | null,
 	targetCurve: MagnitudeResponse | null,
 ): void {
+	const plotTheme = getAnalysisPlotTheme();
 	const traces: any[] = curves.flatMap((curve, index) => {
 		const color = ANALYSIS_COLORS[index % ANALYSIS_COLORS.length];
 		return [
@@ -825,7 +855,7 @@ function renderAnalysisFrequencyPlot(
 			name: "Average +1SD",
 			x: Array.from(averageCurve.frequencies),
 			y: Array.from(averageCurve.stddevUp),
-			line: { color: "rgba(248, 250, 252, 0.3)", width: 1 },
+			line: { color: withAlpha(plotTheme.titleColor, 0.3), width: 1 },
 			showlegend: false,
 			hovertemplate: "%{x:.1f} Hz<br>%{y:.2f} dB<extra>+1SD</extra>",
 		});
@@ -837,7 +867,7 @@ function renderAnalysisFrequencyPlot(
 			name: "Average",
 			x: Array.from(averageCurve.frequencies),
 			y: Array.from(averageCurve.valuesDb),
-			line: { color: "#f8fafc", width: 6 },
+			line: { color: plotTheme.titleColor, width: 6 },
 			hovertemplate: "%{x:.1f} Hz<br>%{y:.2f} dB<extra>Average</extra>",
 		});
 
@@ -848,7 +878,7 @@ function renderAnalysisFrequencyPlot(
 			name: "Average -1SD",
 			x: Array.from(averageCurve.frequencies),
 			y: Array.from(averageCurve.stddevDown),
-			line: { color: "rgba(248, 250, 252, 0.3)", width: 1 },
+			line: { color: withAlpha(plotTheme.titleColor, 0.3), width: 1 },
 			showlegend: false,
 			hovertemplate: "%{x:.1f} Hz<br>%{y:.2f} dB<extra>-1SD</extra>",
 		});
@@ -869,33 +899,73 @@ function renderAnalysisFrequencyPlot(
 		host,
 		traces,
 		{
-			title: { text: "Frequency response", font: { color: "#f8fafc", size: 14 } },
-			paper_bgcolor: "#000",
-			plot_bgcolor: "#000",
-			margin: { l: 56, r: 180, t: 36, b: 44 },
+			title: { text: "Frequency response", font: { color: plotTheme.titleColor, size: 14 } },
+			paper_bgcolor: plotTheme.paperBackground,
+			plot_bgcolor: plotTheme.plotBackground,
+			margin: { l: 56, r: 40, t: 72, b: 44 },
 			showlegend: true,
 			legend: {
-				orientation: "v",
-				yanchor: "top",
-				y: 1,
+				orientation: "h",
+				yanchor: "bottom",
+				y: 0.01,
 				xanchor: "left",
-				x: 1.02,
-				font: { color: "#cbd5e1", size: 11 },
+				x: 0.01,
+				bgcolor: plotTheme.legendBackground,
+				font: { color: plotTheme.axisColor, size: 11 },
 			},
 			xaxis: {
-				title: { text: "Frequency (Hz)", font: { color: "#9aa4b2", size: 12 } },
+				title: { text: "Frequency (Hz)", font: { color: plotTheme.axisColor, size: 12 } },
 				type: "log",
 				range: [Math.log10(20), Math.log10(20000)],
-				gridcolor: "rgba(181, 192, 224, 0.12)",
+				gridcolor: plotTheme.gridColor,
 				zeroline: false,
-				color: "#9aa4b2",
+				color: plotTheme.axisColor,
 			},
 			yaxis: {
-				title: { text: "Magnitude (dB)", font: { color: "#9aa4b2", size: 12 } },
+				title: { text: "Magnitude (dB)", font: { color: plotTheme.axisColor, size: 12 } },
 				range: [-40, 20],
-				gridcolor: "rgba(181, 192, 224, 0.12)",
+				gridcolor: plotTheme.gridColor,
 				zeroline: false,
-				color: "#9aa4b2",
+				color: plotTheme.axisColor,
+			},
+		},
+		ANALYSIS_PLOTLY_CONFIG,
+	);
+}
+
+function renderCoherencePlot(host: HTMLElement, response: { frequencies: Float32Array; values: Float32Array }): void {
+	const plotTheme = getAnalysisPlotTheme();
+	void Plotly.react(
+		host,
+		[{
+			type: "scatter",
+			mode: "lines",
+			name: "Coherence",
+			x: Array.from(response.frequencies),
+			y: Array.from(response.values),
+			line: { color: "#38bdf8", width: 2 },
+			hovertemplate: "%{x:.1f} Hz<br>%{y:.2f}<extra></extra>",
+		}],
+		{
+			title: { text: "Coherence", font: { color: plotTheme.titleColor, size: 14 } },
+			paper_bgcolor: plotTheme.paperBackground,
+			plot_bgcolor: plotTheme.plotBackground,
+			margin: { l: 56, r: 40, t: 36, b: 44 },
+			showlegend: false,
+			xaxis: {
+				title: { text: "Frequency (Hz)", font: { color: plotTheme.axisColor, size: 12 } },
+				type: "log",
+				range: [Math.log10(20), Math.log10(20000)],
+				gridcolor: plotTheme.gridColor,
+				zeroline: false,
+				color: plotTheme.axisColor,
+			},
+			yaxis: {
+				title: { text: "Coherence", font: { color: plotTheme.axisColor, size: 12 } },
+				range: [0, 1],
+				gridcolor: plotTheme.gridColor,
+				zeroline: false,
+				color: plotTheme.axisColor,
 			},
 		},
 		ANALYSIS_PLOTLY_CONFIG,
@@ -908,6 +978,7 @@ function renderAnalysisPhaseDelayPlot(
 	delayOffsetMs: number = 0,
 	displayUnit: DelayDisplayUnit = "ms",
 ): void {
+	const plotTheme = getAnalysisPlotTheme();
 	const traces: any[] = curves.flatMap((curve, index) => {
 		const color = ANALYSIS_COLORS[index % ANALYSIS_COLORS.length];
 		// Calculate group delay from phase: gd = -d(phase)/d(freq)
@@ -956,33 +1027,34 @@ function renderAnalysisPhaseDelayPlot(
 		host,
 		traces,
 		{
-			title: { text: "Group delay (phase)", font: { color: "#f8fafc", size: 14 } },
-			paper_bgcolor: "#000",
-			plot_bgcolor: "#000",
-			margin: { l: 56, r: 180, t: 36, b: 44 },
+			title: { text: "Group delay (phase)", font: { color: plotTheme.titleColor, size: 14 } },
+			paper_bgcolor: plotTheme.paperBackground,
+			plot_bgcolor: plotTheme.plotBackground,
+			margin: { l: 56, r: 40, t: 72, b: 44 },
 			showlegend: true,
 			legend: {
-				orientation: "v",
-				yanchor: "top",
-				y: 1,
+				orientation: "h",
+				yanchor: "bottom",
+				y: 0.01,
 				xanchor: "left",
-				x: 1.02,
-				font: { color: "#cbd5e1", size: 11 },
+				x: 0.01,
+				bgcolor: plotTheme.legendBackground,
+				font: { color: plotTheme.axisColor, size: 11 },
 			},
 			xaxis: {
-				title: { text: "Frequency (Hz)", font: { color: "#9aa4b2", size: 12 } },
+				title: { text: "Frequency (Hz)", font: { color: plotTheme.axisColor, size: 12 } },
 				type: "log",
 				range: [Math.log10(20), Math.log10(20000)],
-				gridcolor: "rgba(181, 192, 224, 0.12)",
+				gridcolor: plotTheme.gridColor,
 				zeroline: false,
-				color: "#9aa4b2",
+				color: plotTheme.axisColor,
 			},
 			yaxis: {
-				title: { text: `Group delay (${delayUnitLabel})`, font: { color: "#9aa4b2", size: 12 } },
+				title: { text: `Group delay (${delayUnitLabel})`, font: { color: plotTheme.axisColor, size: 12 } },
 				range: [yMin, yMax],
-				gridcolor: "rgba(181, 192, 224, 0.12)",
+				gridcolor: plotTheme.gridColor,
 				zeroline: false,
-				color: "#9aa4b2",
+				color: plotTheme.axisColor,
 			},
 		},
 		ANALYSIS_PLOTLY_CONFIG,
@@ -994,6 +1066,7 @@ function renderAlignedImpulseResponsePlot(
 	traces: AlignedImpulseTrace[],
 	displayUnit: DelayDisplayUnit = "ms",
 ): void {
+	const plotTheme = getAnalysisPlotTheme();
 	const delayUnitLabel = getDelayDisplayUnitLabel(displayUnit);
 	const xHoverFormat = displayUnit === "m" ? "%{x:.4f}" : "%{x:.3f}";
 	const xMin = convertDelayMsForDisplay(-10, displayUnit);
@@ -1012,24 +1085,32 @@ function renderAlignedImpulseResponsePlot(
 		host,
 		plotTraces,
 		{
-			title: { text: "Aligned impulse response (ch1 / ch2, aligned by ch3 / ch2)", font: { color: "#f8fafc", size: 14 } },
-			paper_bgcolor: "#000",
-			plot_bgcolor: "#000",
-			margin: { l: 56, r: 180, t: 36, b: 44 },
+			title: { text: "Aligned impulse response (ch1 / ch2, aligned by ch3 / ch2)", font: { color: plotTheme.titleColor, size: 14 } },
+			paper_bgcolor: plotTheme.paperBackground,
+			plot_bgcolor: plotTheme.plotBackground,
+			margin: { l: 56, r: 40, t: 72, b: 44 },
 			showlegend: true,
-			legend: { orientation: "v", yanchor: "top", y: 1, xanchor: "left", x: 1.02, font: { color: "#cbd5e1", size: 11 } },
+			legend: {
+				orientation: "h",
+				yanchor: "bottom",
+				y: 0.01,
+				xanchor: "left",
+				x: 0.01,
+				bgcolor: plotTheme.legendBackground,
+				font: { color: plotTheme.axisColor, size: 11 },
+			},
 			xaxis: {
-				title: { text: `Time (${delayUnitLabel})`, font: { color: "#9aa4b2", size: 12 } },
+				title: { text: `Time (${delayUnitLabel})`, font: { color: plotTheme.axisColor, size: 12 } },
 				range: [xMin, xMax],
-				gridcolor: "rgba(181, 192, 224, 0.12)",
+				gridcolor: plotTheme.gridColor,
 				zeroline: false,
-				color: "#9aa4b2",
+				color: plotTheme.axisColor,
 			},
 			yaxis: {
-				title: { text: "Amplitude", font: { color: "#9aa4b2", size: 12 } },
-				gridcolor: "rgba(181, 192, 224, 0.12)",
+				title: { text: "Amplitude", font: { color: plotTheme.axisColor, size: 12 } },
+				gridcolor: plotTheme.gridColor,
 				zeroline: false,
-				color: "#9aa4b2",
+				color: plotTheme.axisColor,
 			},
 			shapes: [
 				{
@@ -1040,7 +1121,7 @@ function renderAlignedImpulseResponsePlot(
 					y1: 1,
 					xref: "x",
 					yref: "paper",
-					line: { color: "rgba(248,250,252,0.6)", width: 1, dash: "dot" },
+					line: { color: plotTheme.referenceLineColor, width: 1, dash: "dot" },
 				},
 			],
 		},
@@ -1320,35 +1401,21 @@ function createAnalysisMarkup(tabId: string, fileName: string, sampleRate: numbe
 				<button id="analysisUpdateBtn-${tabId}" type="button" class="toolbar-button button acquisition-action-button" style="background-color: #3b82f6; border-color: #2563eb;">Update analysis</button>
 			</div>
 		</div>
-		<div class="tab-inner-content">
+		<div class="tab-inner-content">			
+			<div id="analysisExtraPlots-${tabId}" class="analysis-extra-plots">
+				<div id="analysisFrequencyPlot-${tabId}" class="analysis-plot-host"></div>
+				<div id="analysisAlignmentIrPlot-${tabId}" class="analysis-plot-host"></div>
+				<div id="analysisDistortionPlot-${tabId}" class="analysis-plot-host"></div>
+				<div id="analysisThdPlot-${tabId}" class="analysis-plot-host"></div>
+				<div id="analysisCoherencePlot-${tabId}" class="analysis-plot-host"></div>
+				<div id="analysisPhaseDelayPlot-${tabId}" class="analysis-plot-host"></div>
+			</div>
+
 			<div class="loose-container">
 				<p class="info">Press "Update analysis" to run or refresh the analysis plots.</p>
 				<p class="info">1/6-octave smoothed transfer magnitude from channel 1 measured against channel 2 reference.</p>
 				<p id="analysisDelaySummary-${tabId}" class="info">Ch3 -> Ch2 delay compensation: unavailable (requires channel 3).</p>
 				<p class="info">${fileName} · ${sampleRate} Hz · ${channelCount} ch · ${durationSeconds.toFixed(2)} s</p>
-			</div>
-			
-			<div id="analysisExtraPlots-${tabId}" class="analysis-extra-plots">
-				<section class="live-plot-card">
-					<h2>Frequency response</h2>
-					<div id="analysisFrequencyPlot-${tabId}" class="analysis-plot-host"></div>
-				</section>
-				<section class="live-plot-card">
-					<h2>Delay alignment impulse</h2>
-					<div id="analysisAlignmentIrPlot-${tabId}" class="analysis-plot-host"></div>
-				</section>
-				<section class="live-plot-card">
-					<h2>Farina-style distortion</h2>
-					<div id="analysisDistortionPlot-${tabId}" class="analysis-plot-host"></div>
-				</section>
-				<section class="live-plot-card">
-					<h2>THD</h2>
-					<div id="analysisThdPlot-${tabId}" class="analysis-plot-host"></div>
-				</section>
-				<section class="live-plot-card">
-					<h2>Group delay (phase)</h2>
-					<div id="analysisPhaseDelayPlot-${tabId}" class="analysis-plot-host"></div>
-				</section>
 			</div>
 		</div>
 	`;
@@ -1691,6 +1758,7 @@ async function openAnalysisTab(inputFiles: File[] | File): Promise<void> {
 		content.innerHTML = createAnalysisMarkup(tabId, fileLabel, sampleRate, channelCount, frameCount);
 
 		const frequencyPlot = document.getElementById(`analysisFrequencyPlot-${tabId}`) as HTMLElement | null;
+		const coherencePlot = document.getElementById(`analysisCoherencePlot-${tabId}`) as HTMLElement | null;
 		const phaseDelayPlot = document.getElementById(`analysisPhaseDelayPlot-${tabId}`) as HTMLElement | null;
 		const distortionPlot = document.getElementById(`analysisDistortionPlot-${tabId}`) as HTMLElement | null;
 		const thdPlot = document.getElementById(`analysisThdPlot-${tabId}`) as HTMLElement | null;
@@ -1704,6 +1772,9 @@ async function openAnalysisTab(inputFiles: File[] | File): Promise<void> {
 		const updateBtn = document.getElementById(`analysisUpdateBtn-${tabId}`) as HTMLButtonElement | null;
 		if (!frequencyPlot) {
 			throw new Error("Failed to create analysis frequency plot.");
+		}
+		if (!coherencePlot) {
+			throw new Error("Failed to create coherence plot.");
 		}
 		if (!phaseDelayPlot || !distortionPlot || !thdPlot || !alignmentIrPlot || !analysisExtraPlots || !delaySummary) {
 			throw new Error("Failed to create distortion plots.");
@@ -1782,6 +1853,7 @@ async function openAnalysisTab(inputFiles: File[] | File): Promise<void> {
 
 			if (curves.length === 0) {
 				drawEmptyPlotHost(frequencyPlot, "Frequency response", "Requires a two-channel file.");
+				drawEmptyPlotHost(coherencePlot, "Coherence", "Requires a two-channel file.");
 				return;
 			}
 			const averageCurve = computeAverageMagnitudeResponseWithStdDev(curves);
@@ -1791,6 +1863,20 @@ async function openAnalysisTab(inputFiles: File[] | File): Promise<void> {
 				? computeTargetMagnitudeResponse(targetBase, Number.isFinite(targetOffsetDb) ? targetOffsetDb : 0)
 				: null;
 			renderAnalysisFrequencyPlot(frequencyPlot, curves, averageCurve, targetCurve);
+
+			const firstFile = parsedFiles.find(({ parsed }) => parsed.channels.length >= 2);
+			const coherenceResponse = firstFile
+				? computeCoherenceResponse(
+					firstFile.parsed.channels[0] ?? new Float32Array(0),
+					firstFile.parsed.channels[1] ?? new Float32Array(0),
+					firstFile.parsed.sampleRate,
+				)
+				: null;
+			if (coherenceResponse && coherenceResponse.frequencies.length > 0) {
+				renderCoherencePlot(coherencePlot, coherenceResponse);
+			} else {
+				drawEmptyPlotHost(coherencePlot, "Coherence", "Could not compute coherence from the selected data.");
+			}
 
 			// Render alignment impulse (second plot)
 			const alignmentTraces: AlignedImpulseTrace[] = [];

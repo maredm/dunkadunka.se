@@ -27,6 +27,30 @@ const ANALYSIS_PLOTLY_CONFIG = {
 	displayModeBar: true,
 	displaylogo: false,
 };
+const DEFAULT_ANALYSIS_PLOT_THEME = {
+	paperBackground: "#000",
+	plotBackground: "#000",
+	titleColor: "#f8fafc",
+	axisColor: "#9aa4b2",
+	gridColor: "rgba(181, 192, 224, 0.12)",
+	legendBackground: "rgba(0, 0, 0, 0.45)",
+};
+
+function getThemeVar(name: string, fallback: string): string {
+	const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+	return value || fallback;
+}
+
+function getAnalysisPlotTheme() {
+	return {
+		paperBackground: getThemeVar("--plot-paper-bg", DEFAULT_ANALYSIS_PLOT_THEME.paperBackground),
+		plotBackground: getThemeVar("--plot-bg", DEFAULT_ANALYSIS_PLOT_THEME.plotBackground),
+		titleColor: getThemeVar("--plot-title-color", DEFAULT_ANALYSIS_PLOT_THEME.titleColor),
+		axisColor: getThemeVar("--plot-axis-color", DEFAULT_ANALYSIS_PLOT_THEME.axisColor),
+		gridColor: getThemeVar("--plot-grid-color", DEFAULT_ANALYSIS_PLOT_THEME.gridColor),
+		legendBackground: getThemeVar("--plot-legend-bg", DEFAULT_ANALYSIS_PLOT_THEME.legendBackground),
+	};
+}
 
 function smoothMagnitudeFractional(valuesDb: Float32Array, smoothingFraction: number, sampleRate: number): MagnitudeResponse {
 	if (valuesDb.length === 0 || !Number.isFinite(sampleRate) || sampleRate <= 0) {
@@ -222,6 +246,7 @@ function interpolateMagnitudeValue(series: MagnitudeResponse, targetFrequency: n
 }
 
 export function renderFarinaDistortionPlot(host: HTMLElement, harmonics: HarmonicCurve[], colors: string[] = ANALYSIS_COLORS): void {
+	const plotTheme = getAnalysisPlotTheme();
 	const traces = harmonics.map((curve, index) => {
 		const color = colors[index % colors.length];
 		return {
@@ -239,26 +264,34 @@ export function renderFarinaDistortionPlot(host: HTMLElement, harmonics: Harmoni
 		host,
 		traces,
 		{
-			title: { text: "Farina-style distortion", font: { color: "#f8fafc", size: 14 } },
-			paper_bgcolor: "#000",
-			plot_bgcolor: "#000",
-			margin: { l: 56, r: 180, t: 36, b: 44 },
+			title: { text: "Farina-style distortion", font: { color: plotTheme.titleColor, size: 14 } },
+			paper_bgcolor: plotTheme.paperBackground,
+			plot_bgcolor: plotTheme.plotBackground,
+			margin: { l: 56, r: 40, t: 72, b: 44 },
 			showlegend: true,
-			legend: { orientation: "v", yanchor: "top", y: 1, xanchor: "left", x: 1.02, font: { color: "#cbd5e1", size: 11 } },
+			legend: {
+				orientation: "h",
+				yanchor: "bottom",
+				y: 0.01,
+				xanchor: "left",
+				x: 0.01,
+				bgcolor: plotTheme.legendBackground,
+				font: { color: plotTheme.axisColor, size: 11 },
+			},
 			xaxis: {
-				title: { text: "Frequency (Hz)", font: { color: "#9aa4b2", size: 12 } },
+				title: { text: "Frequency (Hz)", font: { color: plotTheme.axisColor, size: 12 } },
 				type: "log",
 				range: [Math.log10(20), Math.log10(20000)],
-				gridcolor: "rgba(181, 192, 224, 0.12)",
+				gridcolor: plotTheme.gridColor,
 				zeroline: false,
-				color: "#9aa4b2",
+				color: plotTheme.axisColor,
 			},
 			yaxis: {
-				title: { text: "Amplitude (dB)", font: { color: "#9aa4b2", size: 12 } },
+				title: { text: "Amplitude (dB)", font: { color: plotTheme.axisColor, size: 12 } },
 				range: [-85, 5],
-				gridcolor: "rgba(181, 192, 224, 0.12)",
+				gridcolor: plotTheme.gridColor,
 				zeroline: false,
-				color: "#9aa4b2",
+				color: plotTheme.axisColor,
 			},
 		},
 		ANALYSIS_PLOTLY_CONFIG,
@@ -266,6 +299,7 @@ export function renderFarinaDistortionPlot(host: HTMLElement, harmonics: Harmoni
 }
 
 export function renderThdPlot(host: HTMLElement, seriesList: Array<{ label: string; series: SeriesResponse }>, colors: string[] = ANALYSIS_COLORS): void {
+	const plotTheme = getAnalysisPlotTheme();
 	const traces = seriesList.map((entry, index) => ({
 		type: "scatter",
 		mode: "lines",
@@ -280,26 +314,34 @@ export function renderThdPlot(host: HTMLElement, seriesList: Array<{ label: stri
 		host,
 		traces,
 		{
-			title: { text: "Total harmonic distortion", font: { color: "#f8fafc", size: 14 } },
-			paper_bgcolor: "#000",
-			plot_bgcolor: "#000",
-			margin: { l: 56, r: 180, t: 36, b: 44 },
+			title: { text: "Total harmonic distortion", font: { color: plotTheme.titleColor, size: 14 } },
+			paper_bgcolor: plotTheme.paperBackground,
+			plot_bgcolor: plotTheme.plotBackground,
+			margin: { l: 56, r: 40, t: 72, b: 44 },
 			showlegend: true,
-			legend: { orientation: "v", yanchor: "top", y: 1, xanchor: "left", x: 1.02, font: { color: "#cbd5e1", size: 11 } },
+			legend: {
+				orientation: "h",
+				yanchor: "bottom",
+				y: 0.01,
+				xanchor: "left",
+				x: 0.01,
+				bgcolor: plotTheme.legendBackground,
+				font: { color: plotTheme.axisColor, size: 11 },
+			},
 			xaxis: {
-				title: { text: "Frequency (Hz)", font: { color: "#9aa4b2", size: 12 } },
+				title: { text: "Frequency (Hz)", font: { color: plotTheme.axisColor, size: 12 } },
 				type: "log",
 				range: [Math.log10(20), Math.log10(20000)],
-				gridcolor: "rgba(181, 192, 224, 0.12)",
+				gridcolor: plotTheme.gridColor,
 				zeroline: false,
-				color: "#9aa4b2",
+				color: plotTheme.axisColor,
 			},
 			yaxis: {
-				title: { text: "THD (%)", font: { color: "#9aa4b2", size: 12 } },
+				title: { text: "THD (%)", font: { color: plotTheme.axisColor, size: 12 } },
 				range: [0, 5],
-				gridcolor: "rgba(181, 192, 224, 0.12)",
+				gridcolor: plotTheme.gridColor,
 				zeroline: false,
-				color: "#9aa4b2",
+				color: plotTheme.axisColor,
 			},
 		},
 		ANALYSIS_PLOTLY_CONFIG,
