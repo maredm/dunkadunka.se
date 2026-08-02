@@ -12,10 +12,10 @@
 	<body>
 		<nav class="navbar">
 			<div class="navbar-container flex items-center justify-left">
-				<img src="https://norrmalms.se/static/favicon.ico" alt="Norrmalms logo" class="h-8 w-8">
-				<a href="https://norrmalms.se">
+				<button id="welcomeHomeButton" class="navbar-home" type="button" aria-label="Open welcome page">
+					<img src="https://norrmalms.se/static/favicon.ico" alt="" class="h-8 w-8">
 					<span class="pl-1">dunkadunka.se</span>
-				</a>
+				</button>
 			</div>
 			<div class="hidden" id="statusMessage">-</div>
 		</nav>
@@ -30,13 +30,78 @@
 				<button class="tab" data-tab="live">
 					<span class="tab-icon-live"></span>Live
 				</button>
+				<button class="tab" data-tab="spl">
+					<span class="tab-icon-spl"></span>SPL
+				</button>
 			</div>
 		</div>
 		<div id="tab-contents">
-			<div class="tab-content active" data-content="upload">
+			<main class="tab-content welcome-page active" data-content="welcome" aria-labelledby="welcome-title">
+				<div class="welcome-intro">
+					<p class="welcome-kicker">Audio measurement workspace</p>
+					<h1 id="welcome-title">Capture sound. See what is happening.</h1>
+					<p class="welcome-lede">Record measurements, monitor a room in real time, inspect waveforms, and compare detailed acoustic analysis in one focused workspace.</p>
+					<div class="welcome-actions" aria-label="Get started">
+						<button type="button" class="button-custom welcome-primary-action" data-welcome-target="acquisition">Start acquisition</button>
+						<button type="button" class="button-custom button-custom-secondary" data-welcome-target="upload">Open WAV files</button>
+					</div>
+				</div>
+
+				<section class="welcome-workflows" aria-labelledby="welcome-workflows-title">
+					<div class="welcome-section-heading">
+						<p class="welcome-kicker">Measure</p>
+						<h2 id="welcome-workflows-title">Three ways to work</h2>
+					</div>
+					<div class="welcome-feature-grid">
+						<article class="welcome-feature welcome-feature--acquisition">
+							<span class="welcome-feature-index">01</span>
+							<h3>Acquisition</h3>
+							<p>Play a swept-sine stimulus through a chosen output and record the response with optional reference input. Captures are saved as WAV files and opened for analysis.</p>
+							<button type="button" class="welcome-text-action" data-welcome-target="acquisition">Configure a measurement <span aria-hidden="true">→</span></button>
+						</article>
+						<article class="welcome-feature welcome-feature--live">
+							<span class="welcome-feature-index">02</span>
+							<h3>Live</h3>
+							<p>Compare microphone and reference inputs continuously. Follow frequency response, level difference, and delay alignment while sound is running.</p>
+							<button type="button" class="welcome-text-action" data-welcome-target="live">Open live monitor <span aria-hidden="true">→</span></button>
+						</article>
+						<article class="welcome-feature welcome-feature--spl">
+							<span class="welcome-feature-index">03</span>
+							<h3>SPL mode</h3>
+							<p>Track calibrated sound pressure level with selectable A or C weighting, response speed, averaging, and a rolling 60-second history.</p>
+							<button type="button" class="welcome-text-action" data-welcome-target="spl">Measure sound level <span aria-hidden="true">→</span></button>
+						</article>
+					</div>
+				</section>
+
+				<section class="welcome-views" aria-labelledby="welcome-views-title">
+					<div class="welcome-section-heading">
+						<p class="welcome-kicker">Inspect</p>
+						<h2 id="welcome-views-title">From samples to answers</h2>
+					</div>
+					<div class="welcome-view-grid">
+						<article class="welcome-view">
+							<img class="welcome-visual" src="static/screenshots/waveform.png" alt="Waveform and spectrogram views of a swept-sine recording" loading="lazy" decoding="async">
+							<div>
+								<p class="welcome-view-label">Waveform view</p>
+								<h3>Work directly with the recording</h3>
+								<p>Zoom into time and amplitude, choose visible channels, inspect the spectrogram, and play selected channels through your preferred output.</p>
+							</div>
+						</article>
+						<article class="welcome-view">
+							<img class="welcome-visual" src="static/screenshots/analysis.png" alt="Frequency response comparison with average and target curves" loading="lazy" decoding="async">
+							<div>
+								<p class="welcome-view-label">Analysis view</p>
+								<h3>Compare acoustic behavior</h3>
+								<p>Review frequency and phase response, impulse alignment, distortion, THD, coherence, and phase delay across one or several recordings.</p>
+							</div>
+						</article>
+					</div>
+					<button type="button" class="button-custom button-custom-secondary welcome-files-action" data-welcome-target="upload">Choose recordings to inspect</button>
+				</section>
+			</main>
+			<div class="tab-content" data-content="upload">
 				<div class="loose-container" style="padding: 16px;">
-					<h1>Welcome to dunkadunka.se</h1>
-					<p class="info">This is a web-based audio analysis tool for recording, analyzing, and visualizing audio signals. You can upload WAV files, record new audio, or monitor live audio input.</p>
 					<h2>Files</h2>
 					<p class="info">Upload one or more WAV files and open waveform tabs or combined analysis tabs.</p>
 					<p>
@@ -209,6 +274,54 @@
 							<div id="liveSpectrumCanvas" class="live-plot-canvas"></div>
 						</section>
 					</div>
+				</div>
+			</div>
+			<div class="tab-content" data-content="spl">
+				<div class="acquisition-toolbar" role="toolbar" aria-label="SPL meter controls">
+					<div class="acquisition-toolbar-group">
+						<label for="splMicDeviceSelect" class="acquisition-toolbar-label">Mic</label>
+						<select id="splMicDeviceSelect" class="toolbar-select" aria-label="SPL microphone device"></select>
+					</div>
+					<div class="acquisition-toolbar-group acquisition-toolbar-group--compact">
+						<label for="splMicChannelSelect" class="acquisition-toolbar-label">Mic ch</label>
+						<select id="splMicChannelSelect" class="toolbar-select" aria-label="SPL microphone channel">
+							<option value="left" selected>L</option>
+							<option value="right">R</option>
+						</select>
+					</div>
+					<div class="acquisition-toolbar-group acquisition-toolbar-group--compact">
+						<label for="splCalibrationInput" class="acquisition-toolbar-label">Cal offset</label>
+						<input id="splCalibrationInput" class="toolbar-select" type="number" step="0.1" value="0" aria-label="SPL calibration offset in decibels" />
+					</div>
+					<div class="acquisition-toolbar-group acquisition-toolbar-group--compact">
+						<label for="splMetricSelect" class="acquisition-toolbar-label">Metric</label>
+						<select id="splMetricSelect" class="toolbar-select" aria-label="SPL level metric">
+							<option value="laeq" selected>LAeq</option>
+							<option value="dba-fast">dBA (fast)</option>
+							<option value="dba-slow">dBA (slow)</option>
+							<option value="dba-instant">dBA (instant)</option>
+							<option value="lcmax">LCmax</option>
+							<option value="dbc-fast">dBC (fast)</option>
+							<option value="dbc-slow">dBC (slow)</option>
+						</select>
+					</div>
+					<p id="splStatusText" class="acquisition-status" data-state="idle" aria-live="polite">Ready</p>
+					<button id="splStartBtn" type="button" class="toolbar-button button acquisition-action-button">Start</button>
+					<button id="splStopBtn" type="button" class="toolbar-button button acquisition-action-button" disabled>Stop</button>
+				</div>
+				<div class="tab-inner-content spl-tab-content">
+					<section class="spl-reading" aria-labelledby="spl-reading-title">
+						<p id="spl-reading-title" class="spl-reading-label">Sound pressure level</p>
+						<p id="splValue" class="spl-reading-value">--.- dBFS</p>
+						<p id="splMetricLabel" class="spl-reading-metric">LAeq · dBFS</p>
+					</section>
+					<section class="spl-history-panel">
+						<div>
+							<h2>Level history</h2>
+							<p class="info">Rolling 60-second sound level trace.</p>
+						</div>
+						<canvas id="splHistoryCanvas" class="spl-history-canvas"></canvas>
+					</section>
 				</div>
 			</div>
 		</div>

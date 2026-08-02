@@ -2,6 +2,7 @@ import Plotly from "plotly.js-dist-min";
 import { fft, nextPow2 } from "./fft";
 import { fractionalOctaveSmoothing, getFractionalOctaveFrequencies } from "./fractional_octave_smoothing";
 import { calculateTwoChannelImpulseResponse } from "./signal";
+import { withPlotPopoutButton } from "../plotting/plotly-popout";
 
 export type MagnitudeResponse = {
 	frequencies: Float32Array;
@@ -22,11 +23,11 @@ export type SeriesResponse = {
 const PLOT_AXIS_FRACTION = 1 / 96;
 const LOG_FREQUENCY_MIN = 20;
 const ANALYSIS_COLORS = ["#a3e635", "#38bdf8", "#f97316", "#f472b6", "#facc15", "#22c55e", "#fb7185", "#60a5fa"];
-const ANALYSIS_PLOTLY_CONFIG = {
+const ANALYSIS_PLOTLY_CONFIG = withPlotPopoutButton({
 	responsive: true,
 	displayModeBar: true,
 	displaylogo: false,
-};
+});
 const DEFAULT_ANALYSIS_PLOT_THEME = {
 	paperBackground: "#000",
 	plotBackground: "#000",

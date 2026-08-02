@@ -2,6 +2,7 @@ import Plotly from "plotly.js-dist-min";
 import { fft } from "../signal/fft";
 import type { NumberArray } from "../signal/signal";
 import { waveformColormap } from "./waveform-colormap";
+import { withPlotPopoutButton } from "./plotly-popout";
 
 type SpectrogramPlotAxes = {
 	xAxis?: HTMLElement | null;
@@ -37,11 +38,11 @@ const SPECTROGRAM_TICKS_BY_STEP: number[][] = [
 	[0, 20, 50, 100, 200, 500, 1000, 2000, 5000, 8000, 10000, 16000, 20000, 24000],
 ];
 
-const PLOTLY_CONFIG = {
+const PLOTLY_CONFIG = withPlotPopoutButton({
 	responsive: true,
 	displayModeBar: false,
 	staticPlot: true,
-};
+});
 
 export class SpectrogramPlot {
 	private readonly canvas: HTMLCanvasElement;

@@ -14,6 +14,7 @@ import {
 } from "./level_meter";
 import { clamp } from "./math";
 import { estimateDelay } from "./signal/delay";
+import { withPlotPopoutButton } from "./plotting/plotly-popout";
 
 type LiveSpectrumSeries = {
 	frequencies: Float32Array;
@@ -205,12 +206,12 @@ function createHistoryPoint(timeSeconds: number, micDb: number, referenceDb: num
 	return { timeSeconds, micDb, referenceDb };
 }
 
-const LIVE_PLOTLY_CONFIG = {
+const LIVE_PLOTLY_CONFIG = withPlotPopoutButton({
 	responsive: true,
 	displayModeBar: true,
 	displaylogo: false,
 	staticPlot: false,
-};
+});
 
 function drawEmptyPlot(container: HTMLElement, message: string): void {
 	void Plotly.react(container, [], {

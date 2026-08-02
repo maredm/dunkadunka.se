@@ -1,5 +1,6 @@
 import Plotly from "plotly.js-dist-min";
 import { db, type MultichannelBuffer, type NumberArray } from "../signal/signal";
+import { withPlotPopoutButton } from "./plotly-popout";
 
 type WaveformPlotAxes = {
 	xAxis?: HTMLElement | null;
@@ -27,11 +28,11 @@ export function getWaveformLineColor(channelIndex: number): string {
 	return lineColorOptions[index % lineColorOptions.length];
 }
 
-const PLOTLY_CONFIG = {
+const PLOTLY_CONFIG = withPlotPopoutButton({
 	responsive: true,
 	displayModeBar: false,
 	staticPlot: true,
-};
+});
 
 export class WaveformPlot {
 	private readonly canvas: HTMLCanvasElement;

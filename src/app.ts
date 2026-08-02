@@ -1,5 +1,6 @@
 import "./styles.css";
 import { createLiveMonitorController, type LiveMonitorController } from "./live_monitor";
+import { createSplMeterController, type SplMeterController } from "./spl_meter";
 import { mountWaveformTool, type WaveformToolHandle } from "./plotting/waveform";
 import { createMeasurementController, type MeasurementController } from "./measurement";
 import { bindCachedFieldValue, listAudioDevices, restoreCachedFieldValue, setAudioDeviceSelectOptions } from "./audio_devices";
@@ -10,6 +11,7 @@ import { fractionalOctaveSmoothing, getFractionalOctaveFrequencies } from "./sig
 import { estimateDelay } from "./signal/delay";
 import { calculateTwoChannelImpulseResponse } from "./signal/signal";
 import { getWaveformLineColor } from "./plotting/waveform-plot";
+import { withPlotPopoutButton } from "./plotting/plotly-popout";
 import { computeFarinaLikeHarmonicCurves, computeThdSeries, renderFarinaDistortionPlot, renderThdPlot, type HarmonicCurve, type SeriesResponse } from "./signal/farina";
 import { computeCoherenceResponse } from "./signal/spectrum";
 
@@ -61,11 +63,11 @@ const DEFAULT_SMOOTHING_FRACTION = 1 / 6;
 const PLOT_AXIS_FRACTION = 1 / 96;
 const LOG_FREQUENCY_MIN = 20;
 const SPEED_OF_SOUND_METERS_PER_SECOND = 343;
-const ANALYSIS_PLOTLY_CONFIG = {
+const ANALYSIS_PLOTLY_CONFIG = withPlotPopoutButton({
 	responsive: true,
 	displayModeBar: true,
 	displaylogo: false,
-};
+});
 const DEFAULT_ANALYSIS_PLOT_THEME = {
 	paperBackground: "#000",
 	plotBackground: "#000",
@@ -96,6 +98,7 @@ function getAnalysisPlotTheme() {
 const tabsOuter = document.getElementById("tabs-outer") as HTMLElement | null;
 const tabsInner = document.getElementById("tabs") as HTMLElement | null;
 const tabContents = document.getElementById("tab-contents") as HTMLElement | null;
+const welcomeHomeButton = document.getElementById("welcomeHomeButton") as HTMLButtonElement | null;
 const uploadInput = document.getElementById("responseFileUpload") as HTMLInputElement | null;
 const fileTableBody = document.getElementById("fileTableBody") as HTMLTableSectionElement | null;
 const acquisitionStimulusSelect = document.getElementById("acquisitionStimulusSelect") as HTMLSelectElement | null;
@@ -127,6 +130,16 @@ const liveDifferenceSplValue = document.getElementById("liveDifferenceSplValue")
 const liveDelayValue = document.getElementById("liveDelayValue") as HTMLElement | null;
 const liveSplHistoryCanvas = document.getElementById("liveSplHistoryCanvas") as HTMLElement | null;
 const liveSpectrumCanvas = document.getElementById("liveSpectrumCanvas") as HTMLElement | null;
+const splMicDeviceSelect = document.getElementById("splMicDeviceSelect") as HTMLSelectElement | null;
+const splMicChannelSelect = document.getElementById("splMicChannelSelect") as HTMLSelectElement | null;
+const splCalibrationInput = document.getElementById("splCalibrationInput") as HTMLInputElement | null;
+const splMetricSelect = document.getElementById("splMetricSelect") as HTMLSelectElement | null;
+const splStatusText = document.getElementById("splStatusText") as HTMLElement | null;
+const splStartBtn = document.getElementById("splStartBtn") as HTMLButtonElement | null;
+const splStopBtn = document.getElementById("splStopBtn") as HTMLButtonElement | null;
+const splValue = document.getElementById("splValue") as HTMLElement | null;
+const splMetricLabel = document.getElementById("splMetricLabel") as HTMLElement | null;
+const splHistoryCanvas = document.getElementById("splHistoryCanvas") as HTMLCanvasElement | null;
 
 if (!tabsOuter || !tabsInner || !tabContents || !uploadInput || !fileTableBody) {
 	throw new Error("Missing required tab UI elements.");
@@ -154,6 +167,7 @@ const fileTableBodyEl: HTMLTableSectionElement = fileTableBody;
 const openSelectedAnalysisBtn = document.getElementById("openSelectedAnalysisBtn") as HTMLButtonElement | null;
 const acquisitionTabButton = document.querySelector('.tab[data-tab="acquisition"]') as HTMLButtonElement | null;
 const liveTabButton = document.querySelector('.tab[data-tab="live"]') as HTMLButtonElement | null;
+const splTabButton = document.querySelector('.tab[data-tab="spl"]') as HTMLButtonElement | null;
 
 const files = new Map<string, LoadedAudioFile>();
 const plotSessions = new Map<string, PlotSession>();
@@ -161,12 +175,14 @@ const selectedFileIds = new Set<string>();
 let tabCounter = 0;
 let acquisitionMeasurementController: MeasurementController | null = null;
 let liveMonitorController: LiveMonitorController | null = null;
+let splMeterController: SplMeterController | null = null;
 let runningTabIndicatorTimer: ReturnType<typeof setInterval> | null = null;
 const ANALYSIS_COLORS = ["#a3e635", "#38bdf8", "#f97316", "#f472b6", "#facc15", "#22c55e", "#fb7185", "#60a5fa"];
 
 function updateRunningTabIndicators(): void {
 	acquisitionTabButton?.classList.toggle("tab-running-blink", acquisitionMeasurementController?.isRunning() ?? false);
 	liveTabButton?.classList.toggle("tab-running-blink", liveMonitorController?.isRunning() ?? false);
+	splTabButton?.classList.toggle("tab-running-blink", splMeterController?.isRunning() ?? false);
 }
 
 function formatBytes(bytes: number): string {
@@ -206,6 +222,7 @@ function switchTab(tabId: string): void {
 	document.querySelectorAll(".tab-content").forEach((content) => content.classList.remove("active"));
 	document.querySelector(`[data-tab="${tabId}"]`)?.classList.add("active");
 	document.querySelector(`[data-content="${tabId}"]`)?.classList.add("active");
+	welcomeHomeButton?.setAttribute("aria-current", tabId === "welcome" ? "page" : "false");
 
 	requestAnimationFrame(() => {
 		window.dispatchEvent(new Event("resize"));
@@ -2066,6 +2083,19 @@ tabsOuter.addEventListener("click", (event: MouseEvent) => {
 	switchTab(tabId);
 });
 
+welcomeHomeButton?.addEventListener("click", () => {
+	switchTab("welcome");
+});
+
+document.querySelectorAll<HTMLElement>("[data-welcome-target]").forEach((control) => {
+	control.addEventListener("click", () => {
+		const target = control.dataset.welcomeTarget;
+		if (target) {
+			switchTab(target);
+		}
+	});
+});
+
 uploadInput.addEventListener("change", () => {
 	const fileList = Array.from(uploadInput.files ?? []);
 	for (const file of fileList) {
@@ -2143,6 +2173,32 @@ if (
 	});
 }
 
+if (
+	splMicDeviceSelect &&
+	splMicChannelSelect &&
+	splCalibrationInput &&
+	splMetricSelect &&
+	splStatusText &&
+	splStartBtn &&
+	splStopBtn &&
+	splValue &&
+	splMetricLabel &&
+	splHistoryCanvas
+) {
+	splMeterController = createSplMeterController({
+		micDeviceSelect: splMicDeviceSelect,
+		micChannelSelect: splMicChannelSelect,
+		calibrationInput: splCalibrationInput,
+		metricSelect: splMetricSelect,
+		statusText: splStatusText,
+		startButton: splStartBtn,
+		stopButton: splStopBtn,
+		valueElement: splValue,
+		metricElement: splMetricLabel,
+		historyCanvas: splHistoryCanvas,
+	});
+}
+
 window.addEventListener("resize", () => {
 	rerenderAllPlots();
 });
@@ -2154,13 +2210,14 @@ window.addEventListener("beforeunload", () => {
 	}
 	acquisitionMeasurementController?.destroy();
 	liveMonitorController?.destroy();
+	splMeterController?.destroy();
 	plotSessions.forEach((session) => {
 		session.measurement?.destroy();
 		session.tool?.destroy();
 	});
 });
 
-switchTab("upload");
+switchTab("welcome");
 updateSelectedAnalysisButtonState();
 registerPwaServiceWorker();
 updateRunningTabIndicators();
