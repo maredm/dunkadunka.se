@@ -430,6 +430,21 @@ body {
 	vertical-align: text-top;
 }
 
+.active:has(.tab-icon-live) {
+		border: 1px solid #22c55e !important;
+}
+.active:has(.tab-icon-recording) {
+		border: 1px solid #ef4444 !important;
+}
+.active:has(.tab-icon-spl) {
+		border: 1px solid #facc15 !important;
+}
+.active:has(.tab-icon-waveform) {
+		border-top: 1px solid #0ea5e9 !important;
+}
+.active:has(.tab-icon-analysis) {
+		border-top: 1px solid #8b5cf6 !important;
+}
 .tab-icon-spl::before {
 	margin-right: 8px;
 	display: inline-block;
@@ -482,9 +497,9 @@ body {
 }
 
 .tab {
-	margin: 4px;
+	margin: 4px 2px;
 	border-radius: 6px;
-	padding-inline: 16px;
+	padding-inline: 12px;
 	padding-block: 4px;
 	cursor: pointer;
 	background: none;
@@ -516,6 +531,7 @@ body {
 	border-radius: 0;
 	padding-block: 8px;
 	height: 38px;
+	padding-inline: 16px;
 }
 
 .tab-closable:last-child {
